@@ -1,7 +1,7 @@
 use std::io;
 
 use clap::Parser;
-use dissh::utils::get_console_input_buffer;
+use dissh::utils::{get_console_input_buffer, print_std_handles};
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
 use whoami::username;
 use win32console::console::WinConsole;
@@ -86,8 +86,10 @@ async fn main() {
         match named_pipe_client.try_read(&mut buf) {
             Ok(read_bytes) => {
                 if read_bytes != SERIALIZED_INPUT_RECORD_0_LENGTH {
-                    println!("Failed to read all serialized data!");
-                    continue;
+                    // Seems to only happen if the pipe is closed/server disconnects
+                    // By returning here we exit the client, meaining as soon as the
+                    // daemon exits all clients will also exit.
+                    return;
                 }
                 println!("Received {read_bytes} bytes");
             }
