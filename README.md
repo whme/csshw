@@ -19,9 +19,6 @@
 ## Format + Build + Run
 `cargo fmt; cargo build; if ($?) { .\dissh.exe foo bar }`
 
-# Dev idea
+# Windows 11
 
-Spawn one leader process and as many follower process as hosts were given.
-
-https://doc.rust-lang.org/std/process/struct.Command.html
-
+Make sure to set the ``Default terminal application`` in the Terminal Startup Settings to ``Windows Console Host``.
