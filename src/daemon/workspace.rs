@@ -1,12 +1,18 @@
+use std::ffi::c_void;
 use std::ptr;
 
-use windows::Win32::Foundation::RECT;
-use windows::Win32::System::Console::GetConsoleWindow;
+use windows::Win32::Foundation::{POINT, RECT};
+use windows::Win32::Graphics::Gdi::{MonitorFromPoint, HMONITOR, MONITOR_DEFAULTTOPRIMARY};
+use windows::Win32::UI::Shell::GetScaleFactorForMonitor;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowRect, ShowWindow, SW_SHOWDEFAULT, SW_SHOWMAXIMIZED,
+    SystemParametersInfoW, SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
 };
-use winit::event_loop::EventLoop;
-use winit::monitor::MonitorHandle;
+
+#[derive(Clone, Copy, Debug)]
+pub enum Scaling {
+    PHYSICAL,
+    LOGICAL,
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct WorkspaceArea {
@@ -14,32 +20,77 @@ pub struct WorkspaceArea {
     pub y: i32,
     pub width: i32,
     pub height: i32,
-    pub scale_factor: f64,
+    pub scaling: Scaling,
+    scale_factor: f64,
 }
 
-pub fn get_logical_workspace_size() -> WorkspaceArea {
-    let event_loop = EventLoop::new();
-    let monitor_handle: MonitorHandle = event_loop
-        .primary_monitor()
-        .expect("Failed to determine primary monitor.");
+impl WorkspaceArea {
+    pub fn logical(&self) -> WorkspaceArea {
+        match self.scaling {
+            Scaling::LOGICAL => return self.clone(),
+            Scaling::PHYSICAL => return self.convert_scaling(),
+        }
+    }
 
-    let scale_factor = monitor_handle.scale_factor();
-    drop(monitor_handle);
-    drop(event_loop);
+    pub fn physical(&self) -> WorkspaceArea {
+        match self.scaling {
+            Scaling::LOGICAL => return self.convert_scaling(),
+            Scaling::PHYSICAL => return self.clone(),
+        }
+    }
 
-    let hwnd = unsafe { GetConsoleWindow() };
-    // Maximize the window to retrieve the correct workspace dimensions
-    unsafe { ShowWindow(hwnd, SW_SHOWMAXIMIZED) };
-    let mut window_rect = RECT::default();
-    unsafe { GetWindowRect(hwnd, ptr::addr_of_mut!(window_rect)) };
-    // Restore window to original show state
-    unsafe { ShowWindow(hwnd, SW_SHOWDEFAULT) };
+    fn convert_scaling(&self) -> WorkspaceArea {
+        let scale_factor = 1 as f64 / self.scale_factor;
+        let x = self.x as f64 * scale_factor;
+        let y = self.y as f64 * scale_factor;
+        let width = self.width as f64 * scale_factor;
+        let height = self.height as f64 * scale_factor;
+        return WorkspaceArea {
+            x: x as i32,
+            y: y as i32,
+            width: width as i32,
+            height: height as i32,
+            scaling: Scaling::LOGICAL,
+            scale_factor: scale_factor,
+        };
+    }
+}
 
-    return WorkspaceArea {
-        x: (window_rect.left as f64 / scale_factor) as i32,
-        y: (window_rect.top as f64 / scale_factor) as i32,
-        width: ((window_rect.right - window_rect.left) as f64 / scale_factor) as i32,
-        height: ((window_rect.bottom - window_rect.top) as f64 / scale_factor) as i32,
-        scale_factor: scale_factor,
+fn get_primary_monitor() -> HMONITOR {
+    // By convention the primary monitor has it's upper left corner as 0,0.
+    return unsafe { MonitorFromPoint(POINT::default(), MONITOR_DEFAULTTOPRIMARY) };
+}
+
+fn get_scale_factor() -> f64 {
+    let scale_factor = unsafe {
+        GetScaleFactorForMonitor(get_primary_monitor())
+            .expect("Failed to retrieve scale factor for primary monitor")
+            .0
     };
+    // https://learn.microsoft.com/en-us/windows/win32/api/shtypes/ne-shtypes-device_scale_factor#constants
+    return (scale_factor / 100).into();
+}
+
+pub fn get_workspace_area(scaling: Scaling) -> WorkspaceArea {
+    let mut workspace_rect = RECT::default();
+    unsafe {
+        SystemParametersInfoW(
+            SPI_GETWORKAREA,
+            0,
+            Some(ptr::addr_of_mut!(workspace_rect) as *const c_void),
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        );
+    }
+    let workspace_area = WorkspaceArea {
+        x: workspace_rect.left,
+        y: workspace_rect.top,
+        width: workspace_rect.right - workspace_rect.left,
+        height: workspace_rect.bottom - workspace_rect.top,
+        scaling: Scaling::PHYSICAL,
+        scale_factor: get_scale_factor(),
+    };
+    match scaling {
+        Scaling::PHYSICAL => return workspace_area,
+        Scaling::LOGICAL => return workspace_area.logical(),
+    }
 }

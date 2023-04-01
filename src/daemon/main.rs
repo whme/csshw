@@ -14,7 +14,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
 mod workspace;
 
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
-const MIN_CONSOLE_HEIGHT: i32 = 100;
 
 /// Daemon CLI. Manages client consoles and user input
 #[derive(Parser, Debug)]
@@ -34,7 +33,7 @@ impl Daemon {
         WinConsole::set_title(&format!("{} daemon", PKG_NAME))
             .expect("Failed to set console window title.");
 
-        let workspace_area = workspace::get_logical_workspace_size();
+        let workspace_area = workspace::get_workspace_area(workspace::Scaling::LOGICAL);
         // +1 to account for the daemon console
         let number_of_consoles = (self.hosts.len() + 1) as i32;
         let title_bar_height = unsafe {
@@ -45,20 +44,14 @@ impl Daemon {
 
         // The daemon console can be treated as a client console when it comes
         // to figuring out where to put it on the screen.
+        // TODO: the daemon console should always be on the bottom left
         let (x, y, width, height) = determine_client_spacial_attributes(
             number_of_consoles - 1, // -1 because the index starts at 0
             number_of_consoles,
             &workspace_area,
             title_bar_height,
         );
-        // for some reason the daemon console window uses physical size instead of logical
-        // so we convert logical size back to physical
-        arrange_daemon_console(
-            (x as f64 * workspace_area.scale_factor) as i32,
-            (y as f64 * workspace_area.scale_factor) as i32,
-            (width as f64 * workspace_area.scale_factor) as i32,
-            (height as f64 * workspace_area.scale_factor) as i32,
-        );
+        arrange_daemon_console(x, y, width, height);
 
         self.run(self.launch_clients(&workspace_area, number_of_consoles, title_bar_height));
     }
