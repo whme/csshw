@@ -14,6 +14,42 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
 
+use crate::deserialization::Deserialize;
+use crate::serialization::Serialize;
+
+mod deserialization;
+mod serialization;
+
+trait StringRepr {
+    fn string_repr(&self) -> String;
+}
+
+impl StringRepr for KEY_EVENT_RECORD_0 {
+    fn string_repr(&self) -> String {
+        return format!("unicode_char: {}", unsafe { self.UnicodeChar }.to_string());
+    }
+}
+
+impl StringRepr for KEY_EVENT_RECORD {
+    fn string_repr(&self) -> String {
+        return vec![
+            format!("key_down: {}", self.bKeyDown.as_bool().to_string()),
+            format!("repeat_count: {}", self.wRepeatCount.to_string()),
+            format!("virtual_key_code: {}", self.wVirtualKeyCode.to_string()),
+            format!("virtual_scan_code: {}", self.wVirtualScanCode.to_string()),
+            format!("char: {}", self.uChar.string_repr()),
+            format!("control_key_state: {}", self.dwControlKeyState.to_string()),
+        ]
+        .join(",\n");
+    }
+}
+
+impl StringRepr for INPUT_RECORD_0 {
+    fn string_repr(&self) -> String {
+        return unsafe { self.KeyEvent }.string_repr();
+    }
+}
+
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
 pub fn print_console_rect() {
@@ -156,4 +192,20 @@ pub fn get_process_exit_code(hprocess: HANDLE) -> u32 {
         GetExitCodeProcess(hprocess, &mut exit_code).expect("Failed to get process exit code");
     }
     return exit_code;
+}
+
+pub fn serde_input_record() {
+    let mut rec = INPUT_RECORD_0::default();
+    rec.KeyEvent = KEY_EVENT_RECORD {
+        bKeyDown: true.into(),
+        wRepeatCount: 1,
+        wVirtualKeyCode: 0x41,
+        wVirtualScanCode: 0,
+        uChar: KEY_EVENT_RECORD_0 { UnicodeChar: 0x41 },
+        dwControlKeyState: 0,
+    };
+    println!("{}", rec.string_repr());
+    let mut serialized = rec.serialize();
+    let deserialized = INPUT_RECORD_0::deserialize(&mut serialized);
+    println!("{}", deserialized.string_repr());
 }

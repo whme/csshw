@@ -1,7 +1,7 @@
 use clap::Parser;
 use dissh::{
-    get_process_exit_code, print_std_handles, sleep, spawn_console_process, wait_for_input,
-    PKG_NAME,
+    get_process_exit_code, print_std_handles, serde_input_record, sleep, spawn_console_process,
+    wait_for_input, PKG_NAME,
 };
 use win32console::console::WinConsole;
 use windows::Win32::System::Console::GetConsoleWindow;
@@ -57,6 +57,7 @@ impl Daemon {
         //TODO: read from daemon console and publish
         // read user input to clients
         print_std_handles();
+        serde_input_record();
         wait_for_input();
         loop {
             for proc_info in &proc_infos {
