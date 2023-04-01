@@ -1,5 +1,7 @@
 use clap::Parser;
 
+mod leader;
+
 /// Simple SSH multiplexer
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -11,8 +13,6 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-
-    for host in args.hosts.iter() {
-        println!("{:?}", host);
-    }
+    let _leader = leader::Leader { hosts: args.hosts };
+    _leader.launch_followers();
 }
