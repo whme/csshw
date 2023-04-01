@@ -3,11 +3,25 @@ name = "dissh"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "dissh"
+path = "src/main.rs"
+
+[[bin]]
+name = "dissh-daemon"
+path = "src/daemon/main.rs"
+
+[[bin]]
+name = "dissh-client"
+path = "src/client/main.rs"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 clap = { version = "3.1.12", features = ["derive"] }
 whoami = "1.3.0"
+winit = "0.28.1"
+win32console = "0.1.5"
 [dependencies.windows]
 version = "0.44.0"
 features = [

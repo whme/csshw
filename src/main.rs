@@ -1,14 +1,17 @@
-use clap::Parser;
-use std::{thread, time};
+use std::{os::windows::process::CommandExt, process::Command};
 
-mod leader;
+use clap::Parser;
+use windows::Win32::System::Threading::CREATE_NEW_CONSOLE;
+
+const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
 /// Simple SSH multiplexer
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    #[clap(short = 'd', long, default_value = "ubuntu")]
-    wsl_distro: String,
+    /// Block until the session is terminted
+    #[clap(short, long)]
+    block: bool,
 
     /// Host(s) to connect to
     #[clap(required = true)]
@@ -17,13 +20,14 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    let _leader = leader::Leader {
-        hosts: args.hosts,
-        wsl_distro: args.wsl_distro,
-    };
-    unsafe {
-        _leader.test_window();
+    let mut daemon = Command::new(format!("{}-daemon", PKG_NAME))
+        .args(args.hosts)
+        .creation_flags(CREATE_NEW_CONSOLE.0)
+        .spawn()
+        .expect("Failed to start daemon process.");
+    if args.block {
+        daemon
+            .wait()
+            .expect("Failed to wait for daemon process or to retrieve output");
     }
-    println!("Test 1 two 3");
-    thread::sleep(time::Duration::from_millis(10000));
 }
