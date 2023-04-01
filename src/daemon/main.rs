@@ -105,23 +105,17 @@ fn determine_client_spacial_attributes(
     // FIXME: somehow we always have 0 columns
     // FIXME: now that we account for title bar height we miss almost half the screen
     // https://math.stackexchange.com/a/21734
-    let number_of_columns = number_of_consoles / workspace_area.height / MIN_CONSOLE_HEIGHT;
-    if number_of_columns == 0 {
-        let console_height = (workspace_area.height / number_of_consoles) - title_bar_height;
-        return (
-            workspace_area.x,
-            workspace_area.y + index * console_height,
-            workspace_area.width,
-            console_height,
-        );
-    }
+    let height_width_ratio = workspace_area.height as f64 / workspace_area.width as f64;
+    let number_of_columns = (number_of_consoles as f64 / height_width_ratio).sqrt() as i32;
+    let console_width = workspace_area.width / number_of_columns;
+    let console_height = (console_width as f64 * height_width_ratio) as i32;
     let x = workspace_area.width / number_of_columns * (index % number_of_columns);
-    let y = (index / number_of_columns * workspace_area.height) - title_bar_height;
+    let y = index / number_of_columns * workspace_area.height;
     return (
         workspace_area.x + x,
         workspace_area.y + y,
-        (workspace_area.width / number_of_columns) - title_bar_height,
-        MIN_CONSOLE_HEIGHT,
+        console_width,
+        console_height,
     );
 }
 
