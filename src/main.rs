@@ -26,8 +26,6 @@ fn main() {
         .spawn()
         .expect("Failed to start daemon process.");
     if args.block {
-        daemon
-            .wait()
-            .expect("Failed to wait for daemon process or to retrieve output");
+        daemon.wait().expect("Failed to wait for daemon process");
     }
 }
