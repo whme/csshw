@@ -32,6 +32,7 @@ impl WorkspaceArea {
         }
     }
 
+    #[allow(dead_code)]
     pub fn physical(&self) -> WorkspaceArea {
         match self.scaling {
             Scaling::LOGICAL => return self.convert_scaling(),

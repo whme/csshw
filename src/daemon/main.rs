@@ -1,14 +1,11 @@
 use clap::Parser;
 use dissh::{
-    get_process_exit_code, print_std_handles, serde_input_record, sleep, spawn_console_process,
-    wait_for_input, PKG_NAME,
+    print_std_handles, serde_input_record, spawn_console_process, wait_for_input, PKG_NAME,
 };
 use win32console::console::WinConsole;
 use windows::Win32::System::Console::GetConsoleWindow;
 use windows::Win32::System::Threading::PROCESS_INFORMATION;
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetSystemMetrics, MoveWindow, SM_CXBORDER, SM_CXPADDEDBORDER, SM_CYSIZE,
-};
+use windows::Win32::UI::WindowsAndMessaging::MoveWindow;
 
 mod workspace;
 
@@ -33,11 +30,6 @@ impl Daemon {
         let workspace_area = workspace::get_workspace_area(workspace::Scaling::LOGICAL);
         // +1 to account for the daemon console
         let number_of_consoles = (self.hosts.len() + 1) as i32;
-        let title_bar_height = unsafe {
-            GetSystemMetrics(SM_CXBORDER)
-                + GetSystemMetrics(SM_CYSIZE)
-                + GetSystemMetrics(SM_CXPADDEDBORDER)
-        };
 
         // The daemon console can be treated as a client console when it comes
         // to figuring out where to put it on the screen.
@@ -46,41 +38,32 @@ impl Daemon {
             number_of_consoles - 1, // -1 because the index starts at 0
             number_of_consoles,
             &workspace_area,
-            title_bar_height,
         );
         arrange_daemon_console(x, y, width, height);
 
-        self.run(self.launch_clients(&workspace_area, number_of_consoles, title_bar_height));
+        self.run(self.launch_clients(&workspace_area, number_of_consoles));
     }
 
-    fn run(&self, proc_infos: Vec<PROCESS_INFORMATION>) {
+    fn run(&self, _proc_infos: Vec<PROCESS_INFORMATION>) {
         //TODO: read from daemon console and publish
         // read user input to clients
         print_std_handles();
         serde_input_record();
         wait_for_input();
-        loop {
-            for proc_info in &proc_infos {
-                let exit_code = get_process_exit_code(proc_info.hProcess);
-                println!("{:?}: {:?}", proc_info.dwProcessId, exit_code);
-            }
-            sleep(5);
-        }
     }
 
     fn launch_clients(
         &self,
         workspace_area: &workspace::WorkspaceArea,
         number_of_consoles: i32,
-        title_bar_height: i32,
     ) -> Vec<PROCESS_INFORMATION> {
+        // TODO: use tokio runtimes to parallelize this process;
         let mut proc_infos: Vec<PROCESS_INFORMATION> = Vec::new();
         for (index, host) in self.hosts.iter().enumerate() {
             let (x, y, width, height) = determine_client_spacial_attributes(
                 index as i32,
                 number_of_consoles,
                 workspace_area,
-                title_bar_height,
             );
             proc_infos.push(launch_client_console(host, x, y, width, height));
         }
@@ -99,7 +82,6 @@ fn determine_client_spacial_attributes(
     index: i32,
     number_of_consoles: i32,
     workspace_area: &workspace::WorkspaceArea,
-    title_bar_height: i32,
 ) -> (i32, i32, i32, i32) {
     let height_width_ratio = workspace_area.height as f64 / workspace_area.width as f64;
     let number_of_columns = (number_of_consoles as f64 / height_width_ratio).sqrt() as i32;
