@@ -5,14 +5,13 @@ use dissh::{
     serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
     utils::{
-        constants::{PIPE_NAME, PKG_NAME},
+        constants::{CTRL_C_INPUT_RECORD, PIPE_NAME, PKG_NAME},
         get_console_input_buffer,
     },
 };
 use tokio::{
     net::windows::named_pipe::{NamedPipeServer, PipeMode, ServerOptions},
     sync::broadcast::{self, Receiver, Sender},
-    task::JoinHandle,
 };
 use win32console::console::WinConsole;
 use windows::Win32::System::Console::{
@@ -24,7 +23,6 @@ use windows::Win32::UI::WindowsAndMessaging::MoveWindow;
 mod workspace;
 
 const KEY_EVENT: u16 = 1;
-const VK_ESCAPE: u16 = 0x1B;
 
 /// Daemon CLI. Manages client consoles and user input
 #[derive(Parser, Debug)]
@@ -69,14 +67,26 @@ impl Daemon {
         let (sender, _) =
             broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(self.hosts.len());
 
-        let server = self.launch_named_pipe_server(&sender);
+        self.launch_named_pipe_server(&sender);
+
+        let ctrl_sender = sender.clone();
+
+        tokio::spawn(async move {
+            let mut ctrl_c_listener = tokio::signal::windows::ctrl_c().unwrap();
+            loop {
+                ctrl_c_listener.recv().await;
+                ctrl_sender
+                    .send(
+                        CTRL_C_INPUT_RECORD.serialize().as_mut_vec()[..]
+                            .try_into()
+                            .unwrap(),
+                    )
+                    .unwrap();
+            }
+        });
 
         loop {
             let input_record = read_keyboard_input();
-            match unsafe { input_record.KeyEvent }.wVirtualKeyCode {
-                VK_ESCAPE => break,
-                _ => (),
-            }
             sender
                 .send(
                     input_record.serialize().as_mut_vec()[..]
@@ -85,16 +95,9 @@ impl Daemon {
                 )
                 .unwrap();
         }
-
-        drop(server);
     }
 
-    fn launch_named_pipe_server(
-        &self,
-        sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
-    ) -> Vec<JoinHandle<()>> {
-        let mut server: Vec<JoinHandle<()>> = Vec::new();
-
+    fn launch_named_pipe_server(&self, sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>) {
         for _ in &self.hosts {
             let named_pipe_server = ServerOptions::new()
                 .access_outbound(true)
@@ -102,12 +105,10 @@ impl Daemon {
                 .create(PIPE_NAME)
                 .unwrap();
             let mut receiver = sender.subscribe();
-            server.push(tokio::spawn(async move {
+            tokio::spawn(async move {
                 named_pipe_server_routine(named_pipe_server, &mut receiver).await;
-            }));
+            });
         }
-
-        return server;
     }
 }
 

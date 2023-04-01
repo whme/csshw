@@ -3,6 +3,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use clap::Parser;
+use dissh::utils::constants::VK_CTRL_C;
 use dissh::utils::get_console_input_buffer;
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
@@ -47,13 +48,11 @@ struct Args {
 }
 
 fn write_console_input(input_record: INPUT_RECORD_0) {
-    // println!("Received input_record: {}", input_record.string_repr());
     let buffer: [INPUT_RECORD; 1] = [INPUT_RECORD {
         EventType: KEY_EVENT as u16,
         Event: input_record,
     }];
     let mut nb_of_events_written: u32 = 0;
-    // FIXME: somehow the input record is not being written
     unsafe {
         if WriteConsoleInputW(
             get_console_input_buffer(),
@@ -94,6 +93,8 @@ async fn main() {
     };
     named_pipe_client.ready(Interest::READABLE).await.unwrap();
 
+    // FIXME: we should also periodically check if the child is still alive
+    // if not: exit the loop
     loop {
         // Sleep some time to avoid hogging 100% CPU usage.
         tokio::time::sleep(Duration::from_millis(5)).await;
@@ -116,7 +117,19 @@ async fn main() {
                 continue;
             }
         }
-        write_console_input(INPUT_RECORD_0::deserialize(&mut buf));
+        let input_record = INPUT_RECORD_0::deserialize(&mut buf);
+        match unsafe { input_record.KeyEvent }.wVirtualKeyCode {
+            VK_CTRL_C => {
+                // FIXME: not working:
+                // unsafe {
+                //     windows::Win32::System::Console::GenerateConsoleCtrlEvent(0, 0);
+                // }
+                println!("Received CTRL + C");
+            }
+            _ => {
+                write_console_input(input_record);
+            }
+        }
     }
 
     match child.kill() {
