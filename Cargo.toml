@@ -26,7 +26,6 @@ win32console = "0.1.5"
 [dependencies.windows]
 version = "0.44.0"
 features = [
-    "Data_Xml_Dom",
     "Win32_Foundation",
     "Win32_Security",
     "Win32_System_Console",
