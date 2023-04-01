@@ -10,14 +10,14 @@
 `cargo build`
 
 ## Run debug version
-`ddissh.exe [args]`
+`dissh.exe [args]`
 (It's a symlink to `/target/debug/dissh.exe`)
 
 ## Build and run
 `cargo run`
 
 ## Format + Build + Run
-`cargo fmt; cargo build; if ($?) { .\ddish.exe foo bar }`
+`cargo fmt; cargo build; if ($?) { .\dissh.exe foo bar }`
 
 # Dev idea
 
