@@ -13,7 +13,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 mod workspace;
 
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
-const MIN_CONSOLE_HEIGHT: u32 = 100;
+const MIN_CONSOLE_HEIGHT: i32 = 100;
 
 /// Daemon CLI. Manages client consoles and user input
 #[derive(Parser, Debug)]
@@ -35,12 +35,12 @@ impl Daemon {
 
         let workspace_area = workspace::get_logical_workspace_size();
         // +1 to account for the daemon console
-        let number_of_consoles = (self.hosts.len() + 1) as u32;
+        let number_of_consoles = (self.hosts.len() + 1) as i32;
         let title_bar_height = unsafe {
             GetSystemMetrics(SM_CXBORDER)
                 + GetSystemMetrics(SM_CYSIZE)
                 + GetSystemMetrics(SM_CXPADDEDBORDER)
-        } as u32;
+        } as i32;
 
         // The daemon console can be treated as a client console when it comes
         // to figuring out where to put it on the screen.
@@ -71,13 +71,13 @@ impl Daemon {
     fn launch_clients(
         &self,
         workspace_area: &workspace::WorkspaceArea,
-        number_of_consoles: u32,
-        title_bar_height: u32,
+        number_of_consoles: i32,
+        title_bar_height: i32,
     ) -> Vec<Child> {
         let mut client_consoles: Vec<Child> = Vec::new();
         for (index, host) in self.hosts.iter().enumerate() {
             let (x, y, width, height) = determine_client_spacial_attributes(
-                index as u32,
+                index as i32,
                 number_of_consoles,
                 workspace_area,
                 title_bar_height,
@@ -96,11 +96,12 @@ fn arrange_daemon_console(x: i32, y: i32, width: i32, height: i32) {
 }
 
 fn determine_client_spacial_attributes(
-    index: u32,
-    number_of_consoles: u32,
+    index: i32,
+    number_of_consoles: i32,
     workspace_area: &workspace::WorkspaceArea,
-    title_bar_height: u32,
-) -> (u32, u32, u32, u32) {
+    title_bar_height: i32,
+) -> (i32, i32, i32, i32) {
+    println!("index: {index}");
     // FIXME: somehow we always have 0 columns
     // FIXME: now that we account for title bar height we miss almost half the screen
     // https://math.stackexchange.com/a/21734
@@ -108,7 +109,7 @@ fn determine_client_spacial_attributes(
     if number_of_columns == 0 {
         let console_height = (workspace_area.height / number_of_consoles) - title_bar_height;
         return (
-            workspace_area.x as u32,
+            workspace_area.x,
             workspace_area.y + index * console_height,
             workspace_area.width,
             console_height,
@@ -124,9 +125,12 @@ fn determine_client_spacial_attributes(
     );
 }
 
-fn launch_client_console(host: &String, x: u32, y: u32, width: u32, height: u32) -> Child {
+fn launch_client_console(host: &String, x: i32, y: i32, width: i32, height: i32) -> Child {
+    // The first argument must be `--` to ensure all following arguments are treated
+    // as positional arguments and not as options of they start with `-`.
     return Command::new(format!("{}-client", PKG_NAME))
         .args([
+            "--".to_string(),
             host.to_string(),
             x.to_string(),
             y.to_string(),
