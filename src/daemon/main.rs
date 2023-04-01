@@ -40,7 +40,7 @@ impl Daemon {
             GetSystemMetrics(SM_CXBORDER)
                 + GetSystemMetrics(SM_CYSIZE)
                 + GetSystemMetrics(SM_CXPADDEDBORDER)
-        } as i32;
+        };
 
         // The daemon console can be treated as a client console when it comes
         // to figuring out where to put it on the screen.
