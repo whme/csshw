@@ -1,14 +1,28 @@
 use clap::Parser;
 use dissh::{
+    serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
-    utils::{constants::PKG_NAME, print_std_handles, serde_input_record, wait_for_input},
+    utils::{
+        constants::{PIPE_NAME, PKG_NAME},
+        get_console_input_buffer, wait_for_input,
+    },
+};
+use tokio::{
+    net::windows::named_pipe::{PipeMode, ServerOptions},
+    sync::broadcast::{self, Sender},
+    task::JoinHandle,
 };
 use win32console::console::WinConsole;
-use windows::Win32::System::Console::GetConsoleWindow;
+use windows::Win32::System::Console::{
+    GetConsoleWindow, ReadConsoleInputW, INPUT_RECORD, INPUT_RECORD_0,
+};
 use windows::Win32::System::Threading::PROCESS_INFORMATION;
 use windows::Win32::UI::WindowsAndMessaging::MoveWindow;
 
 mod workspace;
+
+const KEY_EVENT: u16 = 1;
+const VK_ESCAPE: u16 = 0x1B;
 
 /// Daemon CLI. Manages client consoles and user input
 #[derive(Parser, Debug)]
@@ -45,7 +59,7 @@ impl Daemon {
         self.run(self.launch_clients(&workspace_area, number_of_consoles));
     }
 
-    fn run(&self, _proc_infos: Vec<PROCESS_INFORMATION>) {
+    fn run(&self, proc_infos: Vec<PROCESS_INFORMATION>) {
         //TODO: use tokio named_pipes
         // https://docs.rs/tokio/latest/tokio/net/windows/named_pipe/index.html
         // for IPC.
@@ -55,10 +69,56 @@ impl Daemon {
         // broadcast queue https://docs.rs/tokio/latest/tokio/sync/broadcast/index.html
         // to emit the read INPUT_RECORDS to all servers which will inturn send
         // them to the clients.
+        let (sender, _) =
+            broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(proc_infos.len());
 
-        print_std_handles();
-        serde_input_record();
+        let server = self.launch_named_pipe_server(&sender);
+
+        loop {
+            let input_record = read_keyboard_input();
+            match unsafe { input_record.KeyEvent }.wVirtualKeyCode {
+                VK_ESCAPE => break,
+                _ => (),
+            }
+            sender
+                .send(
+                    input_record.serialize().as_mut_vec()[..]
+                        .try_into()
+                        .unwrap(),
+                )
+                .unwrap();
+        }
+
+        drop(server);
         wait_for_input();
+    }
+
+    fn launch_named_pipe_server(
+        &self,
+        sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
+    ) -> Vec<JoinHandle<()>> {
+        let mut server: Vec<JoinHandle<()>> = Vec::new();
+
+        for (i, _) in self.hosts.iter().enumerate() {
+            let named_pipe_server = ServerOptions::new()
+                .access_outbound(true)
+                .pipe_mode(PipeMode::Message)
+                .create(PIPE_NAME)
+                .unwrap();
+            let mut receiver = sender.subscribe();
+            server.push(tokio::spawn(async move {
+                // wait for a client to connect
+                named_pipe_server.connect().await.unwrap();
+                println!("[{i}] Client has connected to named pipe server.");
+                loop {
+                    let ser_input_record = receiver.recv().await.unwrap();
+                    println!("[{i}] Received serialized input record, sending it over named pipe");
+                    named_pipe_server.try_write(&ser_input_record).unwrap();
+                }
+            }));
+        }
+
+        return server;
     }
 
     fn launch_clients(
@@ -128,7 +188,42 @@ fn launch_client_console(
     );
 }
 
-fn main() {
+fn read_keyboard_input() -> INPUT_RECORD_0 {
+    loop {
+        let input_record = read_console_input();
+        match input_record.EventType {
+            KEY_EVENT => {
+                return input_record.Event;
+            }
+            _ => {
+                continue;
+            }
+        }
+    }
+}
+
+fn read_console_input() -> INPUT_RECORD {
+    const NB_EVENTS: usize = 1;
+    let mut input_buffer: [INPUT_RECORD; NB_EVENTS] = [INPUT_RECORD::default(); NB_EVENTS];
+    let mut number_of_events_read = 0;
+    loop {
+        unsafe {
+            ReadConsoleInputW(
+                get_console_input_buffer(),
+                &mut input_buffer,
+                &mut number_of_events_read,
+            )
+            .expect("Failed to read console input");
+        }
+        if number_of_events_read == NB_EVENTS as u32 {
+            break;
+        }
+    }
+    return input_buffer[0];
+}
+
+#[tokio::main]
+async fn main() {
     let args = Args::parse();
     let daemon = Daemon { hosts: args.hosts };
     daemon.launch();

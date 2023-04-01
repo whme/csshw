@@ -105,7 +105,7 @@ pub fn print_std_handles() {
     );
 }
 
-fn get_console_input_buffer() -> HANDLE {
+pub fn get_console_input_buffer() -> HANDLE {
     return get_std_handle(STD_INPUT_HANDLE);
 }
 
