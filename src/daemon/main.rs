@@ -46,8 +46,11 @@ impl Daemon {
     }
 
     fn run(&self, _proc_infos: Vec<PROCESS_INFORMATION>) {
-        //TODO: read from daemon console and publish
-        // read user input to clients
+        //TODO: use tokio named_pipes
+        // https://docs.rs/tokio/latest/tokio/net/windows/named_pipe/index.html
+        // for IPC.
+        // FIXME: directly reading from the input buffer prevents the automatic
+        // printing of the typed input
         print_std_handles();
         serde_input_record();
         wait_for_input();
