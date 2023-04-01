@@ -1,6 +1,6 @@
 use clap::Parser;
 
-/// Simple ssh multiplexer
+/// Simple SSH multiplexer
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
