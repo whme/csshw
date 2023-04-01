@@ -132,7 +132,6 @@ async fn main() {
                     // Exit the client too in that case.
                     break;
                 }
-                // println!("Received {read_bytes} bytes");
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                 continue;
