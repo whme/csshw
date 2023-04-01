@@ -1,11 +1,7 @@
-use std::process::{Command, Stdio};
-use std::{os::windows::process::CommandExt, process::Child};
-
 use clap::Parser;
-use dissh::{wait_for_input, PKG_NAME};
+use dissh::{print_std_handles, spawn_console_process, wait_for_input, PKG_NAME};
 use win32console::console::WinConsole;
 use windows::Win32::System::Console::GetConsoleWindow;
-use windows::Win32::System::Threading::CREATE_NEW_CONSOLE;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetSystemMetrics, MoveWindow, SM_CXBORDER, SM_CXPADDEDBORDER, SM_CYSIZE,
 };
@@ -50,12 +46,14 @@ impl Daemon {
         );
         arrange_daemon_console(x, y, width, height);
 
-        self.run(self.launch_clients(&workspace_area, number_of_consoles, title_bar_height));
+        self.launch_clients(&workspace_area, number_of_consoles, title_bar_height);
+        self.run();
     }
 
-    fn run(&self, client_consoles: Vec<Child>) {
+    fn run(&self) {
         //TODO: read from daemon console and publish
         // read user input to clients
+        print_std_handles();
         wait_for_input();
     }
 
@@ -64,8 +62,8 @@ impl Daemon {
         workspace_area: &workspace::WorkspaceArea,
         number_of_consoles: i32,
         title_bar_height: i32,
-    ) -> Vec<Child> {
-        let mut client_consoles: Vec<Child> = Vec::new();
+    ) {
+        // FIXME: for some reason not all clients survive
         for (index, host) in self.hosts.iter().enumerate() {
             let (x, y, width, height) = determine_client_spacial_attributes(
                 index as i32,
@@ -73,9 +71,8 @@ impl Daemon {
                 workspace_area,
                 title_bar_height,
             );
-            client_consoles.push(launch_client_console(host, x, y, width, height));
+            launch_client_console(host, x, y, width, height);
         }
-        return client_consoles;
     }
 }
 
@@ -106,21 +103,20 @@ fn determine_client_spacial_attributes(
     );
 }
 
-fn launch_client_console(host: &String, x: i32, y: i32, width: i32, height: i32) -> Child {
+fn launch_client_console(host: &String, x: i32, y: i32, width: i32, height: i32) {
     // The first argument must be `--` to ensure all following arguments are treated
     // as positional arguments and not as options of they start with `-`.
-    return Command::new(format!("{}-client", PKG_NAME))
-        .args([
+    spawn_console_process(
+        format!("{}-client", PKG_NAME),
+        vec![
             "--".to_string(),
             host.to_string(),
             x.to_string(),
             y.to_string(),
             width.to_string(),
             height.to_string(),
-        ])
-        .creation_flags(CREATE_NEW_CONSOLE.0)
-        .spawn()
-        .expect("Failed to start client process.");
+        ],
+    );
 }
 
 fn main() {

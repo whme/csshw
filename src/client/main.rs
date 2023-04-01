@@ -4,7 +4,7 @@ use win32console::console::WinConsole;
 use windows::Win32::System::Console::GetConsoleWindow;
 use windows::Win32::UI::WindowsAndMessaging::MoveWindow;
 
-use dissh::{wait_for_input, PKG_NAME};
+use dissh::{print_std_handles, wait_for_input, PKG_NAME};
 
 /// Daemon CLI. Manages client consoles and user input
 #[derive(Parser, Debug)]
@@ -35,6 +35,7 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
+    print_std_handles();
     WinConsole::set_title(&format!("{} - {}@{}", PKG_NAME, username(), args.host))
         .expect("Failed to set console window title.");
     let hwnd = unsafe { GetConsoleWindow() };
