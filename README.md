@@ -1,5 +1,8 @@
 # dissh - distributed SSH
 
+## Setup githooks
+`git config --local core.hooksPath .githooks/`
+
 ## Format
 `cargo fmt`
 
