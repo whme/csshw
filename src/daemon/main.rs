@@ -1,14 +1,10 @@
-use std::mem;
 use std::process::Command;
 use std::{os::windows::process::CommandExt, process::Child};
 
 use clap::Parser;
-use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, HMONITOR, MONITORINFO, MONITORINFOEXW};
 use windows::Win32::System::Threading::CREATE_NEW_CONSOLE;
-use winit::event_loop::EventLoop;
-use winit::monitor::MonitorHandle;
-use winit::platform::windows::MonitorHandleExtWindows;
-use winit::window::Window;
+
+mod workspace;
 
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 const MIN_CONSOLE_HEIGHT: u32 = 100;
@@ -22,12 +18,12 @@ struct Args {
     hosts: Vec<String>,
 }
 
-pub struct Daemon {
+struct Daemon {
     hosts: Vec<String>,
 }
 
 impl Daemon {
-    pub fn launch(&self) {
+    fn launch(&self) {
         self.run(self.launch_clients());
     }
 
@@ -38,10 +34,10 @@ impl Daemon {
 
     fn launch_clients(&self) -> Vec<Child> {
         let mut client_consoles: Vec<Child> = Vec::new();
-        let workspace_area = get_logical_workspace_size();
+        let workspace_area = workspace::get_logical_workspace_size();
         let hosts_count = self.hosts.len();
         for (index, host) in self.hosts.iter().enumerate() {
-            let (x, y, width, height) = self.determine_client_spacial_attributes(
+            let (x, y, width, height) = determine_client_spacial_attributes(
                 index as u32,
                 hosts_count as u32,
                 workspace_area,
@@ -50,35 +46,34 @@ impl Daemon {
         }
         return client_consoles;
     }
+}
 
-    fn determine_client_spacial_attributes(
-        &self,
-        index: u32,
-        hosts_count: u32,
-        workspace_area: WorkspaceArea,
-    ) -> (u32, u32, u32, u32) {
-        // FIXME: somehow we always have 0 columns
-        // FIXME: account for title bar height
-        // FIXME: account for daemon console itself
-        let number_of_columns = hosts_count / workspace_area.height / MIN_CONSOLE_HEIGHT;
-        if number_of_columns == 0 {
-            let console_height = workspace_area.height / hosts_count;
-            return (
-                workspace_area.x as u32,
-                workspace_area.y + index * console_height,
-                workspace_area.width,
-                console_height,
-            );
-        }
-        let x = workspace_area.width / number_of_columns * (index % number_of_columns);
-        let y = index / number_of_columns * workspace_area.height;
+fn determine_client_spacial_attributes(
+    index: u32,
+    hosts_count: u32,
+    workspace_area: workspace::WorkspaceArea,
+) -> (u32, u32, u32, u32) {
+    // FIXME: somehow we always have 0 columns
+    // FIXME: account for title bar height
+    // FIXME: account for daemon console itself
+    let number_of_columns = hosts_count / workspace_area.height / MIN_CONSOLE_HEIGHT;
+    if number_of_columns == 0 {
+        let console_height = workspace_area.height / hosts_count;
         return (
-            workspace_area.x + x,
-            workspace_area.y + y,
-            workspace_area.width / number_of_columns,
-            MIN_CONSOLE_HEIGHT,
+            workspace_area.x as u32,
+            workspace_area.y + index * console_height,
+            workspace_area.width,
+            console_height,
         );
     }
+    let x = workspace_area.width / number_of_columns * (index % number_of_columns);
+    let y = index / number_of_columns * workspace_area.height;
+    return (
+        workspace_area.x + x,
+        workspace_area.y + y,
+        workspace_area.width / number_of_columns,
+        MIN_CONSOLE_HEIGHT,
+    );
 }
 
 fn launch_client_console(host: &String, x: u32, y: u32, width: u32, height: u32) -> Child {
@@ -93,42 +88,6 @@ fn launch_client_console(host: &String, x: u32, y: u32, width: u32, height: u32)
         .creation_flags(CREATE_NEW_CONSOLE.0)
         .spawn()
         .expect("Failed to start daemon process.");
-}
-
-#[derive(Clone, Copy)]
-struct WorkspaceArea {
-    x: u32,
-    y: u32,
-    width: u32,
-    height: u32,
-}
-
-fn get_logical_workspace_size() -> WorkspaceArea {
-    let event_loop = EventLoop::new();
-    let monitor_handle: MonitorHandle = event_loop
-        .primary_monitor()
-        .expect("Failed to determine primary monitor.");
-    let hmonitor: HMONITOR = windows::Win32::Graphics::Gdi::HMONITOR(monitor_handle.hmonitor());
-    let mut monitor_info: MONITORINFOEXW = unsafe { mem::zeroed() };
-    monitor_info.monitorInfo.cbSize = mem::size_of::<MONITORINFOEXW>() as u32;
-    unsafe {
-        GetMonitorInfoW(
-            hmonitor,
-            &mut monitor_info as *mut MONITORINFOEXW as *mut MONITORINFO,
-        )
-    };
-    let window = Window::new(&event_loop).unwrap();
-    let scale_factor = window.scale_factor();
-    return WorkspaceArea {
-        x: (monitor_info.monitorInfo.rcMonitor.left as f64 / scale_factor) as u32,
-        y: (monitor_info.monitorInfo.rcMonitor.top as f64 / scale_factor) as u32,
-        width: ((monitor_info.monitorInfo.rcMonitor.right - monitor_info.monitorInfo.rcMonitor.left)
-            as f64
-            / scale_factor) as u32,
-        height: ((monitor_info.monitorInfo.rcMonitor.bottom
-            - monitor_info.monitorInfo.rcMonitor.top) as f64
-            / scale_factor) as u32,
-    };
 }
 
 fn main() {
