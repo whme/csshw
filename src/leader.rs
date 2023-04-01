@@ -1,7 +1,10 @@
 use std::os::windows::process::CommandExt;
 use std::process::{Child, Command};
 
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, WPARAM};
+use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
+use windows::core::{PWSTR};
+
+use windows::Win32::System::Threading::CreateProcessA;
 
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -16,10 +19,28 @@ pub struct Leader {
 }
 
 impl Leader {
-    pub fn launch_followers(&self) {
+    pub unsafe fn launch_followers(&self) {
         let number_of_windows = self.hosts.len();
+
+        // TODO: contribute setting lpTitle startupinfo (or entire startupinfo)
+        // to rust Command.
+        // https://github.dev/rust-lang/rust/blob/adb4bfd25d3c1190b0e7433ef945221d8aeea427/library/std/src/sys/windows/process.rs#L330
+
         let mut followers: Vec<Child> = Vec::new();
         for host in self.hosts.iter() {
+            let sub_process = CreateProcessA(
+                PWSTR::default(),
+                &format!("run 'python3 ~/dissh_test.py {};'", host),
+                0,
+                0,
+                false,
+                CREATE_NEW_CONSOLE,
+                0,
+                0,
+                0,
+                0,
+            );
+
             let sub_command = Command::new("ubuntu")
                 .args(&["run", &format!("python3 ~/dissh_test.py {};", host)])
                 .creation_flags(CREATE_NEW_CONSOLE)
