@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::{thread, time};
 
 mod leader;
 
@@ -20,5 +21,9 @@ fn main() {
         hosts: args.hosts,
         wsl_distro: args.wsl_distro,
     };
-    _leader.launch_followers();
+    unsafe {
+        _leader.test_window();
+    }
+    println!("Test 1 two 3");
+    thread::sleep(time::Duration::from_millis(10000));
 }

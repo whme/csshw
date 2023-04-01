@@ -3,7 +3,9 @@ use std::mem::size_of;
 use windows::Win32::Foundation::HWND;
 
 use windows::core::{PCWSTR, PWSTR};
+use windows::Win32::System::Console::{GetConsoleWindow, SetConsoleTitleW, SetConsoleTitleA};
 use windows::Win32::System::Threading::*;
+use windows::Win32::UI::WindowsAndMessaging::MoveWindow;
 
 use whoami::username;
 
@@ -70,6 +72,15 @@ impl Leader {
             }
             i += 1;
         }
+    }
+
+    pub unsafe fn test_window(&self) {
+        // TODO: use https://docs.rs/win32console/latest/win32console/index.html
+        // to build follower applications which will be started by the leader
+        // in a new window using normal std::process:Command and arrange themselves
+        // needed params: host, x, y, width, height
+        let window_handle = GetConsoleWindow();
+        MoveWindow(window_handle, 200, 200, 200, 200, true);
     }
 }
 
