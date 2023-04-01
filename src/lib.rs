@@ -35,9 +35,9 @@ impl StringRepr for KEY_EVENT_RECORD {
         return vec![
             format!("key_down: {}", self.bKeyDown.as_bool().to_string()),
             format!("repeat_count: {}", self.wRepeatCount.to_string()),
-            format!("virtual_key_code: {}", self.wVirtualKeyCode.to_string()),
-            format!("virtual_scan_code: {}", self.wVirtualScanCode.to_string()),
-            format!("char: {}", self.uChar.string_repr()),
+            format!("virtual_key_code: 0x{:x}", self.wVirtualKeyCode),
+            format!("virtual_scan_code: 0x{:x}", self.wVirtualScanCode),
+            format!("char: 0x{:x}", unsafe { self.uChar.UnicodeChar }),
             format!("control_key_state: {}", self.dwControlKeyState.to_string()),
         ]
         .join(",\n");
@@ -204,8 +204,11 @@ pub fn serde_input_record() {
         uChar: KEY_EVENT_RECORD_0 { UnicodeChar: 0x41 },
         dwControlKeyState: 0,
     };
-    println!("{}", rec.string_repr());
     let mut serialized = rec.serialize();
-    let deserialized = INPUT_RECORD_0::deserialize(&mut serialized);
-    println!("{}", deserialized.string_repr());
+    let deserialized = INPUT_RECORD_0::deserialize(&mut serialized.as_mut_vec()[..]);
+    assert_eq!(
+        rec.string_repr(),
+        deserialized.string_repr(),
+        "Serialization/Deserialization works!"
+    );
 }
