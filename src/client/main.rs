@@ -2,6 +2,7 @@ use std::{io, process};
 
 use clap::Parser;
 use dissh::utils::{get_console_input_buffer, wait_for_input};
+use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
 use whoami::username;
 use win32console::console::WinConsole;
@@ -66,8 +67,7 @@ fn write_console_input(input_record: INPUT_RECORD_0) {
     };
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let args = Args::parse();
     WinConsole::set_title(&format!("{} - {}@{}", PKG_NAME, username(), args.host))
         .expect("Failed to set console window title.");
@@ -75,13 +75,27 @@ async fn main() {
     unsafe {
         MoveWindow(hwnd, args.x, args.y, args.width, args.height, true);
     }
-    // FIXME: with many clients (>3?) the thread panics when trying to open
-    // the named pipe with "Cannot find file": maybe we should only spawn a server at a time
-    // and wait for a client to connect before spawning another one.
-    // Or simply keep retrying to create the client in case of this error
-    // i.e. maybe we cannot open the pipe if another process is currently opening it
-    let sub = tokio::spawn(async {
-        let named_pipe_client = ClientOptions::new().open(PIPE_NAME).unwrap();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_io()
+        .build()
+        .unwrap();
+
+    // FIXME: trying to `spawn` instead of `block_on` caused the
+    // thread to stay parked/stopped forever after the first successful
+    // loop iteration.
+    let named_pipe_client = runtime.block_on(async {
+        // Many clients trying to open the pipe at the same time can cause
+        // a file not found error, so keep trying until we managed to open it
+        let named_pipe_client: NamedPipeClient = loop {
+            match ClientOptions::new().open(PIPE_NAME) {
+                Ok(named_pipe_client) => {
+                    break named_pipe_client;
+                }
+                Err(_) => {
+                    continue;
+                }
+            }
+        };
         named_pipe_client.ready(Interest::READABLE).await.unwrap();
 
         // FIXME: only works for the first character for what ever reason..
@@ -94,9 +108,6 @@ async fn main() {
                         // Seems to only happen if the pipe is closed/server disconnects
                         // indicating that the daemon has been closed.
                         // Exit the client too in that case.
-                        // FIXME: after the first record has been written this also
-                        // doesn't work anymore, leaving me to assume that this thread
-                        // dies silently afterwards.
                         process::exit(0);
                     }
                     println!("Received {read_bytes} bytes");
@@ -113,6 +124,6 @@ async fn main() {
         }
     });
 
-    wait_for_input();
-    drop(sub);
+    // wait_for_input();
+    drop(named_pipe_client);
 }
