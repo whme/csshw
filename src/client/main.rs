@@ -1,7 +1,8 @@
-use std::{io, process};
+use std::io;
+use std::process::Command;
 
 use clap::Parser;
-use dissh::utils::{get_console_input_buffer, wait_for_input};
+use dissh::utils::get_console_input_buffer;
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
 use whoami::username;
@@ -15,7 +16,6 @@ use windows::Win32::UI::WindowsAndMessaging::MoveWindow;
 use dissh::{
     serde::{deserialization::Deserialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     utils::constants::{PIPE_NAME, PKG_NAME},
-    utils::debug::StringRepr,
 };
 
 /// Daemon CLI. Manages client consoles and user input
@@ -46,7 +46,7 @@ struct Args {
 }
 
 fn write_console_input(input_record: INPUT_RECORD_0) {
-    println!("Received input_record: {}", input_record.string_repr());
+    // println!("Received input_record: {}", input_record.string_repr());
     let buffer: [INPUT_RECORD; 1] = [INPUT_RECORD {
         EventType: KEY_EVENT as u16,
         Event: input_record,
@@ -67,7 +67,8 @@ fn write_console_input(input_record: INPUT_RECORD_0) {
     };
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Args::parse();
     WinConsole::set_title(&format!("{} - {}@{}", PKG_NAME, username(), args.host))
         .expect("Failed to set console window title.");
@@ -75,55 +76,53 @@ fn main() {
     unsafe {
         MoveWindow(hwnd, args.x, args.y, args.width, args.height, true);
     }
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_io()
-        .build()
-        .unwrap();
 
-    // FIXME: trying to `spawn` instead of `block_on` caused the
-    // thread to stay parked/stopped forever after the first successful
-    // loop iteration.
-    let named_pipe_client = runtime.block_on(async {
-        // Many clients trying to open the pipe at the same time can cause
-        // a file not found error, so keep trying until we managed to open it
-        let named_pipe_client: NamedPipeClient = loop {
-            match ClientOptions::new().open(PIPE_NAME) {
-                Ok(named_pipe_client) => {
-                    break named_pipe_client;
-                }
-                Err(_) => {
-                    continue;
-                }
-            }
-        };
-        named_pipe_client.ready(Interest::READABLE).await.unwrap();
+    let mut child = Command::new("cmd.exe").spawn().unwrap();
 
-        // FIXME: only works for the first character for what ever reason..
-        loop {
-            let mut buf: [u8; SERIALIZED_INPUT_RECORD_0_LENGTH] =
-                [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
-            match named_pipe_client.try_read(&mut buf) {
-                Ok(read_bytes) => {
-                    if read_bytes != SERIALIZED_INPUT_RECORD_0_LENGTH {
-                        // Seems to only happen if the pipe is closed/server disconnects
-                        // indicating that the daemon has been closed.
-                        // Exit the client too in that case.
-                        process::exit(0);
-                    }
-                    println!("Received {read_bytes} bytes");
-                }
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    continue;
-                }
-                Err(e) => {
-                    println!("{}", e);
-                    continue;
-                }
+    // Many clients trying to open the pipe at the same time can cause
+    // a file not found error, so keep trying until we managed to open it
+    let named_pipe_client: NamedPipeClient = loop {
+        match ClientOptions::new().open(PIPE_NAME) {
+            Ok(named_pipe_client) => {
+                break named_pipe_client;
             }
-            write_console_input(INPUT_RECORD_0::deserialize(&mut buf));
+            Err(_) => {
+                continue;
+            }
         }
-    });
+    };
+    named_pipe_client.ready(Interest::READABLE).await.unwrap();
 
-    // wait_for_input();
-    drop(named_pipe_client);
+    loop {
+        let mut buf: [u8; SERIALIZED_INPUT_RECORD_0_LENGTH] = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
+        match named_pipe_client.try_read(&mut buf) {
+            Ok(read_bytes) => {
+                if read_bytes != SERIALIZED_INPUT_RECORD_0_LENGTH {
+                    // Seems to only happen if the pipe is closed/server disconnects
+                    // indicating that the daemon has been closed.
+                    // Exit the client too in that case.
+                    break;
+                }
+                // println!("Received {read_bytes} bytes");
+            }
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                continue;
+            }
+            Err(e) => {
+                println!("{}", e);
+                continue;
+            }
+        }
+        write_console_input(INPUT_RECORD_0::deserialize(&mut buf));
+    }
+
+    match child.kill() {
+        Ok(()) => (),
+        Err(e) if e.kind() == io::ErrorKind::InvalidInput => (),
+        Err(_) => {
+            println!("Failed to kill child process!");
+        }
+    }
+
+    drop(child);
 }

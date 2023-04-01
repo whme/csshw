@@ -1,3 +1,5 @@
+use std::io;
+
 use clap::Parser;
 use dissh::{
     serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
@@ -8,8 +10,8 @@ use dissh::{
     },
 };
 use tokio::{
-    net::windows::named_pipe::{PipeMode, ServerOptions},
-    sync::broadcast::{self, Sender},
+    net::windows::named_pipe::{NamedPipeServer, PipeMode, ServerOptions},
+    sync::broadcast::{self, Receiver, Sender},
     task::JoinHandle,
 };
 use win32console::console::WinConsole;
@@ -92,7 +94,7 @@ impl Daemon {
     ) -> Vec<JoinHandle<()>> {
         let mut server: Vec<JoinHandle<()>> = Vec::new();
 
-        for (i, _) in self.hosts.iter().enumerate() {
+        for _ in &self.hosts {
             let named_pipe_server = ServerOptions::new()
                 .access_outbound(true)
                 .pipe_mode(PipeMode::Message)
@@ -100,15 +102,7 @@ impl Daemon {
                 .unwrap();
             let mut receiver = sender.subscribe();
             server.push(tokio::spawn(async move {
-                // wait for a client to connect
-                named_pipe_server.connect().await.unwrap();
-                println!("[{i}] Client has connected to named pipe server.");
-                loop {
-                    let ser_input_record = receiver.recv().await.unwrap();
-                    println!("[{i}] Received serialized input record, sending it over named pipe");
-                    // FIXME: catch and ignore broken pipe error (can happen if the client window get's closed)
-                    named_pipe_server.try_write(&ser_input_record).unwrap();
-                }
+                named_pipe_server_routine(named_pipe_server, &mut receiver).await;
             }));
         }
 
@@ -214,6 +208,32 @@ fn read_console_input() -> INPUT_RECORD {
         }
     }
     return input_buffer[0];
+}
+
+async fn named_pipe_server_routine(
+    server: NamedPipeServer,
+    receiver: &mut Receiver<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
+) {
+    // wait for a client to connect
+    server.connect().await.unwrap();
+    loop {
+        let ser_input_record = receiver.recv().await.unwrap();
+        loop {
+            server.writable().await.unwrap();
+            match server.try_write(&ser_input_record) {
+                Ok(_) => {
+                    break;
+                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    // Try again
+                    continue;
+                }
+                Err(e) => {
+                    panic!("{}", e);
+                }
+            }
+        }
+    }
 }
 
 #[tokio::main]
