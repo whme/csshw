@@ -51,6 +51,11 @@ impl Daemon {
         // for IPC.
         // FIXME: directly reading from the input buffer prevents the automatic
         // printing of the typed input
+        // Spawn one NamedPipeServer for each client and use the
+        // broadcast queue https://docs.rs/tokio/latest/tokio/sync/broadcast/index.html
+        // to emit the read INPUT_RECORDS to all servers which will inturn send
+        // them to the clients.
+
         print_std_handles();
         serde_input_record();
         wait_for_input();
