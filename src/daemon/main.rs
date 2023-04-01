@@ -106,16 +106,12 @@ fn determine_client_spacial_attributes(
     workspace_area: &workspace::WorkspaceArea,
     title_bar_height: i32,
 ) -> (i32, i32, i32, i32) {
-    println!("index: {index}");
-    // FIXME: somehow we always have 0 columns
-    // FIXME: now that we account for title bar height we miss almost half the screen
-    // https://math.stackexchange.com/a/21734
     let height_width_ratio = workspace_area.height as f64 / workspace_area.width as f64;
     let number_of_columns = (number_of_consoles as f64 / height_width_ratio).sqrt() as i32;
     let console_width = workspace_area.width / number_of_columns;
     let console_height = (console_width as f64 * height_width_ratio) as i32;
     let x = workspace_area.width / number_of_columns * (index % number_of_columns);
-    let y = index / number_of_columns * workspace_area.height;
+    let y = index / number_of_columns * console_height;
     return (
         workspace_area.x + x,
         workspace_area.y + y,
