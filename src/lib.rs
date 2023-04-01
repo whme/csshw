@@ -20,6 +20,9 @@ use crate::serialization::Serialize;
 mod deserialization;
 mod serialization;
 
+pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
+pub const PIPE_NAME: &str = concat!(r"\\.\pipe\", env!("CARGO_PKG_NAME"), "-named-pipe-for-ipc");
+
 trait StringRepr {
     fn string_repr(&self) -> String;
 }
@@ -49,8 +52,6 @@ impl StringRepr for INPUT_RECORD_0 {
         return unsafe { self.KeyEvent }.string_repr();
     }
 }
-
-pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
 pub fn print_console_rect() {
     loop {
