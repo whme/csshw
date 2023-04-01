@@ -74,7 +74,22 @@ async fn main() {
         MoveWindow(hwnd, args.x, args.y, args.width, args.height, true);
     }
 
-    let mut child = Command::new("cmd.exe").spawn().unwrap();
+    // TODO: make executable (ssh, wsl-distro, etc..) and args configurable
+    let mut child = Command::new("ubuntu")
+        .args([
+            "run",
+            format!(
+                "source ~/.bash_profile; \
+                ssh -XY {} || \
+                [[ $? -eq 130 ]] || \
+                read -n 1 -p 'Press a key to exit'",
+                args.host
+            )
+            .as_str(),
+        ])
+        .spawn()
+        .unwrap();
+
     // FIXME: wait until after the child has started before changing the title
     // TODO: instead of using args.host it would be nice to use the actual fqdn hostname
     // the ssh client will connect to ...
