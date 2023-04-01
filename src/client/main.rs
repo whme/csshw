@@ -75,7 +75,11 @@ async fn main() {
     unsafe {
         MoveWindow(hwnd, args.x, args.y, args.width, args.height, true);
     }
-
+    // FIXME: with many clients (>3?) the thread panics when trying to open
+    // the named pipe with "Cannot find file": maybe we should only spawn a server at a time
+    // and wait for a client to connect before spawning another one.
+    // Or simply keep retrying to create the client in case of this error
+    // i.e. maybe we cannot open the pipe if another process is currently opening it
     let sub = tokio::spawn(async {
         let named_pipe_client = ClientOptions::new().open(PIPE_NAME).unwrap();
         named_pipe_client.ready(Interest::READABLE).await.unwrap();
