@@ -128,6 +128,8 @@ pub fn spawn_console_process(application: &str, args: Vec<&str>) -> PROCESS_INFO
 
     let mut startupinfo = STARTUPINFOW::default();
     startupinfo.cb = mem::size_of::<STARTUPINFOW>() as u32;
+    // Sadly we can't use the startupinfo to position the console window right away
+    // as x and y coordinates must be u32 and we might have negative values
     let mut process_information = PROCESS_INFORMATION::default();
     let command_line = PWSTR(cmd.as_mut_ptr());
     unsafe {
