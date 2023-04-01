@@ -1,6 +1,7 @@
 use clap::Parser;
 use dissh::{
-    print_std_handles, serde_input_record, spawn_console_process, wait_for_input, PKG_NAME,
+    spawn_console_process,
+    utils::{constants::PKG_NAME, print_std_handles, serde_input_record, wait_for_input},
 };
 use win32console::console::WinConsole;
 use windows::Win32::System::Console::GetConsoleWindow;

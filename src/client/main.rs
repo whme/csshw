@@ -4,7 +4,7 @@ use win32console::console::WinConsole;
 use windows::Win32::System::Console::GetConsoleWindow;
 use windows::Win32::UI::WindowsAndMessaging::MoveWindow;
 
-use dissh::{print_std_handles, wait_for_input, PKG_NAME};
+use dissh::utils::{constants::PKG_NAME, print_std_handles, wait_for_input};
 
 /// Daemon CLI. Manages client consoles and user input
 #[derive(Parser, Debug)]
