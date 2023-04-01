@@ -60,15 +60,8 @@ impl Daemon {
     }
 
     fn run(&self, proc_infos: Vec<PROCESS_INFORMATION>) {
-        //TODO: use tokio named_pipes
-        // https://docs.rs/tokio/latest/tokio/net/windows/named_pipe/index.html
-        // for IPC.
         // FIXME: directly reading from the input buffer prevents the automatic
         // printing of the typed input
-        // Spawn one NamedPipeServer for each client and use the
-        // broadcast queue https://docs.rs/tokio/latest/tokio/sync/broadcast/index.html
-        // to emit the read INPUT_RECORDS to all servers which will inturn send
-        // them to the clients.
         let (sender, _) =
             broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(proc_infos.len());
 
