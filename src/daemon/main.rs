@@ -113,6 +113,7 @@ impl Daemon {
                 loop {
                     let ser_input_record = receiver.recv().await.unwrap();
                     println!("[{i}] Received serialized input record, sending it over named pipe");
+                    // FIXME: catch and ignore broken pipe error (can happen if the client window get's closed)
                     named_pipe_server.try_write(&ser_input_record).unwrap();
                 }
             }));
