@@ -132,6 +132,7 @@ pub fn spawn_console_process(application: String, args: Vec<String>) -> PROCESS_
         cmd.push(' ' as u16);
         cmd.extend(OsString::from(arg).encode_wide());
     }
+    cmd.push(0); // add null terminator
 
     let mut startupinfo = STARTUPINFOW::default();
     startupinfo.cb = mem::size_of::<STARTUPINFOW>() as u32;

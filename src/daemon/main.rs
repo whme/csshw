@@ -74,8 +74,6 @@ impl Daemon {
         title_bar_height: i32,
     ) -> Vec<PROCESS_INFORMATION> {
         let mut proc_infos: Vec<PROCESS_INFORMATION> = Vec::new();
-        // FIXME: for some reason not all clients survive;
-        // It looks like a race condition as this issue does not appear always
         for (index, host) in self.hosts.iter().enumerate() {
             let (x, y, width, height) = determine_client_spacial_attributes(
                 index as i32,
