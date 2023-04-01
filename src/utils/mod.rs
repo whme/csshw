@@ -3,7 +3,8 @@ use std::{ptr, thread, time};
 use windows::core::HSTRING;
 use windows::Win32::Foundation::{GetLastError, HANDLE, RECT};
 use windows::Win32::System::Console::{
-    GetConsoleWindow, GetStdHandle, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT,
+    GetConsoleMode, GetConsoleWindow, GetStdHandle, SetConsoleMode, WriteConsoleInputW,
+    CONSOLE_MODE, ENABLE_PROCESSED_INPUT, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT,
     KEY_EVENT_RECORD, KEY_EVENT_RECORD_0, STD_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
 };
 use windows::Win32::System::Threading::GetExitCodeProcess;
@@ -28,6 +29,20 @@ pub fn print_console_rect() {
 pub fn set_console_title(title: &str) {
     unsafe {
         SetWindowTextW(GetConsoleWindow(), &HSTRING::from(title));
+    }
+}
+
+pub fn disable_processed_input_mode() {
+    let handle = get_console_input_buffer();
+    let mut mode = CONSOLE_MODE(0u32);
+    unsafe {
+        GetConsoleMode(handle, &mut mode);
+    }
+    unsafe {
+        SetConsoleMode(
+            get_console_input_buffer(),
+            CONSOLE_MODE(mode.0 ^ ENABLE_PROCESSED_INPUT.0),
+        );
     }
 }
 

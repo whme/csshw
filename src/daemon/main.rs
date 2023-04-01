@@ -5,8 +5,8 @@ use dissh::{
     serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
     utils::{
-        constants::{CTRL_C_INPUT_RECORD, PIPE_NAME, PKG_NAME},
-        get_console_input_buffer, set_console_title,
+        constants::{PIPE_NAME, PKG_NAME},
+        disable_processed_input_mode, get_console_input_buffer, set_console_title,
     },
 };
 use tokio::{
@@ -40,6 +40,10 @@ impl Daemon {
     async fn launch(&self) {
         set_console_title(format!("{} daemon", PKG_NAME).as_str());
 
+        // Makes sure ctrl+c is reported as a keyboard input rather than as signal
+        // https://learn.microsoft.com/en-us/windows/console/ctrl-c-and-ctrl-break-signals
+        disable_processed_input_mode();
+
         let workspace_area = workspace::get_workspace_area(workspace::Scaling::LOGICAL);
         // +1 to account for the daemon console
         let number_of_consoles = (self.hosts.len() + 1) as i32;
@@ -66,22 +70,6 @@ impl Daemon {
             broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(self.hosts.len());
 
         self.launch_named_pipe_server(&sender);
-
-        let ctrl_sender = sender.clone();
-
-        tokio::spawn(async move {
-            let mut ctrl_c_listener = tokio::signal::windows::ctrl_c().unwrap();
-            loop {
-                ctrl_c_listener.recv().await;
-                ctrl_sender
-                    .send(
-                        CTRL_C_INPUT_RECORD.serialize().as_mut_vec()[..]
-                            .try_into()
-                            .unwrap(),
-                    )
-                    .unwrap();
-            }
-        });
 
         loop {
             let input_record = read_keyboard_input();

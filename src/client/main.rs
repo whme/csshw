@@ -3,7 +3,6 @@ use std::process::Command;
 use std::time::Duration;
 
 use clap::Parser;
-use dissh::utils::constants::VK_CTRL_C;
 use dissh::utils::{get_console_input_buffer, set_console_title};
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
@@ -118,19 +117,7 @@ async fn main() {
                 continue;
             }
         }
-        let input_record = INPUT_RECORD_0::deserialize(&mut buf);
-        match unsafe { input_record.KeyEvent }.wVirtualKeyCode {
-            VK_CTRL_C => {
-                // FIXME: not working:
-                // unsafe {
-                //     windows::Win32::System::Console::GenerateConsoleCtrlEvent(0, 0);
-                // }
-                println!("Received CTRL + C");
-            }
-            _ => {
-                write_console_input(input_record);
-            }
-        }
+        write_console_input(INPUT_RECORD_0::deserialize(&mut buf));
     }
 
     match child.kill() {
