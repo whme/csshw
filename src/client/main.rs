@@ -2,6 +2,7 @@ use std::io;
 use std::process::Command;
 
 use clap::Parser;
+use dissh::utils::constants::HUMAN_VISUAL_STIMULUS_TIME;
 use dissh::utils::get_console_input_buffer;
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
@@ -94,6 +95,8 @@ async fn main() {
     named_pipe_client.ready(Interest::READABLE).await.unwrap();
 
     loop {
+        // Sleep some time to avoid hogging 100% CPU usage.
+        tokio::time::sleep(HUMAN_VISUAL_STIMULUS_TIME).await;
         let mut buf: [u8; SERIALIZED_INPUT_RECORD_0_LENGTH] = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
         match named_pipe_client.try_read(&mut buf) {
             Ok(read_bytes) => {
