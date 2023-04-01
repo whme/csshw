@@ -1,9 +1,10 @@
 use clap::Parser;
-use std::{thread, time};
+use std::{ptr, thread, time};
 use whoami::username;
 use win32console::console::WinConsole;
+use windows::Win32::Foundation::RECT;
 use windows::Win32::System::Console::GetConsoleWindow;
-use windows::Win32::UI::WindowsAndMessaging::MoveWindow;
+use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, MoveWindow};
 
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -39,15 +40,19 @@ fn main() {
     println!("{:?}", args);
     WinConsole::set_title(&format!("{} - {}@{}", PKG_NAME, username(), args.host))
         .expect("Failed to set console window title.");
+    let hwnd = unsafe { GetConsoleWindow() };
     unsafe {
-        MoveWindow(
-            GetConsoleWindow(),
-            args.x,
-            args.y,
-            args.width,
-            args.height,
-            true,
-        );
+        MoveWindow(hwnd, args.x, args.y, args.width, args.height, true);
     }
-    thread::sleep(time::Duration::from_millis(20000));
+    let mut i = 0;
+    loop {
+        i = i + 1;
+        let mut window_rect = RECT::default();
+        unsafe { GetWindowRect(hwnd, ptr::addr_of_mut!(window_rect)) };
+        println!("{:?}", window_rect);
+        if i > 2000 {
+            break;
+        };
+        thread::sleep(time::Duration::from_millis(100));
+    }
 }
