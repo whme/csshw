@@ -9,7 +9,8 @@ use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
 use whoami::username;
 use windows::Win32::Foundation::GetLastError;
 use windows::Win32::System::Console::{
-    GetConsoleWindow, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT,
+    GenerateConsoleCtrlEvent, GetConsoleWindow, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0,
+    KEY_EVENT,
 };
 use windows::Win32::UI::WindowsAndMessaging::MoveWindow;
 
@@ -120,12 +121,10 @@ async fn main() {
         write_console_input(INPUT_RECORD_0::deserialize(&mut buf));
     }
 
-    match child.kill() {
-        Ok(()) => (),
-        Err(e) if e.kind() == io::ErrorKind::InvalidInput => (),
-        Err(_) => {
-            println!("Failed to kill child process!");
-        }
+    // Make sure the client and all its subprocesses
+    // are aware they need to shutdown.
+    unsafe {
+        GenerateConsoleCtrlEvent(0, 0);
     }
 
     drop(child);
