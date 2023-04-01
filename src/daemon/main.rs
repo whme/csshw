@@ -91,6 +91,9 @@ impl Daemon {
                 .create(PIPE_NAME)
                 .unwrap();
             let mut receiver = sender.subscribe();
+            // TODO: we should keep track of the launched server routines,
+            // once the client disconnects the routine should stop
+            // and once all routines stopped the daemon should stop as well
             tokio::spawn(async move {
                 named_pipe_server_routine(named_pipe_server, &mut receiver).await;
             });
