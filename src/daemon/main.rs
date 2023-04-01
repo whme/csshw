@@ -198,8 +198,10 @@ async fn named_pipe_server_routine(
                     // Try again
                     continue;
                 }
-                Err(e) => {
-                    panic!("{}", e);
+                Err(_) => {
+                    // Can happen if the pipe is closed because the
+                    // client exited
+                    break;
                 }
             }
         }

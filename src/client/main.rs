@@ -109,9 +109,18 @@ async fn main() {
     };
     named_pipe_client.ready(Interest::READABLE).await.unwrap();
 
-    // FIXME: we should also periodically check if the child is still alive
-    // if not: exit the loop
     loop {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                // TODO: maybe differentiate between exit code 0
+                // and errors. For the latter stay alive until a key is pressed
+                break;
+            }
+            Ok(None) => (
+                // child is still running
+            ),
+            Err(e) => panic!("{}", e),
+        }
         // Sleep some time to avoid hogging 100% CPU usage.
         tokio::time::sleep(Duration::from_millis(5)).await;
         let mut buf: [u8; SERIALIZED_INPUT_RECORD_0_LENGTH] = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
@@ -142,5 +151,9 @@ async fn main() {
         GenerateConsoleCtrlEvent(0, 0);
     }
 
+    // Apparently calling wait is necessary on some systems,
+    // so we'll just do it
+    // https://doc.rust-lang.org/std/process/struct.Child.html#warning
+    child.wait().expect("Failed to wait on child");
     drop(child);
 }
