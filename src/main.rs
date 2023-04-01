@@ -18,5 +18,8 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    spawn_console_process(format!("{PKG_NAME}-daemon"), args.hosts);
+    spawn_console_process(
+        &format!("{PKG_NAME}-daemon.exe"),
+        args.hosts.iter().map(|host| -> &str { &host }).collect(),
+    );
 }

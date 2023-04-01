@@ -115,7 +115,7 @@ fn determine_client_spacial_attributes(
 }
 
 fn launch_client_console(
-    host: &String,
+    host: &str,
     x: i32,
     y: i32,
     width: i32,
@@ -124,14 +124,14 @@ fn launch_client_console(
     // The first argument must be `--` to ensure all following arguments are treated
     // as positional arguments and not as options of they start with `-`.
     return spawn_console_process(
-        format!("{}-client", PKG_NAME),
+        &format!("{PKG_NAME}-client.exe"),
         vec![
-            "--".to_string(),
-            host.to_string(),
-            x.to_string(),
-            y.to_string(),
-            width.to_string(),
-            height.to_string(),
+            "--",
+            host,
+            &x.to_string(),
+            &y.to_string(),
+            &width.to_string(),
+            &height.to_string(),
         ],
     );
 }

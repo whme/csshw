@@ -114,18 +114,10 @@ fn get_console_screen_buffer() -> HANDLE {
     return get_std_handle(STD_OUTPUT_HANDLE);
 }
 
-pub fn spawn_console_process(application: String, args: Vec<String>) -> PROCESS_INFORMATION {
-    let mut application_full_path = env::current_dir()
-        .expect("Failed to get current working directory")
-        .as_os_str()
-        .to_owned();
-    application_full_path.push("\\");
-    application_full_path.push(application);
-    application_full_path.push(".exe");
-
+pub fn spawn_console_process(application: &str, args: Vec<&str>) -> PROCESS_INFORMATION {
     let mut cmd: Vec<u16> = Vec::new();
     cmd.push(b'"' as u16);
-    cmd.extend(application_full_path.as_os_str().encode_wide());
+    cmd.extend(OsString::from(application).encode_wide());
     cmd.push(b'"' as u16);
 
     for arg in args {
@@ -140,7 +132,7 @@ pub fn spawn_console_process(application: String, args: Vec<String>) -> PROCESS_
     let command_line = PWSTR(cmd.as_mut_ptr());
     unsafe {
         CreateProcessW(
-            &HSTRING::from(application_full_path),
+            &HSTRING::from(application),
             command_line,
             Some(ptr::null_mut()),
             Some(ptr::null_mut()),
