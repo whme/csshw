@@ -6,14 +6,13 @@ use dissh::{
     spawn_console_process,
     utils::{
         constants::{CTRL_C_INPUT_RECORD, PIPE_NAME, PKG_NAME},
-        get_console_input_buffer,
+        get_console_input_buffer, set_console_title,
     },
 };
 use tokio::{
     net::windows::named_pipe::{NamedPipeServer, PipeMode, ServerOptions},
     sync::broadcast::{self, Receiver, Sender},
 };
-use win32console::console::WinConsole;
 use windows::Win32::System::Console::{
     GetConsoleWindow, ReadConsoleInputW, INPUT_RECORD, INPUT_RECORD_0,
 };
@@ -39,8 +38,7 @@ struct Daemon {
 
 impl Daemon {
     async fn launch(&self) {
-        WinConsole::set_title(&format!("{} daemon", PKG_NAME))
-            .expect("Failed to set console window title.");
+        set_console_title(format!("{} daemon", PKG_NAME).as_str());
 
         let workspace_area = workspace::get_workspace_area(workspace::Scaling::LOGICAL);
         // +1 to account for the daemon console

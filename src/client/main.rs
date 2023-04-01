@@ -4,11 +4,10 @@ use std::time::Duration;
 
 use clap::Parser;
 use dissh::utils::constants::VK_CTRL_C;
-use dissh::utils::get_console_input_buffer;
+use dissh::utils::{get_console_input_buffer, set_console_title};
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
 use whoami::username;
-use win32console::console::WinConsole;
 use windows::Win32::Foundation::GetLastError;
 use windows::Win32::System::Console::{
     GetConsoleWindow, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT,
@@ -70,14 +69,16 @@ fn write_console_input(input_record: INPUT_RECORD_0) {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    WinConsole::set_title(&format!("{} - {}@{}", PKG_NAME, username(), args.host))
-        .expect("Failed to set console window title.");
     let hwnd = unsafe { GetConsoleWindow() };
     unsafe {
         MoveWindow(hwnd, args.x, args.y, args.width, args.height, true);
     }
 
     let mut child = Command::new("cmd.exe").spawn().unwrap();
+    // FIXME: wait until after the child has started before changing the title
+    // TODO: instead of using args.host it would be nice to use the actual fqdn hostname
+    // the ssh client will connect to ...
+    set_console_title(format!("{} - {}@{}", PKG_NAME, username(), args.host).as_str());
 
     // Many clients trying to open the pipe at the same time can cause
     // a file not found error, so keep trying until we managed to open it

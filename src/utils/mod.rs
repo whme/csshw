@@ -1,12 +1,13 @@
 use std::{ptr, thread, time};
 
+use windows::core::HSTRING;
 use windows::Win32::Foundation::{GetLastError, HANDLE, RECT};
 use windows::Win32::System::Console::{
     GetConsoleWindow, GetStdHandle, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT,
     KEY_EVENT_RECORD, KEY_EVENT_RECORD_0, STD_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
 };
 use windows::Win32::System::Threading::GetExitCodeProcess;
-use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, SetWindowTextW};
 
 pub mod constants;
 pub mod debug;
@@ -21,6 +22,12 @@ pub fn print_console_rect() {
         unsafe { GetWindowRect(GetConsoleWindow(), ptr::addr_of_mut!(window_rect)) };
         println!("{:?}", window_rect);
         thread::sleep(time::Duration::from_millis(100));
+    }
+}
+
+pub fn set_console_title(title: &str) {
+    unsafe {
+        SetWindowTextW(GetConsoleWindow(), &HSTRING::from(title));
     }
 }
 
