@@ -148,6 +148,13 @@ fn launch_client_console(
 
 fn read_keyboard_input() -> INPUT_RECORD_0 {
     loop {
+        // TODO: instead of using the ReadConsoleInputW function
+        // we should register a LowLevelKeyboardProc hook
+        // https://learn.microsoft.com/en-us/windows/win32/winmsg/hooks
+        // Using the callbacks for WM_KEYDOWN and WM_KEYUP
+        // (maybe additionally the SYS versions)
+        // we should be able to build the INPUT_RECORDS ourselve
+        // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/legacy/ms644985(v=vs.85)
         let input_record = read_console_input();
         match input_record.EventType {
             KEY_EVENT => {
