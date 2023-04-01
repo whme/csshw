@@ -1,19 +1,16 @@
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::{os::windows::process::CommandExt, process::Child};
-use std::{ptr, thread, time};
 
 use clap::Parser;
+use dissh::{wait_for_input, PKG_NAME};
 use win32console::console::WinConsole;
-use windows::Win32::Foundation::RECT;
 use windows::Win32::System::Console::GetConsoleWindow;
 use windows::Win32::System::Threading::CREATE_NEW_CONSOLE;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetSystemMetrics, GetWindowRect, MoveWindow, SM_CXBORDER, SM_CXPADDEDBORDER, SM_CYSIZE,
+    GetSystemMetrics, MoveWindow, SM_CXBORDER, SM_CXPADDEDBORDER, SM_CYSIZE,
 };
 
 mod workspace;
-
-const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
 /// Daemon CLI. Manages client consoles and user input
 #[derive(Parser, Debug)]
@@ -59,18 +56,7 @@ impl Daemon {
     fn run(&self, client_consoles: Vec<Child>) {
         //TODO: read from daemon console and publish
         // read user input to clients
-        let mut i = 0;
-        loop {
-            i = i + 1;
-            let mut window_rect = RECT::default();
-            unsafe { GetWindowRect(GetConsoleWindow(), ptr::addr_of_mut!(window_rect)) };
-            println!("{:?}", window_rect);
-            if i > 2000 {
-                break;
-            };
-            thread::sleep(time::Duration::from_millis(100));
-        }
-        thread::sleep(time::Duration::from_millis(20000));
+        wait_for_input();
     }
 
     fn launch_clients(
