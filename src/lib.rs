@@ -4,12 +4,13 @@ use std::{env, mem, ptr, thread, time};
 use std::os::windows::ffi::OsStrExt;
 
 use windows::core::{HSTRING, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{BOOL, HANDLE, RECT};
+use windows::Win32::Foundation::{GetLastError, BOOL, HANDLE, RECT};
 use windows::Win32::System::Console::{
-    GetConsoleWindow, GetStdHandle, STD_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+    GetConsoleWindow, GetStdHandle, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT,
+    KEY_EVENT_RECORD, KEY_EVENT_RECORD_0, STD_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
 };
 use windows::Win32::System::Threading::{
-    CreateProcessW, CREATE_NEW_CONSOLE, PROCESS_INFORMATION, STARTUPINFOW,
+    CreateProcessW, GetExitCodeProcess, CREATE_NEW_CONSOLE, PROCESS_INFORMATION, STARTUPINFOW,
 };
 use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
 
@@ -24,6 +25,10 @@ pub fn print_console_rect() {
     }
 }
 
+pub fn sleep(seconds: u64) {
+    thread::sleep(time::Duration::from_secs(seconds));
+}
+
 pub fn wait_for_input() {
     println!("Waiting for input ...");
     loop {
@@ -32,8 +37,56 @@ pub fn wait_for_input() {
         println!("Read: {:?}", line);
         if line.as_str().to_lowercase() == "exit\r\n" {
             println!("Exiting in 5 sec ...");
-            thread::sleep(time::Duration::from_secs(5));
+            sleep(5);
             break;
+        }
+        if line.as_str().to_lowercase() == "wtb\r\n" {
+            write_console_input_buffer();
+        }
+    }
+}
+
+// TODO: make this a function that takes an input array/vec of characters
+// and sends them to the input buffer.
+// Maybe split it into a function that translates everything
+// into KeyEvents and puts them into a buffer and another one
+// that writes that buffer to the console input
+fn write_console_input_buffer() {
+    let mut down_event = INPUT_RECORD_0::default();
+    down_event.KeyEvent = KEY_EVENT_RECORD {
+        bKeyDown: true.into(),
+        wRepeatCount: 1,
+        wVirtualKeyCode: 0x41,
+        wVirtualScanCode: 0,
+        uChar: KEY_EVENT_RECORD_0 { UnicodeChar: 0x41 },
+        dwControlKeyState: 0,
+    };
+    let mut up_event = INPUT_RECORD_0::default();
+    up_event.KeyEvent = KEY_EVENT_RECORD {
+        bKeyDown: false.into(),
+        wRepeatCount: 1,
+        wVirtualKeyCode: 0x41,
+        wVirtualScanCode: 0,
+        uChar: KEY_EVENT_RECORD_0 { UnicodeChar: 0x41 },
+        dwControlKeyState: 0,
+    };
+    // In theory the down_event is enough to write characters
+    // but for completeness sake we should always send down and up
+    let buffer: [INPUT_RECORD; 2] = [
+        INPUT_RECORD {
+            EventType: KEY_EVENT as u16,
+            Event: down_event,
+        },
+        INPUT_RECORD {
+            EventType: KEY_EVENT as u16,
+            Event: up_event,
+        },
+    ];
+    let mut buffer_len = buffer.len() as u32;
+    unsafe {
+        if WriteConsoleInputW(get_console_input_buffer(), &buffer, &mut buffer_len) == false {
+            println!("Failed to write console input");
+            println!("{:?}", GetLastError());
         }
     }
 }
@@ -90,7 +143,7 @@ pub fn spawn_console_process(application: String, args: Vec<String>) -> PROCESS_
             command_line,
             Some(ptr::null_mut()),
             Some(ptr::null_mut()),
-            BOOL(0),
+            BOOL::from(false),
             CREATE_NEW_CONSOLE,
             Some(ptr::null_mut()),
             PCWSTR::null(),
@@ -100,4 +153,12 @@ pub fn spawn_console_process(application: String, args: Vec<String>) -> PROCESS_
         .expect("Failed to create process");
     }
     return process_information;
+}
+
+pub fn get_process_exit_code(hprocess: HANDLE) -> u32 {
+    let mut exit_code: u32 = 0;
+    unsafe {
+        GetExitCodeProcess(hprocess, &mut exit_code).expect("Failed to get process exit code");
+    }
+    return exit_code;
 }
