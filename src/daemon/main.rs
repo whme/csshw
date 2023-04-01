@@ -1,7 +1,11 @@
 use clap::Parser;
-use dissh::{print_std_handles, spawn_console_process, wait_for_input, PKG_NAME};
+use dissh::{
+    get_process_exit_code, print_std_handles, sleep, spawn_console_process, wait_for_input,
+    PKG_NAME,
+};
 use win32console::console::WinConsole;
 use windows::Win32::System::Console::GetConsoleWindow;
+use windows::Win32::System::Threading::PROCESS_INFORMATION;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetSystemMetrics, MoveWindow, SM_CXBORDER, SM_CXPADDEDBORDER, SM_CYSIZE,
 };
@@ -46,15 +50,21 @@ impl Daemon {
         );
         arrange_daemon_console(x, y, width, height);
 
-        self.launch_clients(&workspace_area, number_of_consoles, title_bar_height);
-        self.run();
+        self.run(self.launch_clients(&workspace_area, number_of_consoles, title_bar_height));
     }
 
-    fn run(&self) {
+    fn run(&self, proc_infos: Vec<PROCESS_INFORMATION>) {
         //TODO: read from daemon console and publish
         // read user input to clients
         print_std_handles();
         wait_for_input();
+        loop {
+            for proc_info in &proc_infos {
+                let exit_code = get_process_exit_code(proc_info.hProcess);
+                println!("{:?}: {:?}", proc_info.dwProcessId, exit_code);
+            }
+            sleep(5);
+        }
     }
 
     fn launch_clients(
@@ -62,8 +72,10 @@ impl Daemon {
         workspace_area: &workspace::WorkspaceArea,
         number_of_consoles: i32,
         title_bar_height: i32,
-    ) {
-        // FIXME: for some reason not all clients survive
+    ) -> Vec<PROCESS_INFORMATION> {
+        let mut proc_infos: Vec<PROCESS_INFORMATION> = Vec::new();
+        // FIXME: for some reason not all clients survive;
+        // It looks like a race condition as this issue does not appear always
         for (index, host) in self.hosts.iter().enumerate() {
             let (x, y, width, height) = determine_client_spacial_attributes(
                 index as i32,
@@ -71,8 +83,9 @@ impl Daemon {
                 workspace_area,
                 title_bar_height,
             );
-            launch_client_console(host, x, y, width, height);
+            proc_infos.push(launch_client_console(host, x, y, width, height));
         }
+        return proc_infos;
     }
 }
 
@@ -103,10 +116,16 @@ fn determine_client_spacial_attributes(
     );
 }
 
-fn launch_client_console(host: &String, x: i32, y: i32, width: i32, height: i32) {
+fn launch_client_console(
+    host: &String,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> PROCESS_INFORMATION {
     // The first argument must be `--` to ensure all following arguments are treated
     // as positional arguments and not as options of they start with `-`.
-    spawn_console_process(
+    return spawn_console_process(
         format!("{}-client", PKG_NAME),
         vec![
             "--".to_string(),
