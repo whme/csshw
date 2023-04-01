@@ -6,7 +6,7 @@ use dissh::{
     spawn_console_process,
     utils::{
         constants::{PIPE_NAME, PKG_NAME},
-        get_console_input_buffer, wait_for_input,
+        get_console_input_buffer,
     },
 };
 use tokio::{
@@ -85,7 +85,6 @@ impl Daemon {
         }
 
         drop(server);
-        wait_for_input();
     }
 
     fn launch_named_pipe_server(
