@@ -36,6 +36,7 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
+    println!("{:?}", args);
     WinConsole::set_title(&format!("{} - {}@{}", PKG_NAME, username(), args.host))
         .expect("Failed to set console window title.");
     unsafe {
