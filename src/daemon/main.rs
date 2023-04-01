@@ -40,7 +40,7 @@ struct Daemon {
 }
 
 impl Daemon {
-    fn launch(&self) {
+    async fn launch(&self) {
         WinConsole::set_title(&format!("{} daemon", PKG_NAME))
             .expect("Failed to set console window title.");
 
@@ -58,14 +58,16 @@ impl Daemon {
         );
         arrange_daemon_console(x, y, width, height);
 
-        self.run(self.launch_clients(&workspace_area, number_of_consoles));
+        launch_clients(self.hosts.to_vec(), workspace_area, number_of_consoles).await;
+
+        self.run();
     }
 
-    fn run(&self, proc_infos: Vec<PROCESS_INFORMATION>) {
+    fn run(&self) {
         // FIXME: directly reading from the input buffer prevents the automatic
         // printing of the typed input
         let (sender, _) =
-            broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(proc_infos.len());
+            broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(self.hosts.len());
 
         let server = self.launch_named_pipe_server(&sender);
 
@@ -106,24 +108,6 @@ impl Daemon {
         }
 
         return server;
-    }
-
-    fn launch_clients(
-        &self,
-        workspace_area: &workspace::WorkspaceArea,
-        number_of_consoles: i32,
-    ) -> Vec<PROCESS_INFORMATION> {
-        // TODO: use tokio runtimes to parallelize this process;
-        let mut proc_infos: Vec<PROCESS_INFORMATION> = Vec::new();
-        for (index, host) in self.hosts.iter().enumerate() {
-            let (x, y, width, height) = determine_client_spacial_attributes(
-                index as i32,
-                number_of_consoles,
-                workspace_area,
-            );
-            proc_infos.push(launch_client_console(host, x, y, width, height));
-        }
-        return proc_infos;
     }
 }
 
@@ -235,9 +219,31 @@ async fn named_pipe_server_routine(
     }
 }
 
+async fn launch_clients(
+    hosts: Vec<String>,
+    workspace_area: workspace::WorkspaceArea,
+    number_of_consoles: i32,
+) {
+    let mut handles = vec![];
+    for (index, host) in hosts.to_owned().into_iter().enumerate() {
+        let future = tokio::spawn(async move {
+            let (x, y, width, height) = determine_client_spacial_attributes(
+                index as i32,
+                number_of_consoles,
+                &workspace_area,
+            );
+            launch_client_console(&host, x, y, width, height);
+        });
+        handles.push(future);
+    }
+    for handle in handles {
+        handle.await.unwrap();
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
     let daemon = Daemon { hosts: args.hosts };
-    daemon.launch();
+    daemon.launch().await;
 }
