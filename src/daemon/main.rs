@@ -89,7 +89,7 @@ impl Daemon {
 }
 
 fn arrange_daemon_console(x: i32, y: i32, width: i32, height: i32) {
-    println!("{} {} {} {}", x, y, width, height);
+    println!("{x} {y} {width} {height}");
     unsafe {
         MoveWindow(GetConsoleWindow(), x, y, width, height, true);
     }
