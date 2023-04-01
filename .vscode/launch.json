@@ -1,0 +1,119 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'dissh'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=dissh",
+                    "--package=dissh"
+                ],
+                "filter": {
+                    "name": "dissh",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'dissh'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=dissh",
+                    "--package=dissh"
+                ],
+                "filter": {
+                    "name": "dissh",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'dissh-daemon'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=dissh-daemon",
+                    "--package=dissh"
+                ],
+                "filter": {
+                    "name": "dissh-daemon",
+                    "kind": "bin"
+                }
+            },
+            "args": ["foo", "bar"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'dissh-daemon'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=dissh-daemon",
+                    "--package=dissh"
+                ],
+                "filter": {
+                    "name": "dissh-daemon",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'dissh-client'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=dissh-client",
+                    "--package=dissh"
+                ],
+                "filter": {
+                    "name": "dissh-client",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'dissh-client'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=dissh-client",
+                    "--package=dissh"
+                ],
+                "filter": {
+                    "name": "dissh-client",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
