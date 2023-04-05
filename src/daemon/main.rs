@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, mem::MaybeUninit, sync::Once};
 
 use clap::Parser;
 use dissh::{
@@ -13,11 +13,16 @@ use tokio::{
     net::windows::named_pipe::{NamedPipeServer, PipeMode, ServerOptions},
     sync::broadcast::{self, Receiver, Sender},
 };
-use windows::Win32::System::Console::{
-    GetConsoleWindow, ReadConsoleInputW, INPUT_RECORD, INPUT_RECORD_0,
-};
 use windows::Win32::System::Threading::PROCESS_INFORMATION;
 use windows::Win32::UI::WindowsAndMessaging::MoveWindow;
+use windows::Win32::{
+    Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM},
+    System::{
+        Console::{GetConsoleWindow, ReadConsoleInputW, INPUT_RECORD, INPUT_RECORD_0},
+        Threading::GetCurrentThreadId,
+    },
+    UI::WindowsAndMessaging::{CallNextHookEx, SetWindowsHookExW, HHOOK, WH_KEYBOARD},
+};
 
 mod workspace;
 
@@ -30,6 +35,27 @@ struct Args {
     /// Host(s) to connect to
     #[clap(required = true)]
     hosts: Vec<String>,
+}
+
+fn get_sender(capacity: usize) -> &'static Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]> {
+    // Create an uninitialized static
+    static mut SINGLETON: MaybeUninit<Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>> =
+        MaybeUninit::uninit();
+    static ONCE: Once = Once::new();
+
+    unsafe {
+        ONCE.call_once(|| {
+            // Make it
+            let (singleton, _) =
+                broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(capacity);
+            // Store it to the static var, i.e. initialize it
+            SINGLETON.write(singleton);
+        });
+
+        // Now we give out a shared reference to the data, which is safe to use
+        // concurrently.
+        SINGLETON.assume_init_ref()
+    }
 }
 
 struct Daemon {
@@ -66,10 +92,25 @@ impl Daemon {
     fn run(&self) {
         // FIXME: directly reading from the input buffer prevents the automatic
         // printing of the typed input
-        let (sender, _) =
-            broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(self.hosts.len());
+        let sender = get_sender(self.hosts.len());
 
         self.launch_named_pipe_server(&sender);
+
+        // Set Keyboard hook
+        unsafe {
+            SetWindowsHookExW(
+                WH_KEYBOARD,
+                Some(low_level_keyboard_proc_callback),
+                HINSTANCE::default(),
+                GetCurrentThreadId(),
+            )
+            .unwrap();
+        }
+
+        // TODO: message loop
+        // https://stackoverflow.com/a/75875243/9343156
+
+        // TODO: read string input in background thread
 
         loop {
             let input_record = read_keyboard_input();
@@ -81,6 +122,11 @@ impl Daemon {
                 )
                 .unwrap();
         }
+
+        // TODO: somehow make sure we unhook before exiting
+        // unsafe {
+        //     UnhookWindowsHookEx(hook_handle);
+        // }
     }
 
     fn launch_named_pipe_server(&self, sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>) {
@@ -238,6 +284,16 @@ async fn launch_clients(
     for handle in handles {
         handle.await.unwrap();
     }
+}
+
+unsafe extern "system" fn low_level_keyboard_proc_callback(
+    code: i32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    get_sender(0);
+    println!("Foo");
+    return CallNextHookEx(HHOOK::default(), code, wparam, lparam);
 }
 
 #[tokio::main]
