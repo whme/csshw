@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, time::Duration};
 
 use clap::Parser;
 use dissh::{
@@ -12,6 +12,7 @@ use dissh::{
 use tokio::{
     net::windows::named_pipe::{NamedPipeServer, PipeMode, ServerOptions},
     sync::broadcast::{self, Receiver, Sender},
+    task::JoinHandle,
 };
 use windows::Win32::System::Console::{
     GetConsoleWindow, ReadConsoleInputW, INPUT_RECORD, INPUT_RECORD_0,
@@ -67,7 +68,22 @@ impl Daemon {
         let (sender, _) =
             broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(self.hosts.len());
 
-        self.launch_named_pipe_server(&sender);
+        let mut servers = self.launch_named_pipe_servers(&sender);
+
+        // FIXME: somehow we can't detect if the client consoles are being
+        // closes from the outside ...
+        tokio::spawn(async move {
+            loop {
+                servers.retain(|server| {
+                    return !server.is_finished();
+                });
+                if servers.is_empty() {
+                    // All clients have exited, exit the daemon as well
+                    std::process::exit(0);
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        });
 
         loop {
             let input_record = read_keyboard_input();
@@ -81,7 +97,11 @@ impl Daemon {
         }
     }
 
-    fn launch_named_pipe_server(&self, sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>) {
+    fn launch_named_pipe_servers(
+        &self,
+        sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
+    ) -> Vec<JoinHandle<()>> {
+        let mut servers: Vec<JoinHandle<()>> = Vec::new();
         for _ in &self.hosts {
             let named_pipe_server = ServerOptions::new()
                 .access_outbound(true)
@@ -89,13 +109,11 @@ impl Daemon {
                 .create(PIPE_NAME)
                 .unwrap();
             let mut receiver = sender.subscribe();
-            // TODO: we should keep track of the launched server routines,
-            // once the client disconnects the routine should stop
-            // and once all routines stopped the daemon should stop as well
-            tokio::spawn(async move {
+            servers.push(tokio::spawn(async move {
                 named_pipe_server_routine(named_pipe_server, &mut receiver).await;
-            });
+            }));
         }
+        return servers;
     }
 }
 
@@ -188,7 +206,10 @@ async fn named_pipe_server_routine(
     // wait for a client to connect
     server.connect().await.unwrap();
     loop {
-        let ser_input_record = receiver.recv().await.unwrap();
+        let ser_input_record = match receiver.recv().await {
+            Ok(val) => val,
+            Err(_) => return,
+        };
         loop {
             server.writable().await.unwrap();
             match server.try_write(&ser_input_record) {
@@ -202,7 +223,7 @@ async fn named_pipe_server_routine(
                 Err(_) => {
                     // Can happen if the pipe is closed because the
                     // client exited
-                    break;
+                    return;
                 }
             }
         }
