@@ -64,8 +64,6 @@ impl Daemon {
     }
 
     fn run(&self) {
-        // FIXME: directly reading from the input buffer prevents the automatic
-        // printing of the typed input
         let (sender, _) =
             broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(self.hosts.len());
 
@@ -135,7 +133,7 @@ fn launch_client_console(
     height: i32,
 ) -> PROCESS_INFORMATION {
     // The first argument must be `--` to ensure all following arguments are treated
-    // as positional arguments and not as options of they start with `-`.
+    // as positional arguments and not as options if they start with `-`.
     return spawn_console_process(
         &format!("{PKG_NAME}-client.exe"),
         vec![
@@ -151,13 +149,6 @@ fn launch_client_console(
 
 fn read_keyboard_input() -> INPUT_RECORD_0 {
     loop {
-        // TODO: instead of using the ReadConsoleInputW function
-        // we should register a LowLevelKeyboardProc hook
-        // https://learn.microsoft.com/en-us/windows/win32/winmsg/hooks
-        // Using the callbacks for WM_KEYDOWN and WM_KEYUP
-        // (maybe additionally the SYS versions)
-        // we should be able to build the INPUT_RECORDS ourselve
-        // https://learn.microsoft.com/en-us/previous-versions/windows/desktop/legacy/ms644985(v=vs.85)
         let input_record = read_console_input();
         match input_record.EventType {
             KEY_EVENT => {
