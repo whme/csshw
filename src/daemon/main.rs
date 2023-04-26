@@ -5,7 +5,7 @@ use dissh::{
     serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
     utils::{
-        constants::{PIPE_NAME, PKG_NAME},
+        constants::{DEFAULT_SSH_USERNAME_KEY, PIPE_NAME, PKG_NAME},
         get_console_input_buffer, set_console_title,
     },
 };
@@ -29,6 +29,10 @@ const KEY_EVENT: u16 = 1;
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
+    /// Username used to connect to the hosts
+    #[clap(short, long)]
+    username: Option<String>,
+
     /// Host(s) to connect to
     #[clap(required = true)]
     hosts: Vec<String>,
@@ -36,10 +40,11 @@ struct Args {
 
 struct Daemon {
     hosts: Vec<String>,
+    username: Option<String>,
 }
 
 impl Daemon {
-    async fn launch(&self) {
+    async fn launch(self) {
         set_console_title(format!("{} daemon", PKG_NAME).as_str());
 
         // Makes sure ctrl+c is reported as a keyboard input rather than as signal
@@ -60,7 +65,13 @@ impl Daemon {
         );
         arrange_daemon_console(x, y, width, height);
 
-        launch_clients(self.hosts.to_vec(), workspace_area, number_of_consoles).await;
+        launch_clients(
+            self.hosts.to_vec(),
+            &self.username,
+            workspace_area,
+            number_of_consoles,
+        )
+        .await;
 
         self.run();
     }
@@ -146,6 +157,7 @@ fn determine_client_spacial_attributes(
 
 fn launch_client_console(
     host: &str,
+    username: Option<String>,
     x: i32,
     y: i32,
     width: i32,
@@ -158,6 +170,9 @@ fn launch_client_console(
         vec![
             "--",
             host,
+            &username
+                .as_ref()
+                .unwrap_or(&DEFAULT_SSH_USERNAME_KEY.to_string()),
             &x.to_string(),
             &y.to_string(),
             &width.to_string(),
@@ -233,11 +248,13 @@ async fn named_pipe_server_routine(
 
 async fn launch_clients(
     hosts: Vec<String>,
+    username: &Option<String>,
     workspace_area: workspace::WorkspaceArea,
     number_of_consoles: i32,
 ) {
     let mut handles = vec![];
     for (index, host) in hosts.to_owned().into_iter().enumerate() {
+        let _username = username.clone();
         let future = tokio::spawn(async move {
             let (x, y, width, height) = determine_client_spacial_attributes(
                 index as i32,
@@ -247,7 +264,7 @@ async fn launch_clients(
             // TODO: probably keep track of the returned PROCESS_INFORMATION
             // to bring all clients to front when daemon is selected
             // or to close daemon if clients die
-            launch_client_console(&host, x, y, width, height);
+            launch_client_console(&host, _username, x, y, width, height);
         });
         handles.push(future);
     }
@@ -270,6 +287,9 @@ fn disable_processed_input_mode() {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    let daemon = Daemon { hosts: args.hosts };
+    let daemon: Daemon = Daemon {
+        hosts: args.hosts,
+        username: args.username,
+    };
     daemon.launch().await;
 }

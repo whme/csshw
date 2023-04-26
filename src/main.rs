@@ -11,6 +11,10 @@ struct Args {
     #[clap(short, long)]
     block: bool,
 
+    /// Username used to connect to the hosts
+    #[clap(short, long)]
+    username: Option<String>,
+
     /// Host(s) to connect to
     #[clap(required = true)]
     hosts: Vec<String>,
@@ -18,8 +22,11 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    spawn_console_process(
-        &format!("{PKG_NAME}-daemon.exe"),
-        args.hosts.iter().map(|host| -> &str { &host }).collect(),
-    );
+    let mut daemon_args: Vec<&str> = Vec::new();
+    if let Some(username) = args.username.as_ref() {
+        daemon_args.push("-u");
+        daemon_args.push(&username);
+    }
+    daemon_args.extend(args.hosts.iter().map(|host| -> &str { &host }));
+    spawn_console_process(&format!("{PKG_NAME}-daemon.exe"), daemon_args);
 }

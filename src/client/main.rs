@@ -3,6 +3,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use clap::Parser;
+use dissh::utils::constants::DEFAULT_SSH_USERNAME_KEY;
 use dissh::utils::{get_console_input_buffer, set_console_title};
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
@@ -26,6 +27,10 @@ struct Args {
     /// Host(s) to connect to
     #[clap(required = true)]
     host: String,
+
+    // Username used to connect to the hosts
+    #[clap(required = true)]
+    username: String,
 
     /// X coordinates of the upper left corner of the console window
     /// in reference to the upper left corner of the screen
@@ -69,10 +74,17 @@ fn write_console_input(input_record: INPUT_RECORD_0) {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+    println!("{:?}", args);
     let hwnd = unsafe { GetConsoleWindow() };
     unsafe {
         MoveWindow(hwnd, args.x, args.y, args.width, args.height, true);
     }
+    let host = args.host.clone();
+    let username_host = if args.username.as_str() == DEFAULT_SSH_USERNAME_KEY {
+        host
+    } else {
+        format!("{}@{}", args.username, host)
+    };
 
     // TODO: make executable (ssh, wsl-distro, etc..) and args configurable
     let mut child = Command::new("ubuntu")
@@ -83,7 +95,7 @@ async fn main() {
                 ssh -XY {} || \
                 [[ $? -eq 130 ]] || \
                 read -n 1 -p 'Press a key to exit'",
-                args.host
+                username_host
             )
             .as_str(),
         ])
