@@ -96,10 +96,10 @@ pub fn get_workspace_area(scaling: Scaling) -> WorkspaceArea {
     let x_size_frame = unsafe { GetSystemMetrics(SM_CXSIZEFRAME) };
     let y_size_frame = unsafe { GetSystemMetrics(SM_CYSIZEFRAME) };
     let workspace_area = WorkspaceArea {
-        x: workspace_rect.left - x_fixed_frame + x_size_frame,
+        x: workspace_rect.left - (x_fixed_frame + x_size_frame),
         y: workspace_rect.top,
         width: workspace_rect.right - workspace_rect.left,
-        height: workspace_rect.bottom - workspace_rect.top + y_fixed_frame + y_size_frame,
+        height: workspace_rect.bottom - workspace_rect.top + (y_fixed_frame + y_size_frame),
         scaling: Scaling::PHYSICAL,
         scale_factor: get_scale_factor(),
         x_fixed_frame: x_fixed_frame,
