@@ -3,7 +3,7 @@ use std::{ptr, thread, time};
 use windows::core::HSTRING;
 use windows::Win32::Foundation::{HANDLE, RECT};
 use windows::Win32::System::Console::{
-    GetConsoleWindow, GetStdHandle, STD_HANDLE, STD_INPUT_HANDLE,
+    GetConsoleTitleW, GetConsoleWindow, GetStdHandle, STD_HANDLE, STD_INPUT_HANDLE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, SetWindowTextW};
 
@@ -23,6 +23,14 @@ pub fn set_console_title(title: &str) {
     unsafe {
         SetWindowTextW(GetConsoleWindow(), &HSTRING::from(title));
     }
+}
+
+pub fn get_console_title() -> String {
+    let mut title: Vec<u16> = Vec::new();
+    unsafe {
+        GetConsoleTitleW(&mut title);
+    }
+    return String::from_utf16(&title).expect("Failed to get console title");
 }
 
 fn get_std_handle(nstdhandle: STD_HANDLE) -> HANDLE {

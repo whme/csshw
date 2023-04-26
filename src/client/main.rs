@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use clap::Parser;
 use dissh::utils::constants::DEFAULT_SSH_USERNAME_KEY;
-use dissh::utils::{get_console_input_buffer, set_console_title};
+use dissh::utils::{get_console_input_buffer, get_console_title, set_console_title};
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
 use whoami::username;
@@ -85,6 +85,10 @@ async fn main() {
         format!("{}@{}", args.username, host)
     };
 
+    // Set the console title once
+    let console_title = format!("{} - {}@{}", PKG_NAME, username(), args.host);
+    set_console_title(console_title.as_str());
+
     // TODO: make executable (ssh, wsl-distro, etc..) and args configurable
     let mut child = Command::new("ubuntu")
         .args([
@@ -92,8 +96,7 @@ async fn main() {
             format!(
                 "source ~/.bash_profile; \
                 ssh -XY {} || \
-                [[ $? -eq 130 ]] || \
-                read -n 1 -p 'Press a key to exit'",
+                [[ $? -eq 130 ]]",
                 username_host
             )
             .as_str(),
@@ -101,10 +104,25 @@ async fn main() {
         .spawn()
         .unwrap();
 
-    // FIXME: wait until after the child has started before changing the title
-    // TODO: instead of using args.host it would be nice to use the actual fqdn hostname
-    // the ssh client will connect to ...
-    set_console_title(format!("{} - {}@{}", PKG_NAME, username(), args.host).as_str());
+    // Wait for the child process to overwrite the console title
+    while get_console_title() == console_title.as_str() {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                // If the child exits while were in this loop, it can only mean
+                // we couldn't establish an ssh connection
+                // Then set the console title again
+                set_console_title(console_title.as_str());
+                // TODO: wait for input before exiting
+            }
+            Ok(None) => (
+                // child is still running
+            ),
+            Err(e) => panic!("{}", e),
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    // Then set it again
+    set_console_title(console_title.as_str());
 
     // Many clients trying to open the pipe at the same time can cause
     // a file not found error, so keep trying until we managed to open it
