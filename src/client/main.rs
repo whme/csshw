@@ -74,7 +74,6 @@ fn write_console_input(input_record: INPUT_RECORD_0) {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    println!("{:?}", args);
     let hwnd = unsafe { GetConsoleWindow() };
     unsafe {
         MoveWindow(hwnd, args.x, args.y, args.width, args.height, true);
