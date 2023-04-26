@@ -5,7 +5,8 @@ use windows::Win32::Foundation::{POINT, RECT};
 use windows::Win32::Graphics::Gdi::{MonitorFromPoint, HMONITOR, MONITOR_DEFAULTTOPRIMARY};
 use windows::Win32::UI::Shell::GetScaleFactorForMonitor;
 use windows::Win32::UI::WindowsAndMessaging::{
-    SystemParametersInfoW, SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    GetSystemMetrics, SystemParametersInfoW, SM_CXFIXEDFRAME, SM_CXSIZEFRAME, SM_CYFIXEDFRAME,
+    SM_CYSIZEFRAME, SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -21,6 +22,10 @@ pub struct WorkspaceArea {
     pub width: i32,
     pub height: i32,
     pub scaling: Scaling,
+    pub x_fixed_frame: i32,
+    pub y_fixed_frame: i32,
+    pub x_size_frame: i32,
+    pub y_size_frame: i32,
     scale_factor: f64,
 }
 
@@ -53,6 +58,10 @@ impl WorkspaceArea {
             height: height as i32,
             scaling: Scaling::LOGICAL,
             scale_factor: scale_factor,
+            x_fixed_frame: self.x_fixed_frame,
+            y_fixed_frame: self.y_fixed_frame,
+            x_size_frame: self.x_size_frame,
+            y_size_frame: self.y_size_frame,
         };
     }
 }
@@ -82,13 +91,21 @@ pub fn get_workspace_area(scaling: Scaling) -> WorkspaceArea {
             SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
         );
     }
+    let x_fixed_frame = unsafe { GetSystemMetrics(SM_CXFIXEDFRAME) };
+    let y_fixed_frame = unsafe { GetSystemMetrics(SM_CYFIXEDFRAME) };
+    let x_size_frame = unsafe { GetSystemMetrics(SM_CXSIZEFRAME) };
+    let y_size_frame = unsafe { GetSystemMetrics(SM_CYSIZEFRAME) };
     let workspace_area = WorkspaceArea {
-        x: workspace_rect.left,
+        x: workspace_rect.left - x_fixed_frame + x_size_frame,
         y: workspace_rect.top,
         width: workspace_rect.right - workspace_rect.left,
-        height: workspace_rect.bottom - workspace_rect.top,
+        height: workspace_rect.bottom - workspace_rect.top + y_fixed_frame + y_size_frame,
         scaling: Scaling::PHYSICAL,
         scale_factor: get_scale_factor(),
+        x_fixed_frame: x_fixed_frame,
+        y_fixed_frame: y_fixed_frame,
+        x_size_frame: x_size_frame,
+        y_size_frame: y_size_frame,
     };
     match scaling {
         Scaling::PHYSICAL => return workspace_area,

@@ -139,8 +139,8 @@ fn determine_client_spacial_attributes(
     return (
         workspace_area.x + x,
         workspace_area.y + y,
-        console_width,
-        console_height,
+        console_width + workspace_area.x_fixed_frame + workspace_area.x_size_frame * 2,
+        console_height + workspace_area.y_size_frame * 2,
     );
 }
 
