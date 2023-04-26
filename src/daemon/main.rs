@@ -243,6 +243,9 @@ async fn launch_clients(
                 number_of_consoles,
                 &workspace_area,
             );
+            // TODO: probably keep track of the returned PROCESS_INFORMATION
+            // to bring all clients to front when daemon is selected
+            // or to close daemon if clients die
             launch_client_console(&host, x, y, width, height);
         });
         handles.push(future);
