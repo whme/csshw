@@ -20,7 +20,9 @@ pub fn spawn_console_process(application: &str, args: Vec<&str>) -> PROCESS_INFO
 
     for arg in args {
         cmd.push(' ' as u16);
+        cmd.push(b'"' as u16);
         cmd.extend(OsString::from(arg).encode_wide());
+        cmd.push(b'"' as u16);
     }
     cmd.push(0); // add null terminator
 
