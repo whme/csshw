@@ -6,7 +6,7 @@ use dissh::{
     spawn_console_process,
     utils::{
         constants::{PIPE_NAME, PKG_NAME},
-        disable_processed_input_mode, get_console_input_buffer, set_console_title,
+        get_console_input_buffer, set_console_title,
     },
 };
 use tokio::{
@@ -15,7 +15,8 @@ use tokio::{
     task::JoinHandle,
 };
 use windows::Win32::System::Console::{
-    GetConsoleWindow, ReadConsoleInputW, INPUT_RECORD, INPUT_RECORD_0,
+    GetConsoleMode, GetConsoleWindow, ReadConsoleInputW, SetConsoleMode, CONSOLE_MODE,
+    ENABLE_PROCESSED_INPUT, INPUT_RECORD, INPUT_RECORD_0,
 };
 use windows::Win32::System::Threading::PROCESS_INFORMATION;
 use windows::Win32::UI::WindowsAndMessaging::MoveWindow;
@@ -252,6 +253,17 @@ async fn launch_clients(
     }
     for handle in handles {
         handle.await.unwrap();
+    }
+}
+
+fn disable_processed_input_mode() {
+    let handle = get_console_input_buffer();
+    let mut mode = CONSOLE_MODE(0u32);
+    unsafe {
+        GetConsoleMode(handle, &mut mode);
+    }
+    unsafe {
+        SetConsoleMode(handle, CONSOLE_MODE(mode.0 ^ ENABLE_PROCESSED_INPUT.0));
     }
 }
 
