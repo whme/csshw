@@ -263,6 +263,10 @@ async fn launch_clients(
             // TODO: probably keep track of the returned PROCESS_INFORMATION
             // to bring all clients to front when daemon is selected
             // or to close daemon if clients die
+            // Use EnumWindows to retrieve the list of window handles based
+            // on process_id: GetWindowThreadProcessId
+            // https://stackoverflow.com/a/21767578
+            // https://stackoverflow.com/a/13455343
             launch_client_console(&host, _username, x, y, width, height);
         });
         handles.push(future);
