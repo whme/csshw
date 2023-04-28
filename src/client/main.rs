@@ -7,7 +7,7 @@ use dissh::utils::constants::DEFAULT_SSH_USERNAME_KEY;
 use dissh::utils::{get_console_input_buffer, get_console_title, set_console_title};
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
-use whoami::username;
+use whoami;
 use windows::Win32::Foundation::GetLastError;
 use windows::Win32::System::Console::{
     GenerateConsoleCtrlEvent, GetConsoleWindow, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0,
@@ -79,14 +79,18 @@ async fn main() {
         MoveWindow(hwnd, args.x, args.y, args.width, args.height, true);
     }
     let host = args.host.clone();
-    let username_host = if args.username.as_str() == DEFAULT_SSH_USERNAME_KEY {
-        host
+    let username: String;
+    let username_host: String;
+    if args.username.as_str() == DEFAULT_SSH_USERNAME_KEY {
+        username = whoami::username();
+        username_host = host;
     } else {
-        format!("{}@{}", args.username, host)
-    };
+        username = args.username.clone();
+        username_host = format!("{}@{}", args.username, host);
+    }
 
-    // Set the console title once
-    let console_title = format!("{} - {}@{}", PKG_NAME, username(), args.host);
+    // Set the console title (child might overwrite it, so we have to set it again later)
+    let console_title = format!("{} - {}@{}", PKG_NAME, username, args.host);
     set_console_title(console_title.as_str());
 
     // TODO: make executable (ssh, wsl-distro, etc..) and args configurable
@@ -104,8 +108,12 @@ async fn main() {
         .spawn()
         .unwrap();
 
-    // Wait for the child process to overwrite the console title
-    while get_console_title() == console_title.as_str() {
+    // Wait for child to overwrite console title on startup and set it once more
+    loop {
+        if get_console_title() != console_title.as_str() {
+            set_console_title(console_title.as_str());
+            break;
+        }
         match child.try_wait() {
             Ok(Some(_)) => {
                 // If the child exits while were in this loop, it can only mean
@@ -121,8 +129,6 @@ async fn main() {
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
-    // Then set it again
-    set_console_title(console_title.as_str());
 
     // Many clients trying to open the pipe at the same time can cause
     // a file not found error, so keep trying until we managed to open it
