@@ -1,4 +1,9 @@
-use std::{io, time::Duration};
+use std::{
+    ffi::c_void,
+    io, mem,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use clap::Parser;
 use dissh::{
@@ -14,12 +19,18 @@ use tokio::{
     sync::broadcast::{self, Receiver, Sender},
     task::JoinHandle,
 };
-use windows::Win32::System::Console::{
-    GetConsoleMode, GetConsoleWindow, ReadConsoleInputW, SetConsoleMode, CONSOLE_MODE,
-    ENABLE_PROCESSED_INPUT, INPUT_RECORD, INPUT_RECORD_0,
-};
-use windows::Win32::System::Threading::PROCESS_INFORMATION;
 use windows::Win32::UI::WindowsAndMessaging::MoveWindow;
+use windows::Win32::{
+    Foundation::{BOOL, FALSE, HWND, LPARAM, TRUE},
+    System::Console::{
+        GetConsoleMode, GetConsoleWindow, ReadConsoleInputW, SetConsoleMode, CONSOLE_MODE,
+        ENABLE_PROCESSED_INPUT, INPUT_RECORD, INPUT_RECORD_0,
+    },
+    UI::WindowsAndMessaging::EnumWindows,
+};
+use windows::Win32::{
+    System::Threading::PROCESS_INFORMATION, UI::WindowsAndMessaging::GetWindowThreadProcessId,
+};
 
 mod workspace;
 
@@ -65,13 +76,15 @@ impl Daemon {
         );
         arrange_daemon_console(x, y, width, height);
 
-        launch_clients(
+        let client_console_window_handles = launch_clients(
             self.hosts.to_vec(),
             &self.username,
             workspace_area,
             number_of_consoles,
         )
         .await;
+        // FIXME: remove print
+        println!("{:?}", client_console_window_handles);
 
         self.run();
     }
@@ -250,10 +263,13 @@ async fn launch_clients(
     username: &Option<String>,
     workspace_area: workspace::WorkspaceArea,
     number_of_consoles: i32,
-) {
+) -> Vec<HWND> {
     let mut handles = vec![];
+    // TODO: make process_information a singleton that can be shared between async functions
+    let process_ids = Arc::new(Mutex::new(Vec::<u32>::new()));
     for (index, host) in hosts.to_owned().into_iter().enumerate() {
         let _username = username.clone();
+        let process_ids_arc = Arc::clone(&process_ids);
         let future = tokio::spawn(async move {
             let (x, y, width, height) = determine_client_spacial_attributes(
                 index as i32,
@@ -267,12 +283,54 @@ async fn launch_clients(
             // on process_id: GetWindowThreadProcessId
             // https://stackoverflow.com/a/21767578
             // https://stackoverflow.com/a/13455343
-            launch_client_console(&host, _username, x, y, width, height);
+            process_ids_arc
+                .lock()
+                .unwrap()
+                .push(launch_client_console(&host, _username, x, y, width, height).dwProcessId);
         });
         handles.push(future);
     }
     for handle in handles {
         handle.await.unwrap();
+    }
+
+    // FIXME: We need to wait for all client windows to have opened
+    // This should not be done via a sleep
+    // If worst comes to worst we can put all of the below code into
+    // a loop and keep iterating until we have client_handles.len() == hosts.len()
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    // FIXME: doesn't have to be ArcMutex
+    let client_handles = Arc::new(Mutex::new(Vec::<HWND>::new()));
+    let client_handles_arc = Arc::clone(&client_handles);
+    enumerate_windows(|handle| {
+        let mut window_process_id: u32 = 0;
+        unsafe { GetWindowThreadProcessId(handle, Some(&mut window_process_id)) };
+        if process_ids.lock().unwrap().contains(&window_process_id) {
+            client_handles_arc.lock().unwrap().push(handle);
+        }
+        return true;
+    });
+    return client_handles.lock().unwrap().to_vec();
+}
+
+fn enumerate_windows<F>(mut callback: F)
+where
+    F: FnMut(HWND) -> bool,
+{
+    let mut trait_obj: &mut dyn FnMut(HWND) -> bool = &mut callback;
+    let closure_pointer_pointer: *mut c_void = unsafe { mem::transmute(&mut trait_obj) };
+
+    let lparam = LPARAM(closure_pointer_pointer as isize);
+    unsafe { EnumWindows(Some(enumerate_callback), lparam) };
+}
+
+unsafe extern "system" fn enumerate_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let closure: &mut &mut dyn FnMut(HWND) -> bool = mem::transmute(lparam.0 as *mut c_void);
+    if closure(hwnd) {
+        TRUE
+    } else {
+        FALSE
     }
 }
 
