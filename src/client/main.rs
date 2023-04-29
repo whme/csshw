@@ -81,6 +81,9 @@ async fn main() {
     let host = args.host.clone();
     let username: String;
     let username_host: String;
+
+    // TODO: use ssh to get a username if any is configured
+    // for the given host
     if args.username.as_str() == DEFAULT_SSH_USERNAME_KEY {
         username = whoami::username();
         username_host = host;

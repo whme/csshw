@@ -19,7 +19,7 @@ use tokio::{
     sync::broadcast::{self, Receiver, Sender},
     task::JoinHandle,
 };
-use windows::Win32::UI::WindowsAndMessaging::MoveWindow;
+use windows::Win32::UI::WindowsAndMessaging::{MoveWindow, SetForegroundWindow};
 use windows::Win32::{
     Foundation::{BOOL, FALSE, HWND, LPARAM, TRUE},
     System::Console::{
@@ -76,15 +76,21 @@ impl Daemon {
         );
         arrange_daemon_console(x, y, width, height);
 
-        let client_console_window_handles = launch_clients(
+        let _client_console_window_handles = launch_clients(
             self.hosts.to_vec(),
             &self.username,
             workspace_area,
             number_of_consoles,
         )
         .await;
-        // FIXME: remove print
-        println!("{:?}", client_console_window_handles);
+
+        // TODO: set some hook (CBTProc or SetWinEventHook) to detect
+        // window focus changes and when the daemon console get's focus
+        // iterate through all client windows + daemon and use
+        // SetForegroundWindow.
+
+        // Now that all clients started, focus the daemon console again.
+        unsafe { SetForegroundWindow(GetConsoleWindow()) };
 
         self.run();
     }
@@ -258,6 +264,9 @@ async fn named_pipe_server_routine(
     }
 }
 
+/// Launches a client console for each given host and
+/// waits for the client windows to exist before
+/// returning their handles.
 async fn launch_clients(
     hosts: Vec<String>,
     username: &Option<String>,
@@ -265,7 +274,6 @@ async fn launch_clients(
     number_of_consoles: i32,
 ) -> Vec<HWND> {
     let mut handles = vec![];
-    // TODO: make process_information a singleton that can be shared between async functions
     let process_ids = Arc::new(Mutex::new(Vec::<u32>::new()));
     for (index, host) in hosts.to_owned().into_iter().enumerate() {
         let _username = username.clone();
@@ -276,13 +284,6 @@ async fn launch_clients(
                 number_of_consoles,
                 &workspace_area,
             );
-            // TODO: probably keep track of the returned PROCESS_INFORMATION
-            // to bring all clients to front when daemon is selected
-            // or to close daemon if clients die
-            // Use EnumWindows to retrieve the list of window handles based
-            // on process_id: GetWindowThreadProcessId
-            // https://stackoverflow.com/a/21767578
-            // https://stackoverflow.com/a/13455343
             process_ids_arc
                 .lock()
                 .unwrap()
@@ -294,24 +295,23 @@ async fn launch_clients(
         handle.await.unwrap();
     }
 
-    // FIXME: We need to wait for all client windows to have opened
-    // This should not be done via a sleep
-    // If worst comes to worst we can put all of the below code into
-    // a loop and keep iterating until we have client_handles.len() == hosts.len()
-    tokio::time::sleep(Duration::from_secs(3)).await;
-
-    // FIXME: doesn't have to be ArcMutex
-    let client_handles = Arc::new(Mutex::new(Vec::<HWND>::new()));
-    let client_handles_arc = Arc::clone(&client_handles);
-    enumerate_windows(|handle| {
-        let mut window_process_id: u32 = 0;
-        unsafe { GetWindowThreadProcessId(handle, Some(&mut window_process_id)) };
-        if process_ids.lock().unwrap().contains(&window_process_id) {
-            client_handles_arc.lock().unwrap().push(handle);
+    loop {
+        // FIXME: doesn't have to be ArcMutex
+        let client_handles = Arc::new(Mutex::new(Vec::<HWND>::new()));
+        let client_handles_arc = Arc::clone(&client_handles);
+        enumerate_windows(|handle| {
+            let mut window_process_id: u32 = 0;
+            unsafe { GetWindowThreadProcessId(handle, Some(&mut window_process_id)) };
+            if process_ids.lock().unwrap().contains(&window_process_id) {
+                client_handles_arc.lock().unwrap().push(handle);
+            }
+            return true;
+        });
+        let result = client_handles.lock().unwrap();
+        if result.len() == hosts.len() {
+            return result.to_vec();
         }
-        return true;
-    });
-    return client_handles.lock().unwrap().to_vec();
+    }
 }
 
 fn enumerate_windows<F>(mut callback: F)
