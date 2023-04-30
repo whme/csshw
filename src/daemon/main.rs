@@ -97,6 +97,7 @@ impl Daemon {
             tokio::time::sleep(Duration::from_secs(5)).await;
             loop {
                 current_handle = unsafe { GetForegroundWindow() };
+                // FIXME: somehow the daemon window stays active after being minimized?
                 if &previous_handle != &current_handle {
                     if &previous_handle == &daemon_handle
                         && !client_window_handles.contains(&current_handle)
@@ -111,6 +112,9 @@ impl Daemon {
                         for client in client_window_handles.clone() {
                             unsafe { ShowWindow(client, SW_RESTORE) };
                         }
+                        unsafe { ShowWindow(daemon_handle, SW_RESTORE) };
+                        // FIXME: for some reason, it's not the daemon console that gets the keyboard focus
+                        tokio::time::sleep(Duration::from_millis(5)).await;
                         unsafe { SetForegroundWindow(daemon_handle) };
                     }
                 }
