@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'csshW'",
+            "name": "Debug executable 'csshw'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=csshW",
-                    "--package=csshW"
+                    "--bin=csshw",
+                    "--package=csshw"
                 ],
                 "filter": {
-                    "name": "csshW",
+                    "name": "csshw",
                     "kind": "bin"
                 }
             },
@@ -25,16 +25,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'csshW'",
+            "name": "Debug unit tests in executable 'csshw'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=csshW",
-                    "--package=csshW"
+                    "--bin=csshw",
+                    "--package=csshw"
                 ],
                 "filter": {
-                    "name": "csshW",
+                    "name": "csshw",
                     "kind": "bin"
                 }
             },
@@ -44,15 +44,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'csshW-daemon'",
+            "name": "Debug executable 'csshw-daemon'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=csshW-daemon",
-                    "--package=csshW"
+                    "--bin=csshw-daemon",
+                    "--package=csshw"
                 ],
                 "filter": {
-                    "name": "csshW-daemon",
+                    "name": "csshw-daemon",
                     "kind": "bin"
                 }
             },
@@ -62,16 +62,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'csshW-daemon'",
+            "name": "Debug unit tests in executable 'csshw-daemon'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=csshW-daemon",
-                    "--package=csshW"
+                    "--bin=csshw-daemon",
+                    "--package=csshw"
                 ],
                 "filter": {
-                    "name": "csshW-daemon",
+                    "name": "csshw-daemon",
                     "kind": "bin"
                 }
             },
@@ -81,15 +81,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'csshW-client'",
+            "name": "Debug executable 'csshw-client'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=csshW-client",
-                    "--package=csshW"
+                    "--bin=csshw-client",
+                    "--package=csshw"
                 ],
                 "filter": {
-                    "name": "csshW-client",
+                    "name": "csshw-client",
                     "kind": "bin"
                 }
             },
@@ -99,16 +99,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'csshW-client'",
+            "name": "Debug unit tests in executable 'csshw-client'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=csshW-client",
-                    "--package=csshW"
+                    "--bin=csshw-client",
+                    "--package=csshw"
                 ],
                 "filter": {
-                    "name": "csshW-client",
+                    "name": "csshw-client",
                     "kind": "bin"
                 }
             },

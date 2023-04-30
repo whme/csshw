@@ -10,14 +10,14 @@
 `cargo build`
 
 ## Run debug version
-`csshW.exe [args]`
-(It's a symlink to `/target/debug/csshW.exe`)
+`csshw.exe [args]`
+(It's a symlink to `/target/debug/csshw.exe`)
 
 ## Build and run
 `cargo run`
 
 ## Format + Build + Run
-`cargo fmt; cargo build; if ($?) { .\csshW.exe foo bar }`
+`cargo fmt; cargo build; if ($?) { .\csshw.exe foo bar }`
 
 # Windows 11
 
