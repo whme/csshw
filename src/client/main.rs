@@ -3,8 +3,8 @@ use std::process::Command;
 use std::time::Duration;
 
 use clap::Parser;
-use dissh::utils::constants::DEFAULT_SSH_USERNAME_KEY;
-use dissh::utils::{get_console_input_buffer, get_console_title, set_console_title};
+use csshw::utils::constants::DEFAULT_SSH_USERNAME_KEY;
+use csshw::utils::{get_console_input_buffer, get_console_title, set_console_title};
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
 use whoami;
@@ -15,7 +15,7 @@ use windows::Win32::System::Console::{
 };
 use windows::Win32::UI::WindowsAndMessaging::MoveWindow;
 
-use dissh::{
+use csshw::{
     serde::{deserialization::Deserialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     utils::constants::{PIPE_NAME, PKG_NAME},
 };

@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'dissh'",
+            "name": "Debug executable 'csshW'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=dissh",
-                    "--package=dissh"
+                    "--bin=csshW",
+                    "--package=csshW"
                 ],
                 "filter": {
-                    "name": "dissh",
+                    "name": "csshW",
                     "kind": "bin"
                 }
             },
@@ -25,16 +25,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'dissh'",
+            "name": "Debug unit tests in executable 'csshW'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=dissh",
-                    "--package=dissh"
+                    "--bin=csshW",
+                    "--package=csshW"
                 ],
                 "filter": {
-                    "name": "dissh",
+                    "name": "csshW",
                     "kind": "bin"
                 }
             },
@@ -44,15 +44,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'dissh-daemon'",
+            "name": "Debug executable 'csshW-daemon'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=dissh-daemon",
-                    "--package=dissh"
+                    "--bin=csshW-daemon",
+                    "--package=csshW"
                 ],
                 "filter": {
-                    "name": "dissh-daemon",
+                    "name": "csshW-daemon",
                     "kind": "bin"
                 }
             },
@@ -62,16 +62,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'dissh-daemon'",
+            "name": "Debug unit tests in executable 'csshW-daemon'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=dissh-daemon",
-                    "--package=dissh"
+                    "--bin=csshW-daemon",
+                    "--package=csshW"
                 ],
                 "filter": {
-                    "name": "dissh-daemon",
+                    "name": "csshW-daemon",
                     "kind": "bin"
                 }
             },
@@ -81,15 +81,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'dissh-client'",
+            "name": "Debug executable 'csshW-client'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=dissh-client",
-                    "--package=dissh"
+                    "--bin=csshW-client",
+                    "--package=csshW"
                 ],
                 "filter": {
-                    "name": "dissh-client",
+                    "name": "csshW-client",
                     "kind": "bin"
                 }
             },
@@ -99,16 +99,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'dissh-client'",
+            "name": "Debug unit tests in executable 'csshW-client'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=dissh-client",
-                    "--package=dissh"
+                    "--bin=csshW-client",
+                    "--package=csshW"
                 ],
                 "filter": {
-                    "name": "dissh-client",
+                    "name": "csshW-client",
                     "kind": "bin"
                 }
             },

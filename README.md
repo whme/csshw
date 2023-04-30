@@ -1,4 +1,4 @@
-# dissh - distributed SSH
+# csshW - Cluster SSH tool for Windows inspired by csshX
 
 ## Setup githooks
 `git config --local core.hooksPath .githooks/`
@@ -10,14 +10,14 @@
 `cargo build`
 
 ## Run debug version
-`dissh.exe [args]`
-(It's a symlink to `/target/debug/dissh.exe`)
+`csshW.exe [args]`
+(It's a symlink to `/target/debug/csshW.exe`)
 
 ## Build and run
 `cargo run`
 
 ## Format + Build + Run
-`cargo fmt; cargo build; if ($?) { .\dissh.exe foo bar }`
+`cargo fmt; cargo build; if ($?) { .\csshW.exe foo bar }`
 
 # Windows 11
 

@@ -6,7 +6,7 @@ use std::{
 };
 
 use clap::Parser;
-use dissh::{
+use csshw::{
     serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
     utils::{

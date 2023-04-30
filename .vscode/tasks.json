@@ -15,7 +15,7 @@
 		},
 		{
 			"type": "shell",
-			"command": "cargo fmt; cargo build; if ($?) { .\\dissh.exe foo bar }",
+			"command": "cargo fmt; cargo build; if ($?) { .\\csshW.exe foo bar }",
 			"problemMatcher": [
 				"$rustc"
 			],

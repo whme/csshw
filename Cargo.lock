@@ -83,7 +83,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dissh"
+name = "csshw"
 version = "0.1.0"
 dependencies = [
  "clap",

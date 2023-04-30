@@ -1,18 +1,18 @@
 [package]
-name = "dissh"
+name = "csshw"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "dissh"
+name = "csshw"
 path = "src/main.rs"
 
 [[bin]]
-name = "dissh-daemon"
+name = "csshw-daemon"
 path = "src/daemon/main.rs"
 
 [[bin]]
-name = "dissh-client"
+name = "csshw-client"
 path = "src/client/main.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

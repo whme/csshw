@@ -1,5 +1,5 @@
 use clap::Parser;
-use dissh::spawn_console_process;
+use csshw::spawn_console_process;
 
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
