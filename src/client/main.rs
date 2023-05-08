@@ -1,13 +1,16 @@
-use std::io;
+use std::env;
+use std::fs::File;
+use std::io::{self, BufReader};
+use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
 use clap::Parser;
 use csshw::utils::constants::DEFAULT_SSH_USERNAME_KEY;
 use csshw::utils::{get_console_input_buffer, get_console_title, set_console_title};
+use ssh2_config::SshConfig;
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
-use whoami;
 use windows::Win32::Foundation::GetLastError;
 use windows::Win32::System::Console::{
     GenerateConsoleCtrlEvent, GetConsoleWindow, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0,
@@ -28,7 +31,7 @@ struct Args {
     #[clap(required = true)]
     host: String,
 
-    // Username used to connect to the hosts
+    /// Username used to connect to the hosts
     #[clap(required = true)]
     username: String,
 
@@ -78,14 +81,30 @@ async fn main() {
     unsafe {
         MoveWindow(hwnd, args.x, args.y, args.width, args.height, true);
     }
+
+    // TODO: make SSH config file configurable
+    let mut reader = BufReader::new(
+        File::open(Path::new(
+            format!("{}\\.ssh\\config", env::var("USERPROFILE").unwrap()).as_str(),
+        ))
+        .expect("Could not open SSH configuration file."),
+    );
+    let ssh_config = SshConfig::default()
+        .parse(&mut reader)
+        .expect("Failed to parse SSH configuration file");
+
     let host = args.host.clone();
     let username: String;
     let username_host: String;
 
-    // TODO: use ssh to get a username if any is configured
-    // for the given host
     if args.username.as_str() == DEFAULT_SSH_USERNAME_KEY {
-        username = whoami::username();
+        let default_params = ssh_config.default_params();
+        let host_specific_params = ssh_config.query(host.clone());
+        // FIXME: find a better default
+        username = host_specific_params
+            .user
+            .unwrap_or(default_params.user.unwrap_or("undefined".to_string()));
+        // No need to specify the username as it is already specified in the SSH config
         username_host = host;
     } else {
         username = args.username.clone();
