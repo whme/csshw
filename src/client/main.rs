@@ -78,6 +78,7 @@ fn write_console_input(input_record: INPUT_RECORD_0) {
 async fn main() {
     let args = Args::parse();
     let hwnd = unsafe { GetConsoleWindow() };
+    // FIXME: for some client it doesn't seem to work and they do not re-arange themselves
     unsafe {
         MoveWindow(hwnd, args.x, args.y, args.width, args.height, true);
     }
