@@ -19,9 +19,7 @@ use tokio::{
     sync::broadcast::{self, Receiver, Sender},
     task::JoinHandle,
 };
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, MoveWindow, SetForegroundWindow, ShowWindow, SW_MINIMIZE, SW_RESTORE,
-};
+use windows::Win32::UI::WindowsAndMessaging::{MoveWindow, SetForegroundWindow};
 use windows::Win32::{
     Foundation::{BOOL, FALSE, HWND, LPARAM, TRUE},
     System::Console::{
@@ -78,7 +76,7 @@ impl Daemon {
         );
         arrange_daemon_console(x, y, width, height);
 
-        let client_window_handles = launch_clients(
+        let _client_console_window_handles = launch_clients(
             self.hosts.to_vec(),
             &self.username,
             workspace_area,
@@ -86,42 +84,13 @@ impl Daemon {
         )
         .await;
 
+        // TODO: set some hook (CBTProc or SetWinEventHook) to detect
+        // window focus changes and when the daemon console get's focus
+        // iterate through all client windows + daemon and use
+        // SetForegroundWindow.
+
         // Now that all clients started, focus the daemon console again.
         unsafe { SetForegroundWindow(GetConsoleWindow()) };
-
-        tokio::spawn(async move {
-            let daemon_handle = unsafe { GetForegroundWindow() };
-            let mut previous_handle = daemon_handle.clone();
-            let mut current_handle: HWND;
-            // FIXME: we somehow must wait
-            tokio::time::sleep(Duration::from_secs(5)).await;
-            loop {
-                current_handle = unsafe { GetForegroundWindow() };
-                // FIXME: somehow the daemon window stays active after being minimized?
-                if &previous_handle != &current_handle {
-                    if &previous_handle == &daemon_handle
-                        && !client_window_handles.contains(&current_handle)
-                    {
-                        for client in client_window_handles.clone() {
-                            unsafe { ShowWindow(client, SW_MINIMIZE) };
-                        }
-                        unsafe { ShowWindow(daemon_handle, SW_MINIMIZE) };
-                    } else if !client_window_handles.contains(&previous_handle)
-                        && &current_handle == &daemon_handle
-                    {
-                        for client in client_window_handles.clone() {
-                            unsafe { ShowWindow(client, SW_RESTORE) };
-                        }
-                        unsafe { ShowWindow(daemon_handle, SW_RESTORE) };
-                        // FIXME: for some reason, it's not the daemon console that gets the keyboard focus
-                        tokio::time::sleep(Duration::from_millis(5)).await;
-                        unsafe { SetForegroundWindow(daemon_handle) };
-                    }
-                }
-                previous_handle = current_handle;
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        });
 
         self.run();
     }
