@@ -2,7 +2,7 @@ use std::env;
 use std::fs::File;
 use std::io::{self, BufReader};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command};
 use std::time::Duration;
 
 use clap::Parser;
@@ -54,6 +54,15 @@ struct Args {
     height: i32,
 }
 
+fn arrange_client_window(args: &Args) {
+    let hwnd = unsafe { GetConsoleWindow() };
+    // FIXME: for some client it doesn't seem to work and they do not re-arange themselves
+    // when connected to an external screen
+    unsafe {
+        MoveWindow(hwnd, args.x, args.y, args.width, args.height, true);
+    }
+}
+
 fn write_console_input(input_record: INPUT_RECORD_0) {
     let buffer: [INPUT_RECORD; 1] = [INPUT_RECORD {
         EventType: KEY_EVENT as u16,
@@ -74,16 +83,10 @@ fn write_console_input(input_record: INPUT_RECORD_0) {
     };
 }
 
-#[tokio::main]
-async fn main() {
-    let args = Args::parse();
-    let hwnd = unsafe { GetConsoleWindow() };
-    // FIXME: for some client it doesn't seem to work and they do not re-arange themselves
-    // when connected to an external screen
-    unsafe {
-        MoveWindow(hwnd, args.x, args.y, args.width, args.height, true);
-    }
-
+/// Use `args.username` or load the adequate one from SSH config.
+///
+/// Returns `<username>@<host>`.
+fn get_username_and_host(args: &Args) -> String {
     // TODO: make SSH config file configurable
     let mut reader = BufReader::new(
         File::open(Path::new(
@@ -95,36 +98,35 @@ async fn main() {
         .parse(&mut reader)
         .expect("Failed to parse SSH configuration file");
 
-    let host = args.host.clone();
+    let default_params = ssh_config.default_params();
+    let host_specific_params = ssh_config.query(args.host.clone());
+
     let username: String;
-    let username_host: String;
 
     if args.username.as_str() == DEFAULT_SSH_USERNAME_KEY {
-        let default_params = ssh_config.default_params();
-        let host_specific_params = ssh_config.query(host.clone());
         // FIXME: find a better default
         username = host_specific_params
             .user
             .unwrap_or(default_params.user.unwrap_or("undefined".to_string()));
-        // No need to specify the username as it is already specified in the SSH config
-        username_host = host;
     } else {
         username = args.username.clone();
-        username_host = format!("{}@{}", args.username, host);
     }
 
-    // Set the console title (child might overwrite it, so we have to set it again later)
-    let console_title = format!("{} - {}@{}", PKG_NAME, username, args.host);
-    set_console_title(console_title.as_str());
+    return format!("{}@{}", username, args.host);
+}
 
+/// Launch the SSH process.
+/// It might overwrite the console title once it launches, so we wait for that
+/// to happen and set the title again.
+async fn launch_ssh_process(username_host: &str, console_title: &str) -> Child {
     // TODO: make executable (ssh, wsl-distro, etc..) and args configurable
     let mut child = Command::new("ubuntu")
         .args([
             "run",
             format!(
                 "source ~/.bash_profile; \
-                ssh -XY {} || \
-                [[ $? -eq 130 ]]",
+            ssh -XY {} || \
+            [[ $? -eq 130 ]]",
                 username_host
             )
             .as_str(),
@@ -134,8 +136,8 @@ async fn main() {
 
     // Wait for child to overwrite console title on startup and set it once more
     loop {
-        if get_console_title() != console_title.as_str() {
-            set_console_title(console_title.as_str());
+        if get_console_title() != console_title {
+            set_console_title(console_title);
             break;
         }
         match child.try_wait() {
@@ -143,7 +145,7 @@ async fn main() {
                 // If the child exits while were in this loop, it can only mean
                 // we couldn't establish an ssh connection
                 // Then set the console title again
-                set_console_title(console_title.as_str());
+                set_console_title(console_title);
                 // TODO: wait for input before exiting
             }
             Ok(None) => (
@@ -153,7 +155,10 @@ async fn main() {
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
+    return child;
+}
 
+async fn run(child: &mut Child) {
     // Many clients trying to open the pipe at the same time can cause
     // a file not found error, so keep trying until we managed to open it
     let named_pipe_client: NamedPipeClient = loop {
@@ -202,6 +207,22 @@ async fn main() {
         }
         write_console_input(INPUT_RECORD_0::deserialize(&mut buf));
     }
+}
+
+#[tokio::main]
+async fn main() {
+    let args = Args::parse();
+    arrange_client_window(&args);
+
+    let username_host = get_username_and_host(&args);
+
+    // Set the console title (child might overwrite it, so we have to set it again later)
+    let console_title = format!("{} - {}", PKG_NAME, username_host.clone());
+    set_console_title(console_title.as_str());
+
+    let mut child = launch_ssh_process(&username_host, &console_title).await;
+
+    run(&mut child).await;
 
     // Make sure the client and all its subprocesses
     // are aware they need to shutdown.
