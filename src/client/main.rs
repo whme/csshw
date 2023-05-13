@@ -8,6 +8,7 @@ use std::time::Duration;
 use clap::Parser;
 use csshw::utils::constants::DEFAULT_SSH_USERNAME_KEY;
 use csshw::utils::{get_console_input_buffer, get_console_title, set_console_title};
+use serde_derive::{Deserialize, Serialize};
 use ssh2_config::SshConfig;
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
@@ -22,6 +23,8 @@ use csshw::{
     serde::{deserialization::Deserialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     utils::constants::{PIPE_NAME, PKG_NAME},
 };
+
+const DEFAULT_USERNAME_HOST_PLACEHOLDER: &str = "{{USERNAME_AT_HOST}}";
 
 /// Daemon CLI. Manages client consoles and user input
 #[derive(Parser, Debug)]
@@ -52,6 +55,46 @@ struct Args {
     /// Height of the console window
     #[clap(required = true)]
     height: i32,
+}
+
+/// If not present the default config will be written to the default
+/// configuration place, under windows this under `%AppData%`
+#[derive(Serialize, Deserialize)]
+struct ClientConfig {
+    /// Full path to the SSH config.
+    /// e.g. `'C:\Users\<username>\.ssh\config'`
+    ssh_config_path: String,
+    /// Name of the program used to establish the SSH connection.
+    /// e.g. `'ubuntu'`
+    // FIXME: somehow neither `cmd` nor `ssh` or `terminal` work:
+    // key events are not respected
+    program: String,
+    /// List of arguments provided to the program.
+    /// Must include the `username_host_placeholder`.
+    /// e.g. `['run', 'ssh -XY {{USERNAME_AT_HOST}}']`
+    arguments: Vec<String>,
+    /// Placeholder string used to inject `<user>@<host>` into the list of arguments.
+    /// e.g. `'{{USERNAME_AT_HOST}}'`
+    username_host_placeholder: String,
+}
+
+impl Default for ClientConfig {
+    fn default() -> Self {
+        ClientConfig {
+            ssh_config_path: format!("{}\\.ssh\\config", env::var("USERPROFILE").unwrap()),
+            program: "ubuntu".to_string(),
+            arguments: vec![
+                "run".to_string(),
+                format!(
+                    "source ~/.bash_profile; \
+                ssh -XY {} || \
+                [[ $? -eq 130 ]]",
+                    DEFAULT_USERNAME_HOST_PLACEHOLDER
+                ),
+            ],
+            username_host_placeholder: DEFAULT_USERNAME_HOST_PLACEHOLDER.to_string(),
+        }
+    }
 }
 
 fn arrange_client_window(args: &Args) {
@@ -86,13 +129,10 @@ fn write_console_input(input_record: INPUT_RECORD_0) {
 /// Use `args.username` or load the adequate one from SSH config.
 ///
 /// Returns `<username>@<host>`.
-fn get_username_and_host(args: &Args) -> String {
-    // TODO: make SSH config file configurable
+fn get_username_and_host(args: &Args, config: &ClientConfig) -> String {
     let mut reader = BufReader::new(
-        File::open(Path::new(
-            format!("{}\\.ssh\\config", env::var("USERPROFILE").unwrap()).as_str(),
-        ))
-        .expect("Could not open SSH configuration file."),
+        File::open(Path::new(config.ssh_config_path.as_str()))
+            .expect("Could not open SSH configuration file."),
     );
     let ssh_config = SshConfig::default()
         .parse(&mut reader)
@@ -118,21 +158,20 @@ fn get_username_and_host(args: &Args) -> String {
 /// Launch the SSH process.
 /// It might overwrite the console title once it launches, so we wait for that
 /// to happen and set the title again.
-async fn launch_ssh_process(username_host: &str, console_title: &str) -> Child {
-    // TODO: make executable (ssh, wsl-distro, etc..) and args configurable
-    let mut child = Command::new("ubuntu")
-        .args([
-            "run",
-            format!(
-                "source ~/.bash_profile; \
-            ssh -XY {} || \
-            [[ $? -eq 130 ]]",
-                username_host
+async fn launch_ssh_process(
+    username_host: &str,
+    console_title: &str,
+    config: &ClientConfig,
+) -> Child {
+    let mut child =
+        Command::new(&config.program)
+            .args(
+                config.arguments.clone().into_iter().map(|arg| {
+                    arg.replace(config.username_host_placeholder.as_str(), username_host)
+                }),
             )
-            .as_str(),
-        ])
-        .spawn()
-        .unwrap();
+            .spawn()
+            .unwrap();
 
     // Wait for child to overwrite console title on startup and set it once more
     loop {
@@ -213,14 +252,15 @@ async fn run(child: &mut Child) {
 async fn main() {
     let args = Args::parse();
     arrange_client_window(&args);
+    let config: ClientConfig = confy::load(PKG_NAME, "client-config").unwrap();
 
-    let username_host = get_username_and_host(&args);
+    let username_host = get_username_and_host(&args, &config);
 
     // Set the console title (child might overwrite it, so we have to set it again later)
     let console_title = format!("{} - {}", PKG_NAME, username_host.clone());
     set_console_title(console_title.as_str());
 
-    let mut child = launch_ssh_process(&username_host, &console_title).await;
+    let mut child = launch_ssh_process(&username_host, &console_title, &config).await;
 
     run(&mut child).await;
 
