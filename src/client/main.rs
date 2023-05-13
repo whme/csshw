@@ -79,6 +79,7 @@ async fn main() {
     let args = Args::parse();
     let hwnd = unsafe { GetConsoleWindow() };
     // FIXME: for some client it doesn't seem to work and they do not re-arange themselves
+    // when connected to an external screen
     unsafe {
         MoveWindow(hwnd, args.x, args.y, args.width, args.height, true);
     }
