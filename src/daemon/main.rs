@@ -63,14 +63,14 @@ impl Daemon {
         disable_processed_input_mode();
 
         let workspace_area = workspace::get_workspace_area(workspace::Scaling::LOGICAL);
-        // +1 to account for the daemon console
-        let number_of_consoles = (self.hosts.len() + 1) as i32;
+        // FIXME: if number of hosts is < 3 determination of client spacial attributes falls apart
+        let number_of_consoles = self.hosts.len() as i32;
 
         // The daemon console can be treated as a client console when it comes
         // to figuring out where to put it on the screen.
         // TODO: the daemon console should always be on the bottom left
         let (x, y, width, height) = determine_client_spacial_attributes(
-            number_of_consoles - 1, // -1 because the index starts at 0
+            number_of_consoles,
             number_of_consoles,
             &workspace_area,
         );
