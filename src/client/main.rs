@@ -7,17 +7,18 @@ use std::time::Duration;
 
 use clap::Parser;
 use csshw::utils::constants::DEFAULT_SSH_USERNAME_KEY;
-use csshw::utils::{get_console_input_buffer, get_console_title, set_console_title};
+use csshw::utils::{
+    arrange_console as arrange_client_console, get_console_input_buffer, get_console_title,
+    set_console_title,
+};
 use serde_derive::{Deserialize, Serialize};
 use ssh2_config::SshConfig;
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
 use windows::Win32::Foundation::GetLastError;
 use windows::Win32::System::Console::{
-    GenerateConsoleCtrlEvent, GetConsoleWindow, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0,
-    KEY_EVENT,
+    GenerateConsoleCtrlEvent, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT,
 };
-use windows::Win32::UI::WindowsAndMessaging::MoveWindow;
 
 use csshw::{
     serde::{deserialization::Deserialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
@@ -94,15 +95,6 @@ impl Default for ClientConfig {
             ],
             username_host_placeholder: DEFAULT_USERNAME_HOST_PLACEHOLDER.to_string(),
         }
-    }
-}
-
-fn arrange_client_window(args: &Args) {
-    let hwnd = unsafe { GetConsoleWindow() };
-    // FIXME: for some client it doesn't seem to work and they do not re-arange themselves
-    // when connected to an external screen
-    unsafe {
-        MoveWindow(hwnd, args.x, args.y, args.width, args.height, true);
     }
 }
 
@@ -251,7 +243,7 @@ async fn run(child: &mut Child) {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    arrange_client_window(&args);
+    arrange_client_console(args.x, args.y, args.width, args.height);
     let config: ClientConfig = confy::load(PKG_NAME, "client-config").unwrap();
 
     let username_host = get_username_and_host(&args, &config);

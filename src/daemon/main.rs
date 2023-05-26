@@ -10,6 +10,7 @@ use csshw::{
     serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
     utils::{
+        arrange_console as arrange_daemon_console,
         constants::{DEFAULT_SSH_USERNAME_KEY, PIPE_NAME, PKG_NAME},
         get_console_input_buffer, set_console_title,
     },
@@ -19,7 +20,7 @@ use tokio::{
     sync::broadcast::{self, Receiver, Sender},
     task::JoinHandle,
 };
-use windows::Win32::UI::WindowsAndMessaging::{MoveWindow, SetForegroundWindow};
+use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
 use windows::Win32::{
     Foundation::{BOOL, FALSE, HWND, LPARAM, TRUE},
     System::Console::{
@@ -145,12 +146,6 @@ impl Daemon {
             }));
         }
         return servers;
-    }
-}
-
-fn arrange_daemon_console(x: i32, y: i32, width: i32, height: i32) {
-    unsafe {
-        MoveWindow(GetConsoleWindow(), x, y, width, height, true);
     }
 }
 

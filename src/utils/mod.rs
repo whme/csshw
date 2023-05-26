@@ -5,7 +5,9 @@ use windows::Win32::Foundation::{HANDLE, RECT};
 use windows::Win32::System::Console::{
     GetConsoleWindow, GetStdHandle, STD_HANDLE, STD_INPUT_HANDLE,
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, GetWindowTextW, SetWindowTextW};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetWindowRect, GetWindowTextW, MoveWindow, SetWindowTextW,
+};
 
 use self::constants::MAX_WINDOW_TITLE_LENGTH;
 
@@ -50,4 +52,13 @@ fn get_std_handle(nstdhandle: STD_HANDLE) -> HANDLE {
 
 pub fn get_console_input_buffer() -> HANDLE {
     return get_std_handle(STD_INPUT_HANDLE);
+}
+
+pub fn arrange_console(x: i32, y: i32, width: i32, height: i32) {
+    // FIXME: sometimes a daemon or client console isn't being arrange correctly
+    // when this simply retrying doesn't solve the issue. Maybe it has something to do
+    // with DPI awareness => https://docs.rs/embed-manifest/latest/embed_manifest/
+    unsafe {
+        MoveWindow(GetConsoleWindow(), x, y, width, height, true);
+    }
 }
