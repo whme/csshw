@@ -1,3 +1,5 @@
+#![deny(clippy::implicit_return)]
+#![allow(clippy::needless_return)]
 use std::env;
 use std::fs::File;
 use std::io::{self, BufReader};
@@ -81,7 +83,7 @@ struct ClientConfig {
 
 impl Default for ClientConfig {
     fn default() -> Self {
-        ClientConfig {
+        return ClientConfig {
             ssh_config_path: format!("{}\\.ssh\\config", env::var("USERPROFILE").unwrap()),
             program: "ubuntu".to_string(),
             arguments: vec![
@@ -94,7 +96,7 @@ impl Default for ClientConfig {
                 ),
             ],
             username_host_placeholder: DEFAULT_USERNAME_HOST_PLACEHOLDER.to_string(),
-        }
+        };
     }
 }
 
@@ -133,16 +135,14 @@ fn get_username_and_host(args: &Args, config: &ClientConfig) -> String {
     let default_params = ssh_config.default_params();
     let host_specific_params = ssh_config.query(args.host.clone());
 
-    let username: String;
-
-    if args.username.as_str() == DEFAULT_SSH_USERNAME_KEY {
+    let username: String = if args.username.as_str() == DEFAULT_SSH_USERNAME_KEY {
         // FIXME: find a better default
-        username = host_specific_params
+        host_specific_params
             .user
-            .unwrap_or(default_params.user.unwrap_or("undefined".to_string()));
+            .unwrap_or(default_params.user.unwrap_or("undefined".to_string()))
     } else {
-        username = args.username.clone();
-    }
+        args.username.clone()
+    };
 
     return format!("{}@{}", username, args.host);
 }
@@ -155,15 +155,12 @@ async fn launch_ssh_process(
     console_title: &str,
     config: &ClientConfig,
 ) -> Child {
-    let mut child =
-        Command::new(&config.program)
-            .args(
-                config.arguments.clone().into_iter().map(|arg| {
-                    arg.replace(config.username_host_placeholder.as_str(), username_host)
-                }),
-            )
-            .spawn()
-            .unwrap();
+    let mut child = Command::new(&config.program)
+        .args(config.arguments.clone().into_iter().map(|arg| {
+            return arg.replace(config.username_host_placeholder.as_str(), username_host);
+        }))
+        .spawn()
+        .unwrap();
 
     // Wait for child to overwrite console title on startup and set it once more
     loop {

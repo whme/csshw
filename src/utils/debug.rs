@@ -6,19 +6,19 @@ pub trait StringRepr {
 
 impl StringRepr for KEY_EVENT_RECORD_0 {
     fn string_repr(&self) -> String {
-        return format!("unicode_char: {}", unsafe { self.UnicodeChar }.to_string());
+        return format!("unicode_char: {}", unsafe { self.UnicodeChar });
     }
 }
 
 impl StringRepr for KEY_EVENT_RECORD {
     fn string_repr(&self) -> String {
         return vec![
-            format!("key_down: {}", self.bKeyDown.as_bool().to_string()),
-            format!("repeat_count: {}", self.wRepeatCount.to_string()),
+            format!("key_down: {}", self.bKeyDown.as_bool()),
+            format!("repeat_count: {}", self.wRepeatCount),
             format!("virtual_key_code: 0x{:x}", self.wVirtualKeyCode),
             format!("virtual_scan_code: 0x{:x}", self.wVirtualScanCode),
             format!("char: 0x{:x}", unsafe { self.uChar.UnicodeChar }),
-            format!("control_key_state: {}", self.dwControlKeyState.to_string()),
+            format!("control_key_state: {}", self.dwControlKeyState),
         ]
         .join(",\n");
     }

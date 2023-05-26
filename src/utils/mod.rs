@@ -46,7 +46,7 @@ pub fn get_console_title() -> String {
 fn get_std_handle(nstdhandle: STD_HANDLE) -> HANDLE {
     return unsafe {
         GetStdHandle(nstdhandle)
-            .expect(format!("Failed to retrieve standard handle: {:?}", nstdhandle).as_str())
+            .unwrap_or_else(|_| panic!("Failed to retrieve standard handle: {:?}", nstdhandle))
     };
 }
 

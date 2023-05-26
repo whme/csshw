@@ -11,8 +11,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 #[derive(Clone, Copy, Debug)]
 pub enum Scaling {
-    PHYSICAL,
-    LOGICAL,
+    Physical,
+    Logical,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -32,21 +32,21 @@ pub struct WorkspaceArea {
 impl WorkspaceArea {
     pub fn logical(&self) -> WorkspaceArea {
         match self.scaling {
-            Scaling::LOGICAL => return self.clone(),
-            Scaling::PHYSICAL => return self.convert_scaling(),
+            Scaling::Logical => return *self,
+            Scaling::Physical => return self.convert_scaling(),
         }
     }
 
     #[allow(dead_code)]
     pub fn physical(&self) -> WorkspaceArea {
         match self.scaling {
-            Scaling::LOGICAL => return self.convert_scaling(),
-            Scaling::PHYSICAL => return self.clone(),
+            Scaling::Logical => return self.convert_scaling(),
+            Scaling::Physical => return *self,
         }
     }
 
     fn convert_scaling(&self) -> WorkspaceArea {
-        let scale_factor = 1 as f64 / self.scale_factor;
+        let scale_factor = 1_f64 / self.scale_factor;
         let x = self.x as f64 * scale_factor;
         let y = self.y as f64 * scale_factor;
         let width = self.width as f64 * scale_factor;
@@ -56,8 +56,8 @@ impl WorkspaceArea {
             y: y as i32,
             width: width as i32,
             height: height as i32,
-            scaling: Scaling::LOGICAL,
-            scale_factor: scale_factor,
+            scaling: Scaling::Logical,
+            scale_factor,
             x_fixed_frame: self.x_fixed_frame,
             y_fixed_frame: self.y_fixed_frame,
             x_size_frame: self.x_size_frame,
@@ -100,15 +100,15 @@ pub fn get_workspace_area(scaling: Scaling) -> WorkspaceArea {
         y: workspace_rect.top,
         width: workspace_rect.right - workspace_rect.left,
         height: workspace_rect.bottom - workspace_rect.top + (y_fixed_frame + y_size_frame),
-        scaling: Scaling::PHYSICAL,
+        scaling: Scaling::Physical,
         scale_factor: get_scale_factor(),
-        x_fixed_frame: x_fixed_frame,
-        y_fixed_frame: y_fixed_frame,
-        x_size_frame: x_size_frame,
-        y_size_frame: y_size_frame,
+        x_fixed_frame,
+        y_fixed_frame,
+        x_size_frame,
+        y_size_frame,
     };
     match scaling {
-        Scaling::PHYSICAL => return workspace_area,
-        Scaling::LOGICAL => return workspace_area.logical(),
+        Scaling::Physical => return workspace_area,
+        Scaling::Logical => return workspace_area.logical(),
     }
 }

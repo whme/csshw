@@ -1,3 +1,5 @@
+#![deny(clippy::implicit_return)]
+#![allow(clippy::needless_return)]
 use clap::Parser;
 use csshw::spawn_console_process;
 
@@ -25,8 +27,8 @@ fn main() {
     let mut daemon_args: Vec<&str> = Vec::new();
     if let Some(username) = args.username.as_ref() {
         daemon_args.push("-u");
-        daemon_args.push(&username);
+        daemon_args.push(username);
     }
-    daemon_args.extend(args.hosts.iter().map(|host| -> &str { &host }));
+    daemon_args.extend(args.hosts.iter().map(|host| -> &str { return host }));
     spawn_console_process(&format!("{PKG_NAME}-daemon.exe"), daemon_args);
 }

@@ -1,3 +1,5 @@
+#![deny(clippy::implicit_return)]
+#![allow(clippy::needless_return)]
 use std::{
     ffi::c_void,
     io, mem,
@@ -63,7 +65,7 @@ impl Daemon {
         // https://learn.microsoft.com/en-us/windows/console/ctrl-c-and-ctrl-break-signals
         disable_processed_input_mode();
 
-        let workspace_area = workspace::get_workspace_area(workspace::Scaling::LOGICAL);
+        let workspace_area = workspace::get_workspace_area(workspace::Scaling::Logical);
         // FIXME: if number of hosts is < 3 determination of client spacial attributes falls apart
         let number_of_consoles = self.hosts.len() as i32;
 
@@ -183,7 +185,7 @@ fn launch_client_console(
         vec![
             "--",
             host,
-            &username
+            username
                 .as_ref()
                 .unwrap_or(&DEFAULT_SSH_USERNAME_KEY.to_string()),
             &x.to_string(),
@@ -270,7 +272,7 @@ async fn launch_clients(
 ) -> Vec<HWND> {
     let mut handles = vec![];
     let process_ids = Arc::new(Mutex::new(Vec::<u32>::new()));
-    for (index, host) in hosts.to_owned().into_iter().enumerate() {
+    for (index, host) in hosts.iter().cloned().enumerate() {
         let _username = username.clone();
         let process_ids_arc = Arc::clone(&process_ids);
         let future = tokio::spawn(async move {
@@ -321,11 +323,12 @@ where
 }
 
 unsafe extern "system" fn enumerate_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
-    let closure: &mut &mut dyn FnMut(HWND) -> bool = mem::transmute(lparam.0 as *mut c_void);
+    let closure: &mut &mut dyn FnMut(HWND) -> bool = &mut *(lparam.0 as *mut c_void
+        as *mut &mut dyn std::ops::FnMut(windows::Win32::Foundation::HWND) -> bool);
     if closure(hwnd) {
-        TRUE
+        return TRUE;
     } else {
-        FALSE
+        return FALSE;
     }
 }
 
