@@ -2,7 +2,7 @@
 _Cluster SSH tool for Windows inspired by [csshX](https://github.com/brockgr/csshx)_
 
 ## Pre-requisites
-- A working [WSL-2](https://learn.microsoft.com/en-us/windows/wsl/install) installation
+- A working [WSL-2](https://learn.microsoft.com/en-us/windows/wsl/install) installation [^1]
 - ``Default terminal application`` is set to ``Windows Console Host`` in the windows Terminal Startup Settings (Windows 11 only)
 
 ## Overview
@@ -24,3 +24,9 @@ csshW uses pre-commit githooks to enforce good code style.<br>
 
 ### Setup development environment
 #TODO
+
+[^1]: WSL-2 is the only console application that supports writing to its input buffer.
+    Other application I tried:
+    - git for windows
+    - windows cmd
+    - windows powershell
