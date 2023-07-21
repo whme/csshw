@@ -41,4 +41,8 @@ features = [
     "Win32_UI_Shell",
     "Win32_UI_Shell_Common",
     "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
 ]
+
+[build-dependencies]
+embed-resource = "2.2"

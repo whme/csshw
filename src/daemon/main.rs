@@ -22,7 +22,6 @@ use tokio::{
     sync::broadcast::{self, Receiver, Sender},
     task::JoinHandle,
 };
-use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
 use windows::Win32::{
     Foundation::{BOOL, FALSE, HWND, LPARAM, TRUE},
     System::Console::{
@@ -33,6 +32,13 @@ use windows::Win32::{
 };
 use windows::Win32::{
     System::Threading::PROCESS_INFORMATION, UI::WindowsAndMessaging::GetWindowThreadProcessId,
+};
+use windows::{
+    core::PCWSTR,
+    Win32::{
+        System::LibraryLoader::GetModuleHandleW,
+        UI::WindowsAndMessaging::{LoadImageW, SetForegroundWindow, IMAGE_ICON, LR_DEFAULTSIZE},
+    },
 };
 
 mod workspace;
@@ -345,6 +351,17 @@ fn disable_processed_input_mode() {
 
 #[tokio::main]
 async fn main() {
+    unsafe {
+        LoadImageW(
+            GetModuleHandleW(None).unwrap(),
+            PCWSTR(1 as _), // Value must match the `nameID` in the .rc script
+            IMAGE_ICON,
+            0,
+            0,
+            LR_DEFAULTSIZE,
+        )
+        .unwrap()
+    };
     let args = Args::parse();
     let daemon: Daemon = Daemon {
         hosts: args.hosts,
