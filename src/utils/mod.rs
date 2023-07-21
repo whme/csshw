@@ -1,7 +1,8 @@
-use std::{ptr, thread, time};
+use std::{mem, ptr, thread, time};
 
 use windows::core::HSTRING;
-use windows::Win32::Foundation::{HANDLE, RECT};
+use windows::Win32::Foundation::{COLORREF, HANDLE, RECT};
+use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
 use windows::Win32::System::Console::{
     GetConsoleWindow, GetStdHandle, STD_HANDLE, STD_INPUT_HANDLE,
 };
@@ -26,6 +27,18 @@ pub fn print_console_rect() {
 pub fn set_console_title(title: &str) {
     unsafe {
         SetWindowTextW(GetConsoleWindow(), &HSTRING::from(title));
+    }
+}
+
+pub fn set_console_border_color(color: COLORREF) {
+    unsafe {
+        DwmSetWindowAttribute(
+            GetConsoleWindow(),
+            DWMWA_BORDER_COLOR,
+            &color as *const COLORREF as *const _,
+            mem::size_of::<COLORREF>() as u32,
+        )
+        .unwrap();
     }
 }
 

@@ -14,7 +14,7 @@ use csshw::{
     utils::{
         arrange_console as arrange_daemon_console,
         constants::{DEFAULT_SSH_USERNAME_KEY, PIPE_NAME, PKG_NAME},
-        get_console_input_buffer, set_console_title,
+        get_console_input_buffer, set_console_border_color, set_console_title,
     },
 };
 use tokio::{
@@ -23,7 +23,7 @@ use tokio::{
     task::JoinHandle,
 };
 use windows::Win32::{
-    Foundation::{BOOL, FALSE, HWND, LPARAM, TRUE},
+    Foundation::{BOOL, COLORREF, FALSE, HWND, LPARAM, TRUE},
     System::Console::{
         GetConsoleMode, GetConsoleWindow, ReadConsoleInputW, SetConsoleMode, CONSOLE_MODE,
         ENABLE_PROCESSED_INPUT, INPUT_RECORD, INPUT_RECORD_0,
@@ -66,6 +66,7 @@ struct Daemon {
 impl Daemon {
     async fn launch(self) {
         set_console_title(format!("{} daemon", PKG_NAME).as_str());
+        set_console_border_color(COLORREF(0x000000FF));
 
         // Makes sure ctrl+c is reported as a keyboard input rather than as signal
         // https://learn.microsoft.com/en-us/windows/console/ctrl-c-and-ctrl-break-signals
