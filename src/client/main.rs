@@ -64,7 +64,7 @@ struct Args {
 }
 
 /// If not present the default config will be written to the default
-/// configuration place, under windows this under `%AppData%`
+/// configuration place, under windows this is `%AppData%`
 #[derive(Serialize, Deserialize)]
 struct ClientConfig {
     /// Full path to the SSH config.

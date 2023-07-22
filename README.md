@@ -31,4 +31,4 @@ cargo fmt; cargo build; if ($?) { .\csshw.exe foo bar }
 
 
 [^1]: WSL-2 is the only console application that supports writing to its input buffer.<br>
-Other application I tried include ``git for windows``, ``windows cmd`` and ``windows powershell``.
+Other application I tried include ``ssh``, ``git-bash``, ``windows cmd`` and ``windows powershell``.
