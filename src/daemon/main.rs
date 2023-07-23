@@ -73,7 +73,6 @@ impl Daemon {
         disable_processed_input_mode();
 
         let workspace_area = workspace::get_workspace_area(workspace::Scaling::Logical);
-        // FIXME: if number of hosts is < 3 determination of client spacial attributes falls apart
         let number_of_consoles = self.hosts.len() as i32;
 
         // The daemon console can be treated as a client console when it comes
@@ -163,6 +162,7 @@ fn determine_client_spacial_attributes(
     number_of_consoles: i32,
     workspace_area: &workspace::WorkspaceArea,
 ) -> (i32, i32, i32, i32) {
+    // FIXME: if number of hosts is < 3 or =5 determination of client spacial attributes falls apart
     let height_width_ratio = workspace_area.height as f64 / workspace_area.width as f64;
     let number_of_columns = (number_of_consoles as f64 / height_width_ratio).sqrt() as i32;
     let console_width = workspace_area.width / number_of_columns;
