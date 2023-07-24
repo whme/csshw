@@ -1,8 +1,10 @@
 # csshW
 _Cluster SSH tool for Windows inspired by [csshX](https://github.com/brockgr/csshx)_
 
+![csshw demo](https://github.com/whme/csshw/blob/84570f8dd767e17df0027f11a19e5e3276718787/demo/csshw.gif)[^1][^2]
+
 ## Pre-requisites
-- A working [WSL-2](https://learn.microsoft.com/en-us/windows/wsl/install) installation [^1]
+- A working [WSL-2](https://learn.microsoft.com/en-us/windows/wsl/install) installation [^3]
 - ``Default terminal application`` is set to ``Windows Console Host`` in the windows Terminal Startup Settings (Windows 11 only)
 
 ## Overview
@@ -29,6 +31,7 @@ Format, build and execute debug version:
 cargo fmt; cargo build; if ($?) { .\csshw.exe foo bar }
 ```
 
-
-[^1]: WSL-2 is the only console application that supports writing to its input buffer.<br>
+[^1]: The searchbar used to launch csshw in the demo clip is [keypirinha](https://keypirinha.com/).
+[^2]: The tool to show key presses in the demo clip is [carnac the magnificent](http://carnackeys.com/).
+[^3]: WSL-2 is the only console application that supports writing to its input buffer.<br>
 Other application I tried include ``ssh``, ``git-bash``, ``windows cmd`` and ``windows powershell``.
