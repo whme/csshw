@@ -33,6 +33,8 @@ cargo fmt; cargo build; if ($?) { .\csshw.exe foo bar }
 
 ## Available/Verified configurations
 
+Config path `%AppData%\csshw\config\client-config.toml`
+
 - Using WSL2 with `ubuntu` (✔️):
     ```
     ssh_config_path = 'C:\Users\<username>\.ssh\config'
