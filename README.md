@@ -31,6 +31,30 @@ Format, build and execute debug version:
 cargo fmt; cargo build; if ($?) { .\csshw.exe foo bar }
 ```
 
+## Available/Verified configurations
+
+- Using WSL2 with `ubuntu` (✔️):
+    ```
+    ssh_config_path = 'C:\Users\<username>\.ssh\config'
+    program = 'ubuntu'
+    arguments = [
+        'run',
+        'source ~/.bash_profile; ssh -XY {{USERNAME_AT_HOST}} || [[ $? -eq 130 ]]',
+    ]
+    username_host_placeholder = '{{USERNAME_AT_HOST}}'
+    ```
+
+- Using git for windows `git-cmd.exe` (❔):
+    ```
+    ssh_config_path = 'C:\Users\<username>\.ssh\config'
+    program = 'git-cmd.exe'  # make sure its in your path
+    arguments = [
+        '--command',
+        'C:\Windows\System32\OpenSSH\ssh.exe -XY {{USERNAME_AT_HOST}}'
+    ]
+    username_host_placeholder = '{{USERNAME_AT_HOST}}'
+    ```
+
 [^1]: The searchbar used to launch csshw in the demo clip is [keypirinha](https://keypirinha.com/).
 [^2]: The tool to show key presses in the demo clip is [carnac the magnificent](http://carnackeys.com/).
 [^3]: WSL-2 is the only console application that supports writing to its input buffer.<br>
