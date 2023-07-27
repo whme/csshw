@@ -37,7 +37,7 @@ Config path `%AppData%\csshw\config\client-config.toml`
 
 - Using WSL2 with `ubuntu` (✔️):
     ```
-    ssh_config_path = '%USERPROFILE%\.ssh\config'
+    ssh_config_path = 'C:\Users\<username>\.ssh\config'
     program = 'ubuntu'
     arguments = [
         'run',
@@ -48,7 +48,7 @@ Config path `%AppData%\csshw\config\client-config.toml`
 
 - Using git for windows `git-cmd.exe` (❔):
     ```
-    ssh_config_path = '%USERPROFILE%\.ssh\config'
+    ssh_config_path = 'C:\Users\<username>\.ssh\config'
     program = 'git-cmd.exe'  # make sure its in your path
     arguments = [
         '--command',
