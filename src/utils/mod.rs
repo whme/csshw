@@ -31,6 +31,9 @@ pub fn set_console_title(title: &str) {
 }
 
 pub fn set_console_border_color(color: COLORREF) {
+    // FIXME: the used attribute DWMWA_BORDER_COLOR is only available since windows11
+    // breaking compatibility for windows10
+    // https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute
     unsafe {
         DwmSetWindowAttribute(
             GetConsoleWindow(),
