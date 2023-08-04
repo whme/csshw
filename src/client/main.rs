@@ -88,15 +88,10 @@ impl Default for ClientConfig {
     fn default() -> Self {
         return ClientConfig {
             ssh_config_path: format!("{}\\.ssh\\config", env::var("USERPROFILE").unwrap()),
-            program: "ubuntu".to_string(),
+            program: format!("{PKG_NAME}-launcher.exe"),
             arguments: vec![
-                "run".to_string(),
-                format!(
-                    "source ~/.bash_profile; \
-                ssh -XY {} || \
-                [[ $? -eq 130 ]]",
-                    DEFAULT_USERNAME_HOST_PLACEHOLDER
-                ),
+                "ssh".to_string(),
+                format!("ssh -XY {}", DEFAULT_USERNAME_HOST_PLACEHOLDER),
             ],
             username_host_placeholder: DEFAULT_USERNAME_HOST_PLACEHOLDER.to_string(),
         };
