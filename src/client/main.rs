@@ -4,18 +4,17 @@ use std::env;
 use std::fs::File;
 use std::io::{self, BufReader};
 use std::path::Path;
-use std::process::{Child, Command};
 use std::time::Duration;
 
 use clap::Parser;
 use csshw::utils::constants::DEFAULT_SSH_USERNAME_KEY;
 use csshw::utils::{
-    arrange_console as arrange_client_console, get_console_input_buffer, get_console_title,
-    set_console_title,
+    arrange_console as arrange_client_console, get_console_input_buffer, set_console_title,
 };
 use serde_derive::{Deserialize, Serialize};
 use ssh2_config::SshConfig;
 use tokio::net::windows::named_pipe::NamedPipeClient;
+use tokio::process::{Child, Command};
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
 use windows::Win32::Foundation::GetLastError;
 use windows::Win32::System::Console::{
@@ -91,7 +90,8 @@ impl Default for ClientConfig {
             program: format!("{PKG_NAME}-launcher.exe"),
             arguments: vec![
                 "ssh".to_string(),
-                format!("ssh -XY {}", DEFAULT_USERNAME_HOST_PLACEHOLDER),
+                "-XY".to_string(),
+                DEFAULT_USERNAME_HOST_PLACEHOLDER.to_string(),
             ],
             username_host_placeholder: DEFAULT_USERNAME_HOST_PLACEHOLDER.to_string(),
         };
@@ -148,39 +148,13 @@ fn get_username_and_host(args: &Args, config: &ClientConfig) -> String {
 /// Launch the SSH process.
 /// It might overwrite the console title once it launches, so we wait for that
 /// to happen and set the title again.
-async fn launch_ssh_process(
-    username_host: &str,
-    console_title: &str,
-    config: &ClientConfig,
-) -> Child {
-    let mut child = Command::new(&config.program)
+async fn launch_ssh_process(username_host: &str, config: &ClientConfig) -> Child {
+    let child = Command::new(&config.program)
         .args(config.arguments.clone().into_iter().map(|arg| {
             return arg.replace(config.username_host_placeholder.as_str(), username_host);
         }))
         .spawn()
         .unwrap();
-
-    // Wait for child to overwrite console title on startup and set it once more
-    loop {
-        if get_console_title() != console_title {
-            set_console_title(console_title);
-            break;
-        }
-        match child.try_wait() {
-            Ok(Some(_)) => {
-                // If the child exits while were in this loop, it can only mean
-                // we couldn't establish an ssh connection
-                // Then set the console title again
-                set_console_title(console_title);
-                // TODO: wait for input before exiting
-            }
-            Ok(None) => (
-                // child is still running
-            ),
-            Err(e) => panic!("{}", e),
-        }
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
     return child;
 }
 
@@ -258,7 +232,7 @@ async fn main() {
     let console_title = format!("{} - {}", PKG_NAME, username_host.clone());
     set_console_title(console_title.as_str());
 
-    let mut child = launch_ssh_process(&username_host, &console_title, &config).await;
+    let mut child = launch_ssh_process(&username_host, &config).await;
 
     run(&mut child).await;
 
@@ -267,10 +241,5 @@ async fn main() {
     unsafe {
         GenerateConsoleCtrlEvent(0, 0);
     }
-
-    // Apparently calling wait is necessary on some systems,
-    // so we'll just do it
-    // https://doc.rust-lang.org/std/process/struct.Child.html#warning
-    child.wait().expect("Failed to wait on child");
     drop(child);
 }

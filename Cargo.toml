@@ -28,7 +28,7 @@ rmp = "0.8.11"
 serde = "1.0.163"
 serde_derive = "1.0.163"
 ssh2-config = "0.1.6"
-tokio = { version = "1.26.0", features = ["rt", "rt-multi-thread", "net", "sync", "macros", "time", "signal"] }
+tokio = { version = "1.26.0", features = ["rt", "rt-multi-thread", "net", "sync", "macros", "time", "signal", "process"] }
 
 [dependencies.confy]
 version = "0.5.1"
