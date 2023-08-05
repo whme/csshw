@@ -16,10 +16,6 @@ path = "src/daemon/main.rs"
 name = "csshw-client"
 path = "src/client/main.rs"
 
-[[bin]]
-name = "csshw-launcher"
-path = "src/launcher/main.rs"
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]

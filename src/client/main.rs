@@ -70,13 +70,11 @@ struct ClientConfig {
     /// e.g. `'C:\Users\<username>\.ssh\config'`
     ssh_config_path: String,
     /// Name of the program used to establish the SSH connection.
-    /// e.g. `'ubuntu'`
-    // FIXME: somehow neither `cmd` nor `ssh` or `terminal` work:
-    // key events are not respected
+    /// e.g. `'ssh'`
     program: String,
     /// List of arguments provided to the program.
     /// Must include the `username_host_placeholder`.
-    /// e.g. `['run', 'ssh -XY {{USERNAME_AT_HOST}}']`
+    /// e.g. `['-XY' '{{USERNAME_AT_HOST}}']`
     arguments: Vec<String>,
     /// Placeholder string used to inject `<user>@<host>` into the list of arguments.
     /// e.g. `'{{USERNAME_AT_HOST}}'`
@@ -87,9 +85,8 @@ impl Default for ClientConfig {
     fn default() -> Self {
         return ClientConfig {
             ssh_config_path: format!("{}\\.ssh\\config", env::var("USERPROFILE").unwrap()),
-            program: format!("{PKG_NAME}-launcher.exe"),
+            program: "ssh".to_string(),
             arguments: vec![
-                "ssh".to_string(),
                 "-XY".to_string(),
                 DEFAULT_USERNAME_HOST_PLACEHOLDER.to_string(),
             ],

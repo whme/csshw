@@ -7,11 +7,10 @@ _Cluster SSH tool for Windows inspired by [csshX](https://github.com/brockgr/css
 - ``Default terminal application`` is set to ``Windows Console Host`` in the windows Terminal Startup Settings (Windows 11 only)
 
 ## Overview
-csshW consist of 4 executables:
+csshW consist of 3 executables:
 - ``csshw`` - a launcher that starts the daemon application and serves as main entry point
 - ``csshw-daemon`` - spawns and positions the client windows and propagates any key-strokes to them
-- ``csshw-client`` - starts the launcher and replays key-strokes received from the daemon
-- ``csshw-launcher`` - launches the SSH application in a non blocking fashion
+- ``csshw-client`` - launches the SSH client and replays key-strokes received from the daemon
 
 csshW will launch 1 daemon and N client windows (with N being the number of hosts to SSH onto).<br>
 Key-strokes performed while having the daemon console focussed will be sent to all clients simoultaneously and be replayed by them.<br>
@@ -30,22 +29,6 @@ Format, build and execute debug version:
 ```
 cargo fmt; cargo build; if ($?) { .\csshw.exe foo bar }
 ```
-
-## Available/Verified configurations
-
-Config path `%AppData%\csshw\config\client-config.toml`
-
-- Default (✔️):
-    ```
-    ssh_config_path = 'C:\Users\<username>\.ssh\config'
-    program = 'csshw-launcher.exe'
-    arguments = [
-        'ssh',
-        '-XY'
-        '{{USERNAME_AT_HOST}}'
-    ]
-    username_host_placeholder = '{{USERNAME_AT_HOST}}'
-    ```
 
 [^1]: The searchbar used to launch csshw in the demo clip is [keypirinha](https://keypirinha.com/).
 [^2]: The tool to show key presses in the demo clip is [carnac the magnificent](http://carnackeys.com/).
