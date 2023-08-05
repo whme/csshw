@@ -119,13 +119,18 @@ fn write_console_input(input_record: INPUT_RECORD_0) {
 ///
 /// Returns `<username>@<host>`.
 fn get_username_and_host(args: &Args, config: &ClientConfig) -> String {
-    let mut reader = BufReader::new(
-        File::open(Path::new(config.ssh_config_path.as_str()))
-            .expect("Could not open SSH configuration file."),
-    );
-    let ssh_config = SshConfig::default()
-        .parse(&mut reader)
-        .expect("Failed to parse SSH configuration file");
+    let mut ssh_config = SshConfig::default();
+
+    let ssh_config_path = Path::new(config.ssh_config_path.as_str());
+
+    if ssh_config_path.exists() {
+        let mut reader = BufReader::new(
+            File::open(ssh_config_path).expect("Could not open SSH configuration file."),
+        );
+        ssh_config = SshConfig::default()
+            .parse(&mut reader)
+            .expect("Failed to parse SSH configuration file");
+    }
 
     let default_params = ssh_config.default_params();
     let host_specific_params = ssh_config.query(args.host.clone());
