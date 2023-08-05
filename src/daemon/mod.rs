@@ -1,5 +1,6 @@
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
+use std::cmp::max;
 use std::{
     ffi::c_void,
     io, mem,
@@ -61,7 +62,7 @@ impl Daemon {
         // The daemon console can be treated as a client console when it comes
         // to figuring out where to put it on the screen.
         // TODO: the daemon console should always be on the bottom left
-        let (x, y, width, height) = determine_client_spacial_attributes(
+        let (x, y, width, height) = determine_client_spatial_attributes(
             number_of_consoles,
             number_of_consoles,
             &workspace_area,
@@ -140,18 +141,41 @@ impl Daemon {
     }
 }
 
-fn determine_client_spacial_attributes(
+fn determine_client_spatial_attributes(
     index: i32,
     number_of_consoles: i32,
     workspace_area: &workspace::WorkspaceArea,
 ) -> (i32, i32, i32, i32) {
-    // FIXME: if number of hosts is < 3 or =5 determination of client spacial attributes falls apart
-    let height_width_ratio = workspace_area.height as f64 / workspace_area.width as f64;
-    let number_of_columns = (number_of_consoles as f64 / height_width_ratio).sqrt() as i32;
-    let console_width = workspace_area.width / number_of_columns;
-    let console_height = (console_width as f64 * height_width_ratio) as i32;
-    let x = workspace_area.width / number_of_columns * (index % number_of_columns);
-    let y = index / number_of_columns * console_height;
+    let aspect_ratio = workspace_area.width as f64 / workspace_area.height as f64;
+
+    const ASPECT_RATIO_ADJUSTMENT: f64 = 0.5;
+
+    let grid_columns = max(
+        ((number_of_consoles as f64).sqrt() * (aspect_ratio + ASPECT_RATIO_ADJUSTMENT)) as i32,
+        1,
+    );
+    let grid_rows = max(
+        (number_of_consoles as f64 / grid_columns as f64).ceil() as i32,
+        1,
+    );
+
+    let grid_column_index = index % grid_columns;
+    let grid_row_index = index / grid_columns;
+
+    let is_last_row = grid_row_index == grid_rows - 1;
+    let last_row_console_count = number_of_consoles % grid_columns;
+
+    let console_width = if is_last_row && last_row_console_count != 0 {
+        workspace_area.width / last_row_console_count
+    } else {
+        workspace_area.width / grid_columns
+    };
+
+    let console_height = workspace_area.height / grid_rows;
+
+    let x = grid_column_index * console_width;
+    let y = grid_row_index * console_height;
+
     return (
         workspace_area.x + x,
         workspace_area.y + y,
@@ -233,7 +257,7 @@ async fn launch_clients(
         let _username = username.clone();
         let process_ids_arc = Arc::clone(&process_ids);
         let future = tokio::spawn(async move {
-            let (x, y, width, height) = determine_client_spacial_attributes(
+            let (x, y, width, height) = determine_client_spatial_attributes(
                 index as i32,
                 number_of_consoles,
                 &workspace_area,
