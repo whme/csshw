@@ -23,6 +23,22 @@ struct Args {
 }
 
 fn main() {
+    match std::env::current_exe() {
+        Ok(path) => match path.parent() {
+            None => {
+                eprintln!("Failed to get executable path parent working directory");
+            }
+            Some(exe_dir) => {
+                std::env::set_current_dir(exe_dir)
+                    .expect("Failed to change current working directory");
+                println!("Set current working directory to {}", exe_dir.display());
+            }
+        },
+        Err(_) => {
+            eprintln!("Failed to get executable directory");
+        }
+    }
+
     let args = Args::parse();
     let mut daemon_args: Vec<&str> = Vec::new();
     if let Some(username) = args.username.as_ref() {
