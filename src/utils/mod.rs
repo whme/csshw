@@ -31,17 +31,23 @@ pub fn set_console_title(title: &str) {
 }
 
 pub fn set_console_border_color(color: COLORREF) {
-    // FIXME: the used attribute DWMWA_BORDER_COLOR is only available since windows11
-    // breaking compatibility for windows10
-    // https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute
-    unsafe {
-        DwmSetWindowAttribute(
-            GetConsoleWindow(),
-            DWMWA_BORDER_COLOR,
-            &color as *const COLORREF as *const _,
-            mem::size_of::<COLORREF>() as u32,
-        )
-        .unwrap();
+    let version = os_info::get().version().to_string();
+    let mut iter = version.split('.');
+    let (major, _, build) = (
+        iter.next().unwrap().parse::<usize>().unwrap(),
+        iter.next().unwrap().parse::<usize>().unwrap(),
+        iter.next().unwrap().parse::<usize>().unwrap(),
+    );
+    if major >= 10 && build >= 22000 {
+        unsafe {
+            DwmSetWindowAttribute(
+                GetConsoleWindow(),
+                DWMWA_BORDER_COLOR,
+                &color as *const COLORREF as *const _,
+                mem::size_of::<COLORREF>() as u32,
+            )
+            .unwrap();
+        }
     }
 }
 

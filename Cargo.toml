@@ -20,6 +20,7 @@ path = "src/client/main.rs"
 
 [dependencies]
 clap = { version = "3.1.12", features = ["derive"] }
+os_info = { version="3.7.0", default-features = false }
 rmp = "0.8.11"
 serde = "1.0.163"
 serde_derive = "1.0.163"
