@@ -9,10 +9,6 @@ const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    /// Block until the session is terminted
-    #[clap(short, long)]
-    block: bool,
-
     /// Username used to connect to the hosts
     #[clap(short, long)]
     username: Option<String>,
