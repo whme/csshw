@@ -6,9 +6,8 @@ use std::io::{self, BufReader};
 use std::path::Path;
 use std::time::Duration;
 
-use clap::Parser;
-use csshw::utils::constants::DEFAULT_SSH_USERNAME_KEY;
-use csshw::utils::{
+use crate::utils::constants::DEFAULT_SSH_USERNAME_KEY;
+use crate::utils::{
     arrange_console as arrange_client_console, get_console_input_buffer, set_console_title,
 };
 use serde_derive::{Deserialize, Serialize};
@@ -21,7 +20,7 @@ use windows::Win32::System::Console::{
     GenerateConsoleCtrlEvent, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT,
 };
 
-use csshw::{
+use crate::{
     serde::{deserialization::Deserialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     utils::constants::{PIPE_NAME, PKG_NAME},
 };
@@ -30,37 +29,6 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{LoadImageW, IMAGE_ICON, LR_DEFAULTSIZE};
 
 const DEFAULT_USERNAME_HOST_PLACEHOLDER: &str = "{{USERNAME_AT_HOST}}";
-
-/// Daemon CLI. Manages client consoles and user input
-#[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
-struct Args {
-    /// Host(s) to connect to
-    #[clap(required = true)]
-    host: String,
-
-    /// Username used to connect to the hosts
-    #[clap(required = true)]
-    username: String,
-
-    /// X coordinates of the upper left corner of the console window
-    /// in reference to the upper left corner of the screen
-    #[clap(required = true)]
-    x: i32,
-
-    /// Y coordinates of the upper left corner of the console window
-    /// in reference to the upper left corner of the screen
-    #[clap(required = true)]
-    y: i32,
-
-    /// Width of the console window
-    #[clap(required = true)]
-    width: i32,
-
-    /// Height of the console window
-    #[clap(required = true)]
-    height: i32,
-}
 
 /// If not present the default config will be written to the default
 /// configuration place, under windows this is `%AppData%`
@@ -115,10 +83,10 @@ fn write_console_input(input_record: INPUT_RECORD_0) {
     };
 }
 
-/// Use `args.username` or load the adequate one from SSH config.
+/// Use `username` or load the adequate one from SSH config.
 ///
 /// Returns `<username>@<host>`.
-fn get_username_and_host(args: &Args, config: &ClientConfig) -> String {
+fn get_username_and_host(username: &str, host: &str, config: &ClientConfig) -> String {
     let mut ssh_config = SshConfig::default();
 
     let ssh_config_path = Path::new(config.ssh_config_path.as_str());
@@ -133,18 +101,18 @@ fn get_username_and_host(args: &Args, config: &ClientConfig) -> String {
     }
 
     let default_params = ssh_config.default_params();
-    let host_specific_params = ssh_config.query(args.host.clone());
+    let host_specific_params = ssh_config.query(host.clone());
 
-    let username: String = if args.username.as_str() == DEFAULT_SSH_USERNAME_KEY {
+    let username: String = if username == DEFAULT_SSH_USERNAME_KEY {
         // FIXME: find a better default
         host_specific_params
             .user
             .unwrap_or(default_params.user.unwrap_or("undefined".to_string()))
     } else {
-        args.username.clone()
+        username.to_owned()
     };
 
-    return format!("{}@{}", username, args.host);
+    return format!("{}@{}", username, host);
 }
 
 /// Launch the SSH process.
@@ -240,8 +208,7 @@ async fn run(child: &mut Child) {
     }
 }
 
-#[tokio::main]
-async fn main() {
+pub async fn main(host: String, username: String, x: i32, y: i32, width: i32, height: i32) {
     unsafe {
         LoadImageW(
             GetModuleHandleW(None).unwrap(),
@@ -253,11 +220,10 @@ async fn main() {
         )
         .unwrap()
     };
-    let args = Args::parse();
-    arrange_client_console(args.x, args.y, args.width, args.height);
+    arrange_client_console(x, y, width, height);
     let config: ClientConfig = confy::load(PKG_NAME, "client-config").unwrap();
 
-    let username_host = get_username_and_host(&args, &config);
+    let username_host = get_username_and_host(&username, &host, &config);
 
     // Set the console title (child might overwrite it, so we have to set it again later)
     let console_title = format!("{} - {}", PKG_NAME, username_host.clone());

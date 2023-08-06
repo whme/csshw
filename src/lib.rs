@@ -11,6 +11,8 @@ use windows::Win32::System::Threading::{
     CreateProcessW, CREATE_NEW_CONSOLE, PROCESS_INFORMATION, STARTUPINFOW,
 };
 
+pub mod client;
+pub mod daemon;
 pub mod serde;
 pub mod utils;
 

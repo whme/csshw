@@ -9,14 +9,6 @@ default-run = "csshw"
 name = "csshw"
 path = "src/main.rs"
 
-[[bin]]
-name = "csshw-daemon"
-path = "src/daemon/main.rs"
-
-[[bin]]
-name = "csshw-client"
-path = "src/client/main.rs"
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]

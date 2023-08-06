@@ -7,11 +7,6 @@ _Cluster SSH tool for Windows inspired by [csshX](https://github.com/brockgr/css
 - ``Default terminal application`` is set to ``Windows Console Host`` in the windows Terminal Startup Settings (Windows 11 only)
 
 ## Overview
-csshW consist of 3 executables:
-- ``csshw`` - a launcher that starts the daemon application and serves as main entry point
-- ``csshw-daemon`` - spawns and positions the client windows and propagates any key-strokes to them
-- ``csshw-client`` - launches the SSH client and replays key-strokes received from the daemon
-
 csshW will launch 1 daemon and N client windows (with N being the number of hosts to SSH onto).<br>
 Key-strokes performed while having the daemon console focussed will be sent to all clients simoultaneously and be replayed by them.<br>
 Focussing a client will cause any key-strokes to be sent to this client only.

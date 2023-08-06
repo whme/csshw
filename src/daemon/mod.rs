@@ -7,8 +7,7 @@ use std::{
     time::Duration,
 };
 
-use clap::Parser;
-use csshw::{
+use crate::{
     serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
     utils::{
@@ -41,19 +40,6 @@ use windows::{
 };
 
 mod workspace;
-
-/// Daemon CLI. Manages client consoles and user input
-#[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
-struct Args {
-    /// Username used to connect to the hosts
-    #[clap(short, long)]
-    username: Option<String>,
-
-    /// Host(s) to connect to
-    #[clap(required = true)]
-    hosts: Vec<String>,
-}
 
 struct Daemon {
     hosts: Vec<String>,
@@ -185,8 +171,9 @@ fn launch_client_console(
     // The first argument must be `--` to ensure all following arguments are treated
     // as positional arguments and not as options if they start with `-`.
     return spawn_console_process(
-        &format!("{PKG_NAME}-client.exe"),
+        &format!("{PKG_NAME}.exe"),
         vec![
+            "client",
             "--",
             host,
             username
@@ -313,8 +300,7 @@ fn disable_processed_input_mode() {
     }
 }
 
-#[tokio::main]
-async fn main() {
+pub async fn main(hosts: Vec<String>, username: Option<String>) {
     unsafe {
         LoadImageW(
             GetModuleHandleW(None).unwrap(),
@@ -326,10 +312,6 @@ async fn main() {
         )
         .unwrap()
     };
-    let args = Args::parse();
-    let daemon: Daemon = Daemon {
-        hosts: args.hosts,
-        username: args.username,
-    };
+    let daemon: Daemon = Daemon { hosts, username };
     daemon.launch().await;
 }
