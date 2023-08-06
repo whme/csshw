@@ -22,3 +22,11 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+    - name: Archive PDBs
+      uses: actions/upload-artifact@v3
+      with:
+        name: artifacts
+        retention-days: 30
+        path: |
+          target\debug\*.exe
+          target\debug\*.pdb
