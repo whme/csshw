@@ -24,9 +24,6 @@ use crate::{
     serde::{deserialization::Deserialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     utils::constants::{PIPE_NAME, PKG_NAME},
 };
-use windows::core::PCWSTR;
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::WindowsAndMessaging::{LoadImageW, IMAGE_ICON, LR_DEFAULTSIZE};
 
 const DEFAULT_USERNAME_HOST_PLACEHOLDER: &str = "{{USERNAME_AT_HOST}}";
 
@@ -209,17 +206,6 @@ async fn run(child: &mut Child) {
 }
 
 pub async fn main(host: String, username: String, x: i32, y: i32, width: i32, height: i32) {
-    unsafe {
-        LoadImageW(
-            GetModuleHandleW(None).unwrap(),
-            PCWSTR(1 as _), // Value must match the `nameID` in the .rc script
-            IMAGE_ICON,
-            0,
-            0,
-            LR_DEFAULTSIZE,
-        )
-        .unwrap()
-    };
     arrange_client_console(x, y, width, height);
     let config: ClientConfig = confy::load(PKG_NAME, "client-config").unwrap();
 
