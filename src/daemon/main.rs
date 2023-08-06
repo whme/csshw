@@ -43,7 +43,7 @@ use windows::{
 
 mod workspace;
 
-const ASPECT_RATIO_ADJUSTMENT: f64 = 0.5;
+const ASPECT_RATIO_ADJUSTMENT: f64 = 0.0;
 
 /// Daemon CLI. Manages client consoles and user input
 #[derive(Parser, Debug)]
