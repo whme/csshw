@@ -42,20 +42,7 @@ use windows::{
 
 mod workspace;
 
-const ASPECT_RATIO_ADJUSTMENT: f64 = 0.5;
-
-/// Daemon CLI. Manages client consoles and user input
-#[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
-struct Args {
-    /// Username used to connect to the hosts
-    #[clap(short, long)]
-    username: Option<String>,
-
-    /// Host(s) to connect to
-    #[clap(required = true)]
-    hosts: Vec<String>,
-}
+const ASPECT_RATIO_ADJUSTMENT: f64 = 0.0;
 
 struct Daemon {
     hosts: Vec<String>,
