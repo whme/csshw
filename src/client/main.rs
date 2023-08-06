@@ -155,6 +155,29 @@ async fn launch_ssh_process(username_host: &str, config: &ClientConfig) -> Child
     return child;
 }
 
+async fn read_write_loop(named_pipe_client: &NamedPipeClient) -> bool {
+    let mut buf: [u8; SERIALIZED_INPUT_RECORD_0_LENGTH] = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
+    match named_pipe_client.try_read(&mut buf) {
+        Ok(read_bytes) if read_bytes != SERIALIZED_INPUT_RECORD_0_LENGTH => {
+            // Seems to only happen if the pipe is closed/server disconnects
+            // indicating that the daemon has been closed.
+            // Exit the client too in that case.
+            return false;
+        }
+        Ok(_) => {
+            write_console_input(INPUT_RECORD_0::deserialize(&mut buf));
+            return true;
+        }
+        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+            return true;
+        }
+        Err(e) => {
+            println!("{}", e);
+            return true;
+        }
+    }
+}
+
 async fn run(child: &mut Child) {
     // Many clients trying to open the pipe at the same time can cause
     // a file not found error, so keep trying until we managed to open it
@@ -169,14 +192,39 @@ async fn run(child: &mut Child) {
         }
     };
     named_pipe_client.ready(Interest::READABLE).await.unwrap();
-
-    loop {
+    let mut failure_iterations = 0;
+    while read_write_loop(&named_pipe_client).await {
         match child.try_wait() {
-            Ok(Some(_)) => {
-                // TODO: maybe differentiate between exit code 0
-                // and errors. For the latter stay alive until a key is pressed
-                break;
-            }
+            Ok(Some(exit_status)) => match exit_status.code().unwrap() {
+                0 | 1 | 130 => {
+                    // 0 -> last command successful
+                    // 1 -> last command unsuccessful
+                    // 130 -> last command cancelled (Ctrl + C)
+                    return;
+                }
+                255 => {
+                    if failure_iterations == 0 {
+                        println!("Failed to establish SSH connection: {exit_status}");
+                        println!("Exiting after 60 seconds ...");
+                        // TODO: alternatively exit upon a keypress; either in the daemon
+                        // or directly in the client
+                    } else if failure_iterations >= 60 * 1000 / 5 {
+                        return;
+                    }
+                    failure_iterations += 1;
+                }
+                _ => {
+                    if failure_iterations == 0 {
+                        println!("SSH terminated with status {exit_status}");
+                        println!("Exiting after 60 seconds ...");
+                        // TODO: alternatively exit upon a keypress; either in the daemon
+                        // or directly in the client
+                    } else if failure_iterations >= 60 * 1000 / 5 {
+                        return;
+                    }
+                    failure_iterations += 1;
+                }
+            },
             Ok(None) => (
                 // child is still running
             ),
@@ -184,25 +232,6 @@ async fn run(child: &mut Child) {
         }
         // Sleep some time to avoid hogging 100% CPU usage.
         tokio::time::sleep(Duration::from_millis(5)).await;
-        let mut buf: [u8; SERIALIZED_INPUT_RECORD_0_LENGTH] = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
-        match named_pipe_client.try_read(&mut buf) {
-            Ok(read_bytes) => {
-                if read_bytes != SERIALIZED_INPUT_RECORD_0_LENGTH {
-                    // Seems to only happen if the pipe is closed/server disconnects
-                    // indicating that the daemon has been closed.
-                    // Exit the client too in that case.
-                    break;
-                }
-            }
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                continue;
-            }
-            Err(e) => {
-                println!("{}", e);
-                continue;
-            }
-        }
-        write_console_input(INPUT_RECORD_0::deserialize(&mut buf));
     }
 }
 
