@@ -43,6 +43,8 @@ use windows::{
 
 mod workspace;
 
+const ASPECT_RATIO_ADJUSTMENT: f64 = 0.5;
+
 /// Daemon CLI. Manages client consoles and user input
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -158,8 +160,6 @@ fn determine_client_spatial_attributes(
     workspace_area: &workspace::WorkspaceArea,
 ) -> (i32, i32, i32, i32) {
     let aspect_ratio = workspace_area.width as f64 / workspace_area.height as f64;
-
-    const ASPECT_RATIO_ADJUSTMENT: f64 = 0.5;
 
     let grid_columns = max(
         ((number_of_consoles as f64).sqrt() * (aspect_ratio + ASPECT_RATIO_ADJUSTMENT)) as i32,
