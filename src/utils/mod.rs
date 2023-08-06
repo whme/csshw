@@ -4,7 +4,8 @@ use windows::core::HSTRING;
 use windows::Win32::Foundation::{COLORREF, HANDLE, RECT};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
 use windows::Win32::System::Console::{
-    GetConsoleWindow, GetStdHandle, STD_HANDLE, STD_INPUT_HANDLE,
+    GetConsoleWindow, GetStdHandle, ReadConsoleInputW, INPUT_RECORD, INPUT_RECORD_0, STD_HANDLE,
+    STD_INPUT_HANDLE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, GetWindowTextW, MoveWindow, SetWindowTextW,
@@ -14,6 +15,8 @@ use self::constants::MAX_WINDOW_TITLE_LENGTH;
 
 pub mod constants;
 pub mod debug;
+
+const KEY_EVENT: u16 = 1;
 
 pub fn print_console_rect() {
     loop {
@@ -74,6 +77,40 @@ fn get_std_handle(nstdhandle: STD_HANDLE) -> HANDLE {
 
 pub fn get_console_input_buffer() -> HANDLE {
     return get_std_handle(STD_INPUT_HANDLE);
+}
+
+fn read_console_input() -> INPUT_RECORD {
+    const NB_EVENTS: usize = 1;
+    let mut input_buffer: [INPUT_RECORD; NB_EVENTS] = [INPUT_RECORD::default(); NB_EVENTS];
+    let mut number_of_events_read = 0;
+    loop {
+        unsafe {
+            ReadConsoleInputW(
+                get_console_input_buffer(),
+                &mut input_buffer,
+                &mut number_of_events_read,
+            )
+            .expect("Failed to read console input");
+        }
+        if number_of_events_read == NB_EVENTS as u32 {
+            break;
+        }
+    }
+    return input_buffer[0];
+}
+
+pub fn read_keyboard_input() -> INPUT_RECORD_0 {
+    loop {
+        let input_record = read_console_input();
+        match input_record.EventType {
+            KEY_EVENT => {
+                return input_record.Event;
+            }
+            _ => {
+                continue;
+            }
+        }
+    }
 }
 
 pub fn arrange_console(x: i32, y: i32, width: i32, height: i32) {

@@ -14,7 +14,7 @@ use csshw::{
     utils::{
         arrange_console as arrange_daemon_console,
         constants::{DEFAULT_SSH_USERNAME_KEY, PIPE_NAME, PKG_NAME},
-        get_console_input_buffer, set_console_border_color, set_console_title,
+        get_console_input_buffer, read_keyboard_input, set_console_border_color, set_console_title,
     },
 };
 use tokio::{
@@ -25,8 +25,7 @@ use tokio::{
 use windows::Win32::{
     Foundation::{BOOL, COLORREF, FALSE, HWND, LPARAM, TRUE},
     System::Console::{
-        GetConsoleMode, GetConsoleWindow, ReadConsoleInputW, SetConsoleMode, CONSOLE_MODE,
-        ENABLE_PROCESSED_INPUT, INPUT_RECORD, INPUT_RECORD_0,
+        GetConsoleMode, GetConsoleWindow, SetConsoleMode, CONSOLE_MODE, ENABLE_PROCESSED_INPUT,
     },
     UI::WindowsAndMessaging::EnumWindows,
 };
@@ -42,8 +41,6 @@ use windows::{
 };
 
 mod workspace;
-
-const KEY_EVENT: u16 = 1;
 
 /// Daemon CLI. Manages client consoles and user input
 #[derive(Parser, Debug)]
@@ -201,40 +198,6 @@ fn launch_client_console(
             &height.to_string(),
         ],
     );
-}
-
-fn read_keyboard_input() -> INPUT_RECORD_0 {
-    loop {
-        let input_record = read_console_input();
-        match input_record.EventType {
-            KEY_EVENT => {
-                return input_record.Event;
-            }
-            _ => {
-                continue;
-            }
-        }
-    }
-}
-
-fn read_console_input() -> INPUT_RECORD {
-    const NB_EVENTS: usize = 1;
-    let mut input_buffer: [INPUT_RECORD; NB_EVENTS] = [INPUT_RECORD::default(); NB_EVENTS];
-    let mut number_of_events_read = 0;
-    loop {
-        unsafe {
-            ReadConsoleInputW(
-                get_console_input_buffer(),
-                &mut input_buffer,
-                &mut number_of_events_read,
-            )
-            .expect("Failed to read console input");
-        }
-        if number_of_events_read == NB_EVENTS as u32 {
-            break;
-        }
-    }
-    return input_buffer[0];
 }
 
 async fn named_pipe_server_routine(
