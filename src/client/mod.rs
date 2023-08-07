@@ -207,7 +207,7 @@ async fn run(child: &mut Child) {
 
 pub async fn main(host: String, username: String, x: i32, y: i32, width: i32, height: i32) {
     arrange_client_console(x, y, width, height);
-    let config: ClientConfig = confy::load(PKG_NAME, "client-config").unwrap();
+    let config: ClientConfig = confy::load_path(format!("{PKG_NAME}-config.toml")).unwrap();
 
     let username_host = get_username_and_host(&username, &host, &config);
 
