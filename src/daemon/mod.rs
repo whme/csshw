@@ -36,7 +36,7 @@ use windows::Win32::{
 
 mod workspace;
 
-const ASPECT_RATIO_ADJUSTMENT: f64 = 0.0;
+const ASPECT_RATIO_ADJUSTMENT: f64 = -0.5;
 
 struct Daemon {
     hosts: Vec<String>,
