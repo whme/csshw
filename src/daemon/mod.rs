@@ -58,8 +58,11 @@ impl Daemon {
         // The daemon console can be treated as a client console when it comes
         // to figuring out where to put it on the screen.
         // TODO: the daemon console should always be on the bottom left
-        let (x, y, width, height) =
-            determine_client_spatial_attributes(0, number_of_consoles, &workspace_area);
+        let (x, y, width, height) = determine_client_spatial_attributes(
+            number_of_consoles - 1,
+            number_of_consoles,
+            &workspace_area,
+        );
         arrange_daemon_console(x, y, width, height);
 
         let _client_console_window_handles = launch_clients(
@@ -249,7 +252,7 @@ async fn launch_clients(
         let process_ids_arc = Arc::clone(&process_ids);
         let future = tokio::spawn(async move {
             let (x, y, width, height) = determine_client_spatial_attributes(
-                index as i32 + 1,
+                index as i32,
                 number_of_consoles,
                 &workspace_area,
             );
