@@ -7,6 +7,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
+use std::{thread, time};
 
 use crate::{
     serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
@@ -106,15 +107,24 @@ impl Daemon {
             }
         });
 
+        let mut transmitted_records = 0;
         loop {
+            if transmitted_records == SENDER_CAPACITY - 1 {
+                thread::sleep(time::Duration::from_millis(1));
+                transmitted_records = 0;
+            }
             let input_record = read_keyboard_input();
-            sender
-                .send(
-                    input_record.serialize().as_mut_vec()[..]
-                        .try_into()
-                        .unwrap(),
-                )
-                .unwrap();
+            match sender.send(
+                input_record.serialize().as_mut_vec()[..]
+                    .try_into()
+                    .unwrap(),
+            ) {
+                Ok(_) => {}
+                Err(_) => {
+                    thread::sleep(time::Duration::from_millis(1));
+                }
+            }
+            transmitted_records += 1;
         }
     }
 
