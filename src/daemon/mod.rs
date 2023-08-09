@@ -37,6 +37,7 @@ use windows::Win32::{
 mod workspace;
 
 const ASPECT_RATIO_ADJUSTMENT: f64 = -0.5;
+const SENDER_CAPACITY: usize = 4096;
 
 struct Daemon {
     hosts: Vec<String>,
@@ -86,7 +87,7 @@ impl Daemon {
 
     fn run(&self) {
         let (sender, _) =
-            broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(self.hosts.len());
+            broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(SENDER_CAPACITY);
 
         let mut servers = self.launch_named_pipe_servers(&sender);
 
