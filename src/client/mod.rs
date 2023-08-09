@@ -46,6 +46,13 @@ struct ClientConfig {
     username_host_placeholder: String,
 }
 
+enum ReadWriteResult {
+    Success,
+    WouldBlock,
+    Err,
+    Disconnect,
+}
+
 impl Default for ClientConfig {
     fn default() -> Self {
         return ClientConfig {
@@ -125,25 +132,25 @@ async fn launch_ssh_process(username_host: &str, config: &ClientConfig) -> Child
     return child;
 }
 
-async fn read_write_loop(named_pipe_client: &NamedPipeClient) -> bool {
+async fn read_write_loop(named_pipe_client: &NamedPipeClient) -> ReadWriteResult {
     let mut buf: [u8; SERIALIZED_INPUT_RECORD_0_LENGTH] = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
     match named_pipe_client.try_read(&mut buf) {
         Ok(read_bytes) if read_bytes != SERIALIZED_INPUT_RECORD_0_LENGTH => {
             // Seems to only happen if the pipe is closed/server disconnects
             // indicating that the daemon has been closed.
             // Exit the client too in that case.
-            return false;
+            return ReadWriteResult::Disconnect;
         }
         Ok(_) => {
             write_console_input(INPUT_RECORD_0::deserialize(&mut buf));
-            return true;
+            return ReadWriteResult::Success;
         }
         Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-            return true;
+            return ReadWriteResult::WouldBlock;
         }
         Err(e) => {
             println!("{}", e);
-            return true;
+            return ReadWriteResult::Err;
         }
     }
 }
@@ -163,7 +170,17 @@ async fn run(child: &mut Child) {
     };
     named_pipe_client.ready(Interest::READABLE).await.unwrap();
     let mut failure_iterations = 0;
-    while read_write_loop(&named_pipe_client).await {
+    loop {
+        match read_write_loop(&named_pipe_client).await {
+            ReadWriteResult::Success => {}
+            ReadWriteResult::WouldBlock | ReadWriteResult::Err => {
+                // Sleep some time to avoid hogging 100% CPU usage.
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            ReadWriteResult::Disconnect => {
+                break;
+            }
+        }
         match child.try_wait() {
             Ok(Some(exit_status)) => match exit_status.code().unwrap() {
                 0 | 1 | 130 => {
@@ -200,8 +217,6 @@ async fn run(child: &mut Child) {
             ),
             Err(e) => panic!("{}", e),
         }
-        // Sleep some time to avoid hogging 100% CPU usage.
-        tokio::time::sleep(Duration::from_millis(5)).await;
     }
 }
 
