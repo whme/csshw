@@ -19,11 +19,5 @@ To download the csshW application refer to the [Releases 📦](https://github.co
 csshW uses pre-commit githooks to enforce good code style.<br>
 Install them via ``git config --local core.hooksPath .githooks/``.
 
-Symlinks for the debug version of each executable are placed in the project root for easy debugging.
-Format, build and execute debug version:
-```
-cargo fmt; cargo build; if ($?) { .\csshw.exe foo bar }
-```
-
 [^1]: The searchbar used to launch csshw in the demo clip is [keypirinha](https://keypirinha.com/).
 [^2]: The tool to show key presses in the demo clip is [carnac the magnificent](http://carnackeys.com/).
