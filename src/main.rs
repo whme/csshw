@@ -74,7 +74,6 @@ async fn main() {
             Some(exe_dir) => {
                 std::env::set_current_dir(exe_dir)
                     .expect("Failed to change current working directory");
-                println!("Set current working directory to {}", exe_dir.display());
             }
         },
         Err(_) => {
