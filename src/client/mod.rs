@@ -105,7 +105,7 @@ fn get_username_and_host(username: &str, host: &str, config: &ClientConfig) -> S
     }
 
     let default_params = ssh_config.default_params();
-    let host_specific_params = ssh_config.query(host.clone());
+    let host_specific_params = ssh_config.query(<&str>::clone(&host));
 
     let username: String = if username == DEFAULT_SSH_USERNAME_KEY {
         // FIXME: find a better default
