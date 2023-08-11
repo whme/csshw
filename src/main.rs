@@ -10,7 +10,7 @@ use windows::Win32::UI::WindowsAndMessaging::{LoadImageW, IMAGE_ICON, LR_DEFAULT
 
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
-/// Simple SSH multiplexer
+/// Cluster SSH tool for Windows inspired by csshX
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
