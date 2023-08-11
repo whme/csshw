@@ -11,6 +11,33 @@ csshW will launch 1 daemon and N client windows (with N being the number of host
 Key-strokes performed while having the daemon console focussed will be sent to all clients simoultaneously and be replayed by them.<br>
 Focussing a client will cause any key-strokes to be sent to this client only.
 
+## Usage
+
+```cmd
+csshw.exe --help
+Cluster SSH tool for Windows inspired by csshX
+
+USAGE:
+    csshw.exe [OPTIONS] [HOSTS]... [SUBCOMMAND]
+
+ARGS:
+    <HOSTS>...    Hosts to connect to
+
+OPTIONS:
+    -h, --help                   Print help information
+    -u, --username <USERNAME>    Username used to connect to the hosts
+    -V, --version                Print version information
+
+SUBCOMMANDS:
+    client    
+    daemon
+    help      Print this message or the help of the given subcommand(s)
+```
+Example:
+`csshw.exe -u root hosta.dev hostb.dev hostc.dev`
+
+We recommend using the [ssh_config](https://linux.die.net/man/5/ssh_config) for any configurations like default username etc.
+
 ## Download/Installation
 csshW is a portable application and is not installed.<br>
 To download the csshW application refer to the [Releases 📦](https://github.com/whme/csshw/releases) page.
