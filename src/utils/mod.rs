@@ -13,6 +13,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use self::constants::MAX_WINDOW_TITLE_LENGTH;
 
+pub mod config;
 pub mod constants;
 pub mod debug;
 
