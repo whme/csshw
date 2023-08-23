@@ -1,9 +1,13 @@
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
+use std::fs::remove_file;
+
 use clap::{Parser, Subcommand};
+use confy::ConfyError;
 use csshw::client::main as client_main;
 use csshw::daemon::main as daemon_main;
 use csshw::spawn_console_process;
+use csshw::utils::config::{Cluster, Config};
 use windows::core::PCWSTR;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{LoadImageW, IMAGE_ICON, LR_DEFAULTSIZE};
@@ -52,6 +56,28 @@ enum Commands {
     },
 }
 
+fn resolve_cluster_tags<'a>(hosts: Vec<&'a str>, clusters: &'a Vec<Cluster>) -> Vec<&'a str> {
+    let mut resolved_hosts: Vec<&str> = Vec::new();
+    let mut is_cluster_tag: bool;
+    for host in hosts {
+        is_cluster_tag = false;
+        for cluster in clusters {
+            if host == cluster.name {
+                is_cluster_tag = true;
+                resolved_hosts.extend(resolve_cluster_tags(
+                    cluster.hosts.iter().map(|host| return &**host).collect(),
+                    clusters,
+                ));
+                break;
+            }
+        }
+        if !is_cluster_tag {
+            resolved_hosts.push(host);
+        }
+    }
+    return resolved_hosts;
+}
+
 #[tokio::main]
 async fn main() {
     unsafe {
@@ -82,6 +108,16 @@ async fn main() {
     }
 
     let args = Args::parse();
+    let config: Config = match confy::load_path(format!("{PKG_NAME}-config.toml")) {
+        Ok(config) => config,
+        Err(ConfyError::BadTomlData(_)) => {
+            remove_file(format!("{PKG_NAME}-config.toml")).unwrap();
+            confy::load_path(format!("{PKG_NAME}-config.toml")).unwrap()
+        }
+        Err(_) => {
+            panic!("Failed to load config!");
+        }
+    };
 
     match &args.command {
         Some(Commands::Client {
@@ -99,6 +135,7 @@ async fn main() {
                 y.to_owned(),
                 width.to_owned(),
                 height.to_owned(),
+                &config.client,
             )
             .await;
         }
@@ -112,7 +149,10 @@ async fn main() {
                 daemon_args.push("-u");
                 daemon_args.push(username);
             }
-            daemon_args.extend(args.hosts.iter().map(|host| -> &str { return host }));
+            daemon_args.extend(resolve_cluster_tags(
+                args.hosts.iter().map(|host| return &**host).collect(),
+                &config.clusters,
+            ));
             spawn_console_process(&format!("{PKG_NAME}.exe"), daemon_args);
         }
     }
