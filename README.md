@@ -29,7 +29,7 @@ OPTIONS:
     -V, --version                Print version information
 
 SUBCOMMANDS:
-    client    
+    client
     daemon
     help      Print this message or the help of the given subcommand(s)
 ```
@@ -37,6 +37,45 @@ Example:
 `csshw.exe -u root hosta.dev hostb.dev hostc.dev`
 
 We recommend using the [ssh_config](https://linux.die.net/man/5/ssh_config) for any configurations like default username etc.
+
+### Configuration
+
+`csshw-config.toml` contains all relevant configurations and is located in the same directory as the executable.
+It is automatically created with default values if not present. A config containing invalid data will automatically be owerwritten.
+
+#### clusters
+An array of clusters that can be used to alias a set of host names to a specific tag:
+```toml
+clusters = [
+    { name = "dev", hosts = ["hosta.dev", "root@hostb.dev", "hostc.dev"] }
+]
+```
+Clusters may be nested, but be aware of recursive clusters which are not checked for.
+
+#### client
+A collection containing client relevant configuration
+``` toml
+[client]
+ssh_config_path = 'C:\Users\demo_user\.ssh\config'
+program = 'ssh'
+arguments = [
+    '-XY',
+    '{{USERNAME_AT_HOST}}',
+]
+username_host_placeholder = '{{USERNAME_AT_HOST}}'
+```
+
+##### ssh_config_path
+The full qualified path where your ssh configuration can be found.
+
+##### program
+Which executable will be used to establish ssh connections.
+
+##### arguments
+Additional arguments specified to the chosen program.
+
+##### username_host_placeholder
+Placeholder string that indicates where the `username@host` string should be inserted in the program arguments.
 
 ## Download/Installation
 csshW is a portable application and is not installed.<br>

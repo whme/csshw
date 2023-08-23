@@ -1,16 +1,16 @@
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
-use std::env;
+
 use std::fs::File;
 use std::io::{self, BufReader};
 use std::path::Path;
 use std::time::Duration;
 
+use crate::utils::config::ClientConfig;
 use crate::utils::constants::DEFAULT_SSH_USERNAME_KEY;
 use crate::utils::{
     arrange_console as arrange_client_console, get_console_input_buffer, set_console_title,
 };
-use serde_derive::{Deserialize, Serialize};
 use ssh2_config::SshConfig;
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::process::{Child, Command};
@@ -25,46 +25,11 @@ use crate::{
     utils::constants::{PIPE_NAME, PKG_NAME},
 };
 
-const DEFAULT_USERNAME_HOST_PLACEHOLDER: &str = "{{USERNAME_AT_HOST}}";
-
-/// If not present the default config will be written to the default
-/// configuration place, under windows this is `%AppData%`
-#[derive(Serialize, Deserialize)]
-struct ClientConfig {
-    /// Full path to the SSH config.
-    /// e.g. `'C:\Users\<username>\.ssh\config'`
-    ssh_config_path: String,
-    /// Name of the program used to establish the SSH connection.
-    /// e.g. `'ssh'`
-    program: String,
-    /// List of arguments provided to the program.
-    /// Must include the `username_host_placeholder`.
-    /// e.g. `['-XY' '{{USERNAME_AT_HOST}}']`
-    arguments: Vec<String>,
-    /// Placeholder string used to inject `<user>@<host>` into the list of arguments.
-    /// e.g. `'{{USERNAME_AT_HOST}}'`
-    username_host_placeholder: String,
-}
-
 enum ReadWriteResult {
     Success,
     WouldBlock,
     Err,
     Disconnect,
-}
-
-impl Default for ClientConfig {
-    fn default() -> Self {
-        return ClientConfig {
-            ssh_config_path: format!("{}\\.ssh\\config", env::var("USERPROFILE").unwrap()),
-            program: "ssh".to_string(),
-            arguments: vec![
-                "-XY".to_string(),
-                DEFAULT_USERNAME_HOST_PLACEHOLDER.to_string(),
-            ],
-            username_host_placeholder: DEFAULT_USERNAME_HOST_PLACEHOLDER.to_string(),
-        };
-    }
 }
 
 fn write_console_input(input_record: INPUT_RECORD_0) {
@@ -220,17 +185,23 @@ async fn run(child: &mut Child) {
     }
 }
 
-pub async fn main(host: String, username: String, x: i32, y: i32, width: i32, height: i32) {
+pub async fn main(
+    host: String,
+    username: String,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    config: &ClientConfig,
+) {
     arrange_client_console(x, y, width, height);
-    let config: ClientConfig = confy::load_path(format!("{PKG_NAME}-config.toml")).unwrap();
-
-    let username_host = get_username_and_host(&username, &host, &config);
+    let username_host = get_username_and_host(&username, &host, config);
 
     // Set the console title (child might overwrite it, so we have to set it again later)
     let console_title = format!("{} - {}", PKG_NAME, username_host.clone());
     set_console_title(console_title.as_str());
 
-    let mut child = launch_ssh_process(&username_host, &config).await;
+    let mut child = launch_ssh_process(&username_host, config).await;
 
     run(&mut child).await;
 
