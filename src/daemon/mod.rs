@@ -9,6 +9,7 @@ use std::{
 };
 use std::{thread, time};
 
+use crate::utils::config::DaemonConfig;
 use crate::{
     serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
@@ -37,15 +38,15 @@ use windows::Win32::{
 
 mod workspace;
 
-const ASPECT_RATIO_ADJUSTMENT: f64 = -0.5;
 const SENDER_CAPACITY: usize = 4096;
 
-struct Daemon {
+struct Daemon<'a> {
     hosts: Vec<String>,
     username: Option<String>,
+    config: &'a DaemonConfig,
 }
 
-impl Daemon {
+impl Daemon<'_> {
     async fn launch(self) {
         set_console_title(format!("{} daemon", PKG_NAME).as_str());
         set_console_border_color(COLORREF(0x000000FF));
@@ -54,15 +55,15 @@ impl Daemon {
         // https://learn.microsoft.com/en-us/windows/console/ctrl-c-and-ctrl-break-signals
         disable_processed_input_mode();
 
-        let workspace_area = workspace::get_workspace_area(workspace::Scaling::Logical);
-        let number_of_consoles = self.hosts.len() as i32 + 1;
+        let workspace_area =
+            workspace::get_workspace_area(workspace::Scaling::Logical, self.config.height);
+        let number_of_consoles = self.hosts.len() as i32;
 
-        // The daemon console can be treated as a client console when it comes
-        // to figuring out where to put it on the screen.
-        // TODO: the daemon console should always be on the bottom left
-        let (x, y, width, height) = determine_client_spatial_attributes(
-            number_of_consoles - 1,
-            number_of_consoles,
+        let (x, y, width, height) = get_console_rect(
+            0,
+            workspace_area.height,
+            workspace_area.width,
+            self.config.height,
             &workspace_area,
         );
         arrange_daemon_console(x, y, width, height);
@@ -72,6 +73,7 @@ impl Daemon {
             &self.username,
             workspace_area,
             number_of_consoles,
+            self.config.aspect_ratio_adjustement,
         )
         .await;
 
@@ -152,11 +154,12 @@ fn determine_client_spatial_attributes(
     index: i32,
     number_of_consoles: i32,
     workspace_area: &workspace::WorkspaceArea,
+    aspect_ratio_adjustment: f64,
 ) -> (i32, i32, i32, i32) {
     let aspect_ratio = workspace_area.width as f64 / workspace_area.height as f64;
 
     let grid_columns = max(
-        ((number_of_consoles as f64).sqrt() * (aspect_ratio + ASPECT_RATIO_ADJUSTMENT)) as i32,
+        ((number_of_consoles as f64).sqrt() * (aspect_ratio + aspect_ratio_adjustment)) as i32,
         1,
     );
     let grid_rows = max(
@@ -181,11 +184,21 @@ fn determine_client_spatial_attributes(
     let x = grid_column_index * console_width;
     let y = grid_row_index * console_height;
 
+    return get_console_rect(x, y, console_width, console_height, workspace_area);
+}
+
+fn get_console_rect(
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    workspace_area: &workspace::WorkspaceArea,
+) -> (i32, i32, i32, i32) {
     return (
         workspace_area.x + x,
         workspace_area.y + y,
-        console_width + workspace_area.x_fixed_frame + workspace_area.x_size_frame * 2,
-        console_height + workspace_area.y_size_frame * 2,
+        width + workspace_area.x_fixed_frame + workspace_area.x_size_frame * 2,
+        height + workspace_area.y_size_frame * 2,
     );
 }
 
@@ -255,6 +268,7 @@ async fn launch_clients(
     username: &Option<String>,
     workspace_area: workspace::WorkspaceArea,
     number_of_consoles: i32,
+    aspect_ratio_adjustment: f64,
 ) -> Vec<HWND> {
     let mut handles = vec![];
     let process_ids = Arc::new(Mutex::new(Vec::<u32>::new()));
@@ -266,6 +280,7 @@ async fn launch_clients(
                 index as i32,
                 number_of_consoles,
                 &workspace_area,
+                aspect_ratio_adjustment,
             );
             process_ids_arc
                 .lock()
@@ -329,7 +344,11 @@ fn disable_processed_input_mode() {
     }
 }
 
-pub async fn main(hosts: Vec<String>, username: Option<String>) {
-    let daemon: Daemon = Daemon { hosts, username };
+pub async fn main(hosts: Vec<String>, username: Option<String>, config: &DaemonConfig) {
+    let daemon: Daemon = Daemon {
+        hosts,
+        username,
+        config,
+    };
     daemon.launch().await;
 }

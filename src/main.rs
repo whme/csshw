@@ -140,7 +140,7 @@ async fn main() {
             .await;
         }
         Some(Commands::Daemon { username, hosts }) => {
-            daemon_main(hosts.to_owned(), username.clone()).await;
+            daemon_main(hosts.to_owned(), username.clone(), &config.daemon).await;
         }
         None => {
             let mut daemon_args: Vec<&str> = Vec::new();
