@@ -81,7 +81,7 @@ fn get_scale_factor() -> f64 {
     return (scale_factor / 100).into();
 }
 
-pub fn get_workspace_area(scaling: Scaling) -> WorkspaceArea {
+pub fn get_workspace_area(scaling: Scaling, daemon_console_height: i32) -> WorkspaceArea {
     let mut workspace_rect = RECT::default();
     unsafe {
         SystemParametersInfoW(
@@ -99,7 +99,7 @@ pub fn get_workspace_area(scaling: Scaling) -> WorkspaceArea {
         x: workspace_rect.left - (x_fixed_frame + x_size_frame),
         y: workspace_rect.top,
         width: workspace_rect.right - workspace_rect.left,
-        height: workspace_rect.bottom - workspace_rect.top,
+        height: workspace_rect.bottom - workspace_rect.top - daemon_console_height,
         scaling: Scaling::Physical,
         scale_factor: get_scale_factor(),
         x_fixed_frame,

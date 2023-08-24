@@ -49,5 +49,17 @@ impl Default for ClientConfig {
     }
 }
 
-#[derive(Serialize, Deserialize, Default)]
-pub struct DaemonConfig {}
+#[derive(Serialize, Deserialize)]
+pub struct DaemonConfig {
+    pub height: i32,
+    pub aspect_ratio_adjustement: f64,
+}
+
+impl Default for DaemonConfig {
+    fn default() -> Self {
+        return DaemonConfig {
+            height: 200,
+            aspect_ratio_adjustement: -1f64,
+        };
+    }
+}
