@@ -4,8 +4,9 @@ use windows::core::HSTRING;
 use windows::Win32::Foundation::{COLORREF, HANDLE, RECT};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
 use windows::Win32::System::Console::{
-    GetConsoleWindow, GetStdHandle, ReadConsoleInputW, INPUT_RECORD, INPUT_RECORD_0, STD_HANDLE,
-    STD_INPUT_HANDLE,
+    FillConsoleOutputAttribute, GetConsoleScreenBufferInfo, GetConsoleWindow, GetStdHandle,
+    ReadConsoleInputW, CONSOLE_CHARACTER_ATTRIBUTES, CONSOLE_SCREEN_BUFFER_INFO, COORD,
+    INPUT_RECORD, INPUT_RECORD_0, STD_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, GetWindowTextW, MoveWindow, SetWindowTextW,
@@ -31,6 +32,23 @@ pub fn print_console_rect() {
 pub fn set_console_title(title: &str) {
     unsafe {
         SetWindowTextW(GetConsoleWindow(), &HSTRING::from(title));
+    }
+}
+
+pub fn set_console_color(color: CONSOLE_CHARACTER_ATTRIBUTES) {
+    let mut number_of_attrs_written: u32 = 0;
+    let mut buffer_info = CONSOLE_SCREEN_BUFFER_INFO::default();
+    unsafe {
+        GetConsoleScreenBufferInfo(get_std_handle(STD_OUTPUT_HANDLE), &mut buffer_info);
+        for y in 0..buffer_info.dwSize.Y {
+            FillConsoleOutputAttribute(
+                get_std_handle(STD_OUTPUT_HANDLE),
+                color.0,
+                buffer_info.dwSize.X.try_into().unwrap(),
+                COORD { X: 0, Y: y },
+                &mut number_of_attrs_written,
+            );
+        }
     }
 }
 

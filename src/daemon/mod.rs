@@ -10,6 +10,7 @@ use std::{
 use std::{thread, time};
 
 use crate::utils::config::DaemonConfig;
+use crate::utils::set_console_color;
 use crate::{
     serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
@@ -24,6 +25,7 @@ use tokio::{
     sync::broadcast::{self, Receiver, Sender},
     task::JoinHandle,
 };
+use windows::Win32::System::Console::BACKGROUND_RED;
 use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
 use windows::Win32::{
     Foundation::{BOOL, COLORREF, FALSE, HWND, LPARAM, TRUE},
@@ -49,6 +51,7 @@ struct Daemon<'a> {
 impl Daemon<'_> {
     async fn launch(self) {
         set_console_title(format!("{} daemon", PKG_NAME).as_str());
+        set_console_color(BACKGROUND_RED);
         set_console_border_color(COLORREF(0x000000FF));
 
         // Makes sure ctrl+c is reported as a keyboard input rather than as signal
