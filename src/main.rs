@@ -1,13 +1,11 @@
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
-use std::fs::remove_file;
 
 use clap::{Parser, Subcommand};
-use confy::ConfyError;
 use csshw::client::main as client_main;
 use csshw::daemon::main as daemon_main;
 use csshw::spawn_console_process;
-use csshw::utils::config::{Cluster, Config};
+use csshw::utils::config::{Cluster, Config, ConfigOpt};
 use windows::core::PCWSTR;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{LoadImageW, IMAGE_ICON, LR_DEFAULTSIZE};
@@ -108,16 +106,10 @@ async fn main() {
     }
 
     let args = Args::parse();
-    let config: Config = match confy::load_path(format!("{PKG_NAME}-config.toml")) {
-        Ok(config) => config,
-        Err(ConfyError::BadTomlData(_)) => {
-            remove_file(format!("{PKG_NAME}-config.toml")).unwrap();
-            confy::load_path(format!("{PKG_NAME}-config.toml")).unwrap()
-        }
-        Err(_) => {
-            panic!("Failed to load config!");
-        }
-    };
+
+    let config_path = format!("{PKG_NAME}-config.toml");
+    let config_on_disk: ConfigOpt = confy::load_path(&config_path).unwrap();
+    let config: Config = config_on_disk.into();
 
     match &args.command {
         Some(Commands::Client {
@@ -143,6 +135,8 @@ async fn main() {
             daemon_main(hosts.to_owned(), username.clone(), &config.daemon).await;
         }
         None => {
+            confy::store_path(&config_path, &config).unwrap();
+
             let mut daemon_args: Vec<&str> = Vec::new();
             daemon_args.push("daemon");
             if let Some(username) = args.username.as_ref() {
