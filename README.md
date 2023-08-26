@@ -11,6 +11,10 @@ csshW will launch 1 daemon and N client windows (with N being the number of host
 Key-strokes performed while having the daemon console focussed will be sent to all clients simoultaneously and be replayed by them.<br>
 Focussing a client will cause any key-strokes to be sent to this client only.
 
+## Download/Installation
+csshW is a portable application and is not installed.<br>
+To download the csshW application refer to the [Releases 📦](https://github.com/whme/csshw/releases) page.
+
 ## Usage
 
 ```cmd
@@ -41,9 +45,9 @@ We recommend using the [ssh_config](https://linux.die.net/man/5/ssh_config) for 
 ### Configuration
 
 `csshw-config.toml` contains all relevant configurations and is located in the same directory as the executable.
-It is automatically created with default values if not present. A config containing invalid data will automatically be owerwritten.
+It is automatically created with default values if not present.
 
-#### clusters
+#### `clusters`
 An array of clusters that can be used to alias a set of host names to a specific tag:
 ```toml
 clusters = [
@@ -52,7 +56,7 @@ clusters = [
 ```
 Clusters may be nested, but be aware of recursive clusters which are not checked for.
 
-#### client
+#### `client`
 A collection containing client relevant configuration
 ``` toml
 [client]
@@ -65,21 +69,31 @@ arguments = [
 username_host_placeholder = '{{USERNAME_AT_HOST}}'
 ```
 
-##### ssh_config_path
+##### `ssh_config_path`
 The full qualified path where your ssh configuration can be found.
 
-##### program
+##### `program`
 Which executable will be used to establish ssh connections.
 
-##### arguments
+##### `arguments`
 Additional arguments specified to the chosen program.
 
-##### username_host_placeholder
+##### `username_host_placeholder`
 Placeholder string that indicates where the `username@host` string should be inserted in the program arguments.
 
-## Download/Installation
-csshW is a portable application and is not installed.<br>
-To download the csshW application refer to the [Releases 📦](https://github.com/whme/csshw/releases) page.
+#### `daemon`
+A collection containing daemon relevant configuration
+``` toml
+[daemon]
+height = 200
+aspect_ratio_adjustement = -1.0
+```
+
+##### `height`
+The height of the daemon console.
+
+##### `aspect_ratio_adjustment`
+Configures whether the available screen space should rather be used horizontally or vertically.
 
 ## Contributing
 csshW uses pre-commit githooks to enforce good code style.<br>
