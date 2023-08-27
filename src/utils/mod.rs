@@ -5,8 +5,10 @@ use windows::Win32::Foundation::{COLORREF, HANDLE, RECT};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
 use windows::Win32::System::Console::{
     FillConsoleOutputAttribute, GetConsoleScreenBufferInfo, GetConsoleWindow, GetStdHandle,
-    ReadConsoleInputW, CONSOLE_CHARACTER_ATTRIBUTES, CONSOLE_SCREEN_BUFFER_INFO, COORD,
-    INPUT_RECORD, INPUT_RECORD_0, STD_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+    ReadConsoleInputW, ScrollConsoleScreenBufferW, SetConsoleCursorPosition,
+    SetConsoleTextAttribute, CHAR_INFO, CONSOLE_CHARACTER_ATTRIBUTES, CONSOLE_SCREEN_BUFFER_INFO,
+    COORD, INPUT_RECORD, INPUT_RECORD_0, SMALL_RECT, STD_HANDLE, STD_INPUT_HANDLE,
+    STD_OUTPUT_HANDLE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, GetWindowTextW, MoveWindow, SetWindowTextW,
@@ -36,6 +38,9 @@ pub fn set_console_title(title: &str) {
 }
 
 pub fn set_console_color(color: CONSOLE_CHARACTER_ATTRIBUTES) {
+    unsafe {
+        SetConsoleTextAttribute(get_std_handle(STD_OUTPUT_HANDLE), color);
+    }
     let mut number_of_attrs_written: u32 = 0;
     let mut buffer_info = CONSOLE_SCREEN_BUFFER_INFO::default();
     unsafe {
@@ -49,6 +54,44 @@ pub fn set_console_color(color: CONSOLE_CHARACTER_ATTRIBUTES) {
                 &mut number_of_attrs_written,
             );
         }
+    }
+}
+
+pub fn clear_screen() {
+    let mut buffer_info = CONSOLE_SCREEN_BUFFER_INFO::default();
+    let console_output_handle = get_std_handle(STD_OUTPUT_HANDLE);
+    unsafe {
+        GetConsoleScreenBufferInfo(console_output_handle, &mut buffer_info);
+    }
+    let scroll_rect = SMALL_RECT {
+        Left: 0,
+        Top: 0,
+        Right: buffer_info.dwSize.X,
+        Bottom: buffer_info.dwSize.Y,
+    };
+    let scroll_target = COORD {
+        X: buffer_info.dwSize.X,
+        Y: 0 - buffer_info.dwSize.Y,
+    };
+    let mut char_info = CHAR_INFO::default();
+    char_info.Char.UnicodeChar = ' ' as u16;
+    char_info.Attributes = buffer_info.wAttributes.0;
+
+    unsafe {
+        ScrollConsoleScreenBufferW(
+            console_output_handle,
+            &scroll_rect,
+            None,
+            scroll_target,
+            &char_info,
+        );
+    }
+
+    buffer_info.dwCursorPosition.X = 0;
+    buffer_info.dwCursorPosition.Y = 0;
+
+    unsafe {
+        SetConsoleCursorPosition(console_output_handle, buffer_info.dwCursorPosition);
     }
 }
 

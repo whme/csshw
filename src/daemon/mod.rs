@@ -10,7 +10,7 @@ use std::{
 use std::{thread, time};
 
 use crate::utils::config::DaemonConfig;
-use crate::utils::set_console_color;
+use crate::utils::{clear_screen, set_console_color};
 use crate::{
     serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
@@ -25,8 +25,13 @@ use tokio::{
     sync::broadcast::{self, Receiver, Sender},
     task::JoinHandle,
 };
-use windows::Win32::System::Console::BACKGROUND_RED;
-use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+use windows::Win32::System::Console::{
+    BACKGROUND_INTENSITY, BACKGROUND_RED, FOREGROUND_INTENSITY, INPUT_RECORD_0,
+};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    VIRTUAL_KEY, VK_A, VK_CONTROL, VK_E, VK_ESCAPE, VK_R, VK_T,
+};
+use windows::Win32::UI::WindowsAndMessaging::{IsWindow, MoveWindow, SetForegroundWindow};
 use windows::Win32::{
     Foundation::{BOOL, COLORREF, FALSE, HWND, LPARAM, TRUE},
     System::Console::{
@@ -46,12 +51,20 @@ struct Daemon<'a> {
     hosts: Vec<String>,
     username: Option<String>,
     config: &'a DaemonConfig,
+    control_mode_state: ControlModeState,
+}
+
+#[derive(PartialEq, Debug)]
+enum ControlModeState {
+    Inactive,
+    Initiated,
+    Active,
 }
 
 impl Daemon<'_> {
-    async fn launch(self) {
+    async fn launch(mut self) {
         set_console_title(format!("{} daemon", PKG_NAME).as_str());
-        set_console_color(BACKGROUND_RED);
+        set_console_color(FOREGROUND_INTENSITY | BACKGROUND_INTENSITY | BACKGROUND_RED);
         set_console_border_color(COLORREF(0x000000FF));
 
         // Makes sure ctrl+c is reported as a keyboard input rather than as signal
@@ -71,7 +84,7 @@ impl Daemon<'_> {
         );
         arrange_daemon_console(x, y, width, height);
 
-        let _client_console_window_handles = launch_clients(
+        let client_console_window_handles = launch_clients(
             self.hosts.to_vec(),
             &self.username,
             workspace_area,
@@ -88,10 +101,15 @@ impl Daemon<'_> {
         // Now that all clients started, focus the daemon console again.
         unsafe { SetForegroundWindow(GetConsoleWindow()) };
 
-        self.run();
+        self.print_instructions();
+        self.run(&client_console_window_handles, &workspace_area);
     }
 
-    fn run(&self) {
+    fn run(
+        &mut self,
+        client_console_window_handles: &[HWND],
+        workspace_area: &workspace::WorkspaceArea,
+    ) {
         let (sender, _) =
             broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(SENDER_CAPACITY);
 
@@ -119,16 +137,12 @@ impl Daemon<'_> {
                 transmitted_records = 0;
             }
             let input_record = read_keyboard_input();
-            match sender.send(
-                input_record.serialize().as_mut_vec()[..]
-                    .try_into()
-                    .unwrap(),
-            ) {
-                Ok(_) => {}
-                Err(_) => {
-                    thread::sleep(time::Duration::from_millis(1));
-                }
-            }
+            self.handle_input_record(
+                &sender,
+                input_record,
+                client_console_window_handles,
+                workspace_area,
+            );
             transmitted_records += 1;
         }
     }
@@ -150,6 +164,98 @@ impl Daemon<'_> {
             }));
         }
         return servers;
+    }
+
+    fn handle_input_record(
+        &mut self,
+        sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
+        input_record: INPUT_RECORD_0,
+        client_console_window_handles: &[HWND],
+        workspace_area: &workspace::WorkspaceArea,
+    ) {
+        if self.control_mode_is_active(input_record) {
+            if self.control_mode_state == ControlModeState::Initiated {
+                clear_screen();
+                println!("Control Mode (Esc to exit)");
+                println!("[r]etile");
+                self.control_mode_state = ControlModeState::Active;
+                return;
+            }
+            let key_event = unsafe { input_record.KeyEvent };
+            if !key_event.bKeyDown.as_bool() {
+                return;
+            }
+            match VIRTUAL_KEY(key_event.wVirtualKeyCode) {
+                VK_R => {
+                    // FIXME: the order in which the windows are present in our vector
+                    // is non-deterministic, so retiling will result in a different order ...
+                    let mut valid_handles: Vec<HWND> = Vec::new();
+                    for handle in client_console_window_handles.iter() {
+                        if unsafe { IsWindow(*handle).as_bool() } {
+                            valid_handles.push(*handle);
+                        }
+                    }
+                    for (index, handle) in valid_handles.iter().enumerate() {
+                        let (x, y, width, height) = determine_client_spatial_attributes(
+                            index as i32,
+                            valid_handles.len() as i32,
+                            workspace_area,
+                            self.config.aspect_ratio_adjustement,
+                        );
+                        unsafe {
+                            MoveWindow(*handle, x, y, width, height, true);
+                        }
+                    }
+                }
+                VK_E => {
+                    // TODO: Select windows
+                }
+                VK_T => {
+                    // TODO: trigger input on selected windows
+                }
+                _ => {}
+            }
+            return;
+        }
+        match sender.send(
+            input_record.serialize().as_mut_vec()[..]
+                .try_into()
+                .unwrap(),
+        ) {
+            Ok(_) => {}
+            Err(_) => {
+                thread::sleep(time::Duration::from_millis(1));
+            }
+        }
+    }
+
+    fn control_mode_is_active(&mut self, input_record: INPUT_RECORD_0) -> bool {
+        let key_event = unsafe { input_record.KeyEvent };
+        if self.control_mode_state == ControlModeState::Active {
+            if key_event.wVirtualKeyCode == VK_ESCAPE.0 {
+                self.print_instructions();
+                self.control_mode_state = ControlModeState::Inactive;
+                return false;
+            }
+            return true;
+        }
+        if key_event.wVirtualKeyCode == VK_CONTROL.0 {
+            if key_event.bKeyDown.as_bool() {
+                self.control_mode_state = ControlModeState::Initiated
+            } else {
+                self.control_mode_state = ControlModeState::Inactive
+            }
+        } else if key_event.wVirtualKeyCode == VK_A.0
+            && self.control_mode_state == ControlModeState::Initiated
+        {
+            return true;
+        }
+        return false;
+    }
+
+    fn print_instructions(&self) {
+        clear_screen();
+        println!("Input to terminal: (Ctrl-A to enter control mode)");
     }
 }
 
@@ -352,6 +458,7 @@ pub async fn main(hosts: Vec<String>, username: Option<String>, config: &DaemonC
         hosts,
         username,
         config,
+        control_mode_state: ControlModeState::Inactive,
     };
     daemon.launch().await;
 }
