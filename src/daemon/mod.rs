@@ -25,9 +25,7 @@ use tokio::{
     sync::broadcast::{self, Receiver, Sender},
     task::JoinHandle,
 };
-use windows::Win32::System::Console::{
-    BACKGROUND_INTENSITY, BACKGROUND_RED, FOREGROUND_INTENSITY, INPUT_RECORD_0,
-};
+use windows::Win32::System::Console::{CONSOLE_CHARACTER_ATTRIBUTES, INPUT_RECORD_0};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     VIRTUAL_KEY, VK_A, VK_CONTROL, VK_E, VK_ESCAPE, VK_R, VK_T,
 };
@@ -64,7 +62,7 @@ enum ControlModeState {
 impl Daemon<'_> {
     async fn launch(mut self) {
         set_console_title(format!("{} daemon", PKG_NAME).as_str());
-        set_console_color(FOREGROUND_INTENSITY | BACKGROUND_INTENSITY | BACKGROUND_RED);
+        set_console_color(CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color));
         set_console_border_color(COLORREF(0x000000FF));
 
         // Makes sure ctrl+c is reported as a keyboard input rather than as signal
