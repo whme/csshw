@@ -1,5 +1,9 @@
 use serde_derive::{Deserialize, Serialize};
 use std::env;
+use windows::Win32::System::Console::{
+    BACKGROUND_INTENSITY, BACKGROUND_RED, FOREGROUND_BLUE, FOREGROUND_GREEN, FOREGROUND_INTENSITY,
+    FOREGROUND_RED,
+};
 
 const DEFAULT_USERNAME_HOST_PLACEHOLDER: &str = "{{USERNAME_AT_HOST}}";
 
@@ -117,6 +121,7 @@ impl From<ClientConfigOpt> for ClientConfig {
 pub struct DaemonConfig {
     pub height: i32,
     pub aspect_ratio_adjustement: f64,
+    pub console_color: u16,
 }
 
 impl From<DaemonConfig> for DaemonConfigOpt {
@@ -124,6 +129,7 @@ impl From<DaemonConfig> for DaemonConfigOpt {
         return DaemonConfigOpt {
             height: Some(val.height),
             aspect_ratio_adjustement: Some(val.aspect_ratio_adjustement),
+            console_color: Some(val.console_color),
         };
     }
 }
@@ -133,6 +139,13 @@ impl Default for DaemonConfig {
         return DaemonConfig {
             height: 200,
             aspect_ratio_adjustement: -1f64,
+            console_color: (FOREGROUND_INTENSITY
+                | FOREGROUND_RED
+                | FOREGROUND_GREEN
+                | FOREGROUND_BLUE
+                | BACKGROUND_INTENSITY
+                | BACKGROUND_RED)
+                .0,
         };
     }
 }
@@ -141,6 +154,7 @@ impl Default for DaemonConfig {
 pub struct DaemonConfigOpt {
     pub height: Option<i32>,
     pub aspect_ratio_adjustement: Option<f64>,
+    pub console_color: Option<u16>,
 }
 
 impl Default for DaemonConfigOpt {
@@ -157,6 +171,7 @@ impl From<DaemonConfigOpt> for DaemonConfig {
             aspect_ratio_adjustement: val
                 .aspect_ratio_adjustement
                 .unwrap_or(_default.aspect_ratio_adjustement),
+            console_color: val.console_color.unwrap_or(_default.console_color),
         };
     }
 }

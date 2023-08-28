@@ -87,6 +87,7 @@ A collection containing daemon relevant configuration
 [daemon]
 height = 200
 aspect_ratio_adjustement = -1.0
+console_color = 207
 ```
 
 ##### `height`
@@ -94,6 +95,21 @@ The height of the daemon console.
 
 ##### `aspect_ratio_adjustment`
 Configures whether the available screen space should rather be used horizontally or vertically.
+
+##### `console_color`
+Configures background and foreground colors used by the daemon console.
+Available are all standard windows color combinations ([windows docs](https://learn.microsoft.com/en-us/windows/console/console-screen-buffers#character-attributes)):
+```
+FOREGROUND_BLUE:        1
+FOREGROUND_GREEN:       2
+FOREGROUND_RED:         4
+FOREGROUND_INTENSITY:   8
+BACKGROUND_BLUE:        16
+BACKGROUND_GREEN:       32
+BACKGROUND_RED:         64
+BACKGROUND_INTENSITY:   128
+```
+e.g. white font on red background: 8+4+2+1+64+128 = `207`
 
 ## Contributing
 csshW uses pre-commit githooks to enforce good code style.<br>
