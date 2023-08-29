@@ -82,6 +82,9 @@ impl Daemon<'_> {
         );
         arrange_daemon_console(x, y, width, height);
 
+        // Looks like on windows 10 re-arranging the console resets the console output buffer
+        set_console_color(CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color));
+
         let client_console_window_handles = launch_clients(
             self.hosts.to_vec(),
             &self.username,
