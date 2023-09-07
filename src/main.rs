@@ -33,16 +33,6 @@ enum Commands {
         host: String,
         /// Username used to connect to the hosts
         username: String,
-        /// X coordinates of the upper left corner of the console window
-        /// in reference to the upper left corner of the screen
-        x: i32,
-        /// Y coordinates of the upper left corner of the console window
-        /// in reference to the upper left corner of the screen
-        y: i32,
-        /// Width of the console window
-        width: i32,
-        /// Height of the console window
-        height: i32,
     },
     Daemon {
         /// Username used to connect to the hosts
@@ -112,24 +102,8 @@ async fn main() {
     let config: Config = config_on_disk.into();
 
     match &args.command {
-        Some(Commands::Client {
-            host,
-            username,
-            x,
-            y,
-            width,
-            height,
-        }) => {
-            client_main(
-                host.to_owned(),
-                username.to_owned(),
-                x.to_owned(),
-                y.to_owned(),
-                width.to_owned(),
-                height.to_owned(),
-                &config.client,
-            )
-            .await;
+        Some(Commands::Client { host, username }) => {
+            client_main(host.to_owned(), username.to_owned(), &config.client).await;
         }
         Some(Commands::Daemon { username, hosts }) => {
             daemon_main(hosts.to_owned(), username.clone(), &config.daemon).await;
