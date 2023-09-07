@@ -8,9 +8,7 @@ use std::time::Duration;
 
 use crate::utils::config::ClientConfig;
 use crate::utils::constants::DEFAULT_SSH_USERNAME_KEY;
-use crate::utils::{
-    arrange_console as arrange_client_console, get_console_input_buffer, set_console_title,
-};
+use crate::utils::{get_console_input_buffer, set_console_title};
 use ssh2_config::SshConfig;
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::process::{Child, Command};
@@ -185,16 +183,7 @@ async fn run(child: &mut Child) {
     }
 }
 
-pub async fn main(
-    host: String,
-    username: String,
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-    config: &ClientConfig,
-) {
-    arrange_client_console(x, y, width, height);
+pub async fn main(host: String, username: String, config: &ClientConfig) {
     let username_host = get_username_and_host(&username, &host, config);
 
     // Set the console title (child might overwrite it, so we have to set it again later)

@@ -74,7 +74,6 @@ impl Daemon<'_> {
 
         let workspace_area =
             workspace::get_workspace_area(workspace::Scaling::Logical, self.config.height);
-        let number_of_consoles = self.hosts.len() as i32;
 
         let (x, y, width, height) = get_console_rect(
             0,
@@ -88,14 +87,8 @@ impl Daemon<'_> {
         // Looks like on windows 10 re-arranging the console resets the console output buffer
         set_console_color(CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color));
 
-        let client_console_window_handles = launch_clients(
-            self.hosts.to_vec(),
-            &self.username,
-            workspace_area,
-            number_of_consoles,
-            self.config.aspect_ratio_adjustement,
-        )
-        .await;
+        let client_console_window_handles =
+            launch_clients(self.hosts.to_vec(), &self.username).await;
 
         self.rearrange_client_windows(&client_console_window_handles, &workspace_area);
 
@@ -323,14 +316,7 @@ fn get_console_rect(
     );
 }
 
-fn launch_client_console(
-    host: &str,
-    username: Option<String>,
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-) -> PROCESS_INFORMATION {
+fn launch_client_console(host: &str, username: Option<String>) -> PROCESS_INFORMATION {
     // The first argument must be `--` to ensure all following arguments are treated
     // as positional arguments and not as options if they start with `-`.
     return spawn_console_process(
@@ -342,10 +328,6 @@ fn launch_client_console(
             username
                 .as_ref()
                 .unwrap_or(&DEFAULT_SSH_USERNAME_KEY.to_string()),
-            &x.to_string(),
-            &y.to_string(),
-            &width.to_string(),
-            &height.to_string(),
         ],
     );
 }
@@ -384,26 +366,17 @@ async fn named_pipe_server_routine(
 async fn _launch_client_processes_and_wait(
     hosts: Vec<String>,
     username: &Option<String>,
-    workspace_area: workspace::WorkspaceArea,
-    number_of_consoles: i32,
-    aspect_ratio_adjustment: f64,
 ) -> Arc<Mutex<Vec<u32>>> {
     let mut handles = vec![];
     let process_ids = Arc::new(Mutex::new(Vec::<u32>::new()));
-    for (index, host) in hosts.iter().cloned().enumerate() {
+    for host in hosts.into_iter() {
         let _username = username.clone();
         let process_ids_arc = Arc::clone(&process_ids);
         let future = tokio::spawn(async move {
-            let (x, y, width, height) = determine_client_spatial_attributes(
-                index as i32,
-                number_of_consoles,
-                &workspace_area,
-                aspect_ratio_adjustment,
-            );
             process_ids_arc
                 .lock()
                 .unwrap()
-                .push(launch_client_console(&host, _username, x, y, width, height).dwProcessId);
+                .push(launch_client_console(&host, _username).dwProcessId);
         });
         handles.push(future);
     }
@@ -414,22 +387,9 @@ async fn _launch_client_processes_and_wait(
     return process_ids;
 }
 
-async fn _launch_clients(
-    hosts: Vec<String>,
-    username: &Option<String>,
-    workspace_area: workspace::WorkspaceArea,
-    number_of_consoles: i32,
-    aspect_ratio_adjustment: f64,
-) -> Vec<HWND> {
+async fn _launch_clients(hosts: Vec<String>, username: &Option<String>) -> Vec<HWND> {
     let number_of_hosts = hosts.len();
-    let process_ids = _launch_client_processes_and_wait(
-        hosts,
-        username,
-        workspace_area,
-        number_of_consoles,
-        aspect_ratio_adjustment,
-    )
-    .await;
+    let process_ids = _launch_client_processes_and_wait(hosts, username).await;
     let client_handles: Vec<HWND>;
     // Wait for each client process to have opened its console window
     loop {
@@ -468,21 +428,8 @@ fn _get_window_title(handle: &HWND) -> String {
 /// Launches a client console for each given host and
 /// waits for the client windows to exist before
 /// returning their handles.
-async fn launch_clients(
-    hosts: Vec<String>,
-    username: &Option<String>,
-    workspace_area: workspace::WorkspaceArea,
-    number_of_consoles: i32,
-    aspect_ratio_adjustment: f64,
-) -> BTreeMap<usize, HWND> {
-    let client_handles = _launch_clients(
-        hosts.clone(),
-        username,
-        workspace_area,
-        number_of_consoles,
-        aspect_ratio_adjustment,
-    )
-    .await;
+async fn launch_clients(hosts: Vec<String>, username: &Option<String>) -> BTreeMap<usize, HWND> {
+    let client_handles = _launch_clients(hosts.clone(), username).await;
     let mut result = BTreeMap::new();
     // Map window handle to host based on window title
     loop {
