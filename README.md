@@ -1,7 +1,7 @@
 # csshW
 _Cluster SSH tool for Windows inspired by [csshX](https://github.com/brockgr/csshx)_
 
-![csshw demo](https://github.com/whme/csshw/blob/84570f8dd767e17df0027f11a19e5e3276718787/demo/csshw.gif)[^1][^2]
+![csshw demo](https://github.com/whme/csshw/blob/21d218db0d2c0366d413dad8379bdc9544f75bf8/demo/csshw.gif)[^1][^2]
 
 ## Pre-requisites
 - ``Default terminal application`` is set to ``Windows Console Host`` in the windows Terminal Startup Settings (Windows 11 only)
