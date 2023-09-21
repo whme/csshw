@@ -31,7 +31,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VIRTUAL_KEY, VK_A, VK_CONTROL, VK_E, VK_ESCAPE, VK_R, VK_T,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowTextW, IsWindow, MoveWindow, SetForegroundWindow,
+    BeginDeferWindowPos, DeferWindowPos, EndDeferWindowPos, GetForegroundWindow, GetWindowTextW,
+    IsWindow, MoveWindow, SetForegroundWindow, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_SHOWWINDOW,
 };
 use windows::Win32::{
     Foundation::{BOOL, COLORREF, FALSE, HWND, LPARAM, TRUE},
@@ -128,6 +130,8 @@ impl Daemon<'_> {
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }
         });
+
+        ensure_client_z_order_in_sync_with_daemon(client_console_window_handles.clone());
 
         let mut transmitted_records = 0;
         loop {
@@ -262,6 +266,45 @@ impl Daemon<'_> {
             }
         }
     }
+}
+
+fn ensure_client_z_order_in_sync_with_daemon(client_console_window_handles: BTreeMap<usize, HWND>) {
+    tokio::spawn(async move {
+        let daemon_handle = unsafe { GetConsoleWindow() };
+        let mut previous_foreground_window = unsafe { GetForegroundWindow() };
+        loop {
+            let foreground_window = unsafe { GetForegroundWindow() };
+            if previous_foreground_window == foreground_window {
+                continue;
+            }
+            previous_foreground_window = foreground_window;
+            if foreground_window == daemon_handle {
+                defer_client_windows(&client_console_window_handles);
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    });
+}
+
+fn defer_client_windows(client_console_window_handles: &BTreeMap<usize, HWND>) {
+    let mut hdwp =
+        unsafe { BeginDeferWindowPos(client_console_window_handles.len() as i32) }.unwrap();
+    for client_handle in client_console_window_handles.values() {
+        hdwp = unsafe {
+            DeferWindowPos(
+                hdwp,
+                *client_handle,
+                HWND_TOP,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+            )
+        }
+        .unwrap();
+    }
+    unsafe { EndDeferWindowPos(hdwp) };
 }
 
 fn determine_client_spatial_attributes(
