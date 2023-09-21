@@ -12,7 +12,7 @@ impl StringRepr for KEY_EVENT_RECORD_0 {
 
 impl StringRepr for KEY_EVENT_RECORD {
     fn string_repr(&self) -> String {
-        return vec![
+        return [
             format!("key_down: {}", self.bKeyDown.as_bool()),
             format!("repeat_count: {}", self.wRepeatCount),
             format!("virtual_key_code: 0x{:x}", self.wVirtualKeyCode),
