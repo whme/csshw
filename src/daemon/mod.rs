@@ -273,6 +273,7 @@ fn ensure_client_z_order_in_sync_with_daemon(client_console_window_handles: BTre
         let daemon_handle = unsafe { GetConsoleWindow() };
         let mut previous_foreground_window = unsafe { GetForegroundWindow() };
         loop {
+            tokio::time::sleep(Duration::from_millis(1)).await;
             let foreground_window = unsafe { GetForegroundWindow() };
             if previous_foreground_window == foreground_window {
                 continue;
@@ -281,7 +282,6 @@ fn ensure_client_z_order_in_sync_with_daemon(client_console_window_handles: BTre
             if foreground_window == daemon_handle {
                 defer_client_windows(&client_console_window_handles);
             }
-            tokio::time::sleep(Duration::from_millis(1)).await;
         }
     });
 }
@@ -302,7 +302,7 @@ fn defer_client_windows(client_console_window_handles: &BTreeMap<usize, HWND>) {
                 SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
             )
         }
-        .unwrap();
+        .unwrap_or(hdwp);
     }
     unsafe { EndDeferWindowPos(hdwp) };
 }
