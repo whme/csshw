@@ -16,7 +16,7 @@ use crate::{
     serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
     utils::{
-        arrange_console as arrange_daemon_console,
+        arrange_console,
         constants::{DEFAULT_SSH_USERNAME_KEY, PIPE_NAME, PKG_NAME},
         get_console_input_buffer, read_keyboard_input, set_console_border_color, set_console_title,
     },
@@ -45,6 +45,8 @@ use windows::Win32::{
 use windows::Win32::{
     System::Threading::PROCESS_INFORMATION, UI::WindowsAndMessaging::GetWindowThreadProcessId,
 };
+
+use self::workspace::WorkspaceArea;
 
 mod workspace;
 
@@ -77,14 +79,7 @@ impl Daemon<'_> {
         let workspace_area =
             workspace::get_workspace_area(workspace::Scaling::Logical, self.config.height);
 
-        let (x, y, width, height) = get_console_rect(
-            0,
-            workspace_area.height,
-            workspace_area.width,
-            self.config.height,
-            &workspace_area,
-        );
-        arrange_daemon_console(x, y, width, height);
+        self.arrange_daemon_console(&workspace_area);
 
         // Looks like on windows 10 re-arranging the console resets the console output buffer
         set_console_color(CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color));
@@ -191,6 +186,7 @@ impl Daemon<'_> {
             match VIRTUAL_KEY(key_event.wVirtualKeyCode) {
                 VK_R => {
                     self.rearrange_client_windows(client_console_window_handles, workspace_area);
+                    self.arrange_daemon_console(workspace_area);
                 }
                 VK_E => {
                     // TODO: Select windows
@@ -265,6 +261,17 @@ impl Daemon<'_> {
                 MoveWindow(*handle, x, y, width, height, true);
             }
         }
+    }
+
+    fn arrange_daemon_console(&self, workspace_area: &WorkspaceArea) {
+        let (x, y, width, height) = get_console_rect(
+            0,
+            workspace_area.height,
+            workspace_area.width,
+            self.config.height,
+            workspace_area,
+        );
+        arrange_console(x, y, width, height);
     }
 }
 
