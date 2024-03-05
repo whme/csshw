@@ -35,8 +35,8 @@ impl From<ConfigOpt> for Config {
     fn from(val: ConfigOpt) -> Self {
         return Config {
             clusters: val.clusters.unwrap_or_default(),
-            client: val.client.unwrap_or(ClientConfigOpt::default()).into(),
-            daemon: val.daemon.unwrap_or(DaemonConfigOpt::default()).into(),
+            client: val.client.unwrap_or_default().into(),
+            daemon: val.daemon.unwrap_or_default().into(),
         };
     }
 }
