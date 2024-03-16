@@ -25,7 +25,7 @@ const KEY_EVENT: u16 = 1;
 pub fn print_console_rect() {
     loop {
         let mut window_rect = RECT::default();
-        unsafe { GetWindowRect(GetConsoleWindow(), ptr::addr_of_mut!(window_rect)) };
+        unsafe { GetWindowRect(GetConsoleWindow(), ptr::addr_of_mut!(window_rect)).unwrap() };
         println!("{:?}", window_rect);
         thread::sleep(time::Duration::from_millis(100));
     }
@@ -33,18 +33,18 @@ pub fn print_console_rect() {
 
 pub fn set_console_title(title: &str) {
     unsafe {
-        SetWindowTextW(GetConsoleWindow(), &HSTRING::from(title));
+        SetWindowTextW(GetConsoleWindow(), &HSTRING::from(title)).unwrap();
     }
 }
 
 pub fn set_console_color(color: CONSOLE_CHARACTER_ATTRIBUTES) {
     unsafe {
-        SetConsoleTextAttribute(get_std_handle(STD_OUTPUT_HANDLE), color);
+        SetConsoleTextAttribute(get_std_handle(STD_OUTPUT_HANDLE), color).unwrap();
     }
     let mut number_of_attrs_written: u32 = 0;
     let mut buffer_info = CONSOLE_SCREEN_BUFFER_INFO::default();
     unsafe {
-        GetConsoleScreenBufferInfo(get_std_handle(STD_OUTPUT_HANDLE), &mut buffer_info);
+        GetConsoleScreenBufferInfo(get_std_handle(STD_OUTPUT_HANDLE), &mut buffer_info).unwrap();
         for y in 0..buffer_info.dwSize.Y {
             FillConsoleOutputAttribute(
                 get_std_handle(STD_OUTPUT_HANDLE),
@@ -52,7 +52,8 @@ pub fn set_console_color(color: CONSOLE_CHARACTER_ATTRIBUTES) {
                 buffer_info.dwSize.X.try_into().unwrap(),
                 COORD { X: 0, Y: y },
                 &mut number_of_attrs_written,
-            );
+            )
+            .unwrap();
         }
     }
 }
@@ -61,7 +62,7 @@ pub fn clear_screen() {
     let mut buffer_info = CONSOLE_SCREEN_BUFFER_INFO::default();
     let console_output_handle = get_std_handle(STD_OUTPUT_HANDLE);
     unsafe {
-        GetConsoleScreenBufferInfo(console_output_handle, &mut buffer_info);
+        GetConsoleScreenBufferInfo(console_output_handle, &mut buffer_info).unwrap();
     }
     let scroll_rect = SMALL_RECT {
         Left: 0,
@@ -84,14 +85,15 @@ pub fn clear_screen() {
             None,
             scroll_target,
             &char_info,
-        );
+        )
+        .unwrap();
     }
 
     buffer_info.dwCursorPosition.X = 0;
     buffer_info.dwCursorPosition.Y = 0;
 
     unsafe {
-        SetConsoleCursorPosition(console_output_handle, buffer_info.dwCursorPosition);
+        SetConsoleCursorPosition(console_output_handle, buffer_info.dwCursorPosition).unwrap();
     }
 }
 
@@ -180,6 +182,6 @@ pub fn arrange_console(x: i32, y: i32, width: i32, height: i32) {
     // when this simply retrying doesn't solve the issue. Maybe it has something to do
     // with DPI awareness => https://docs.rs/embed-manifest/latest/embed_manifest/
     unsafe {
-        MoveWindow(GetConsoleWindow(), x, y, width, height, true);
+        MoveWindow(GetConsoleWindow(), x, y, width, height, true).unwrap();
     }
 }
