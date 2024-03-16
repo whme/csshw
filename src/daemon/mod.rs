@@ -291,13 +291,13 @@ fn ensure_client_z_order_in_sync_with_daemon(client_console_window_handles: BTre
             }
             previous_foreground_window = foreground_window;
             if foreground_window == daemon_handle {
-                defer_windows_windows(&client_console_window_handles, &daemon_handle);
+                defer_windows(&client_console_window_handles, &daemon_handle);
             }
         }
     });
 }
 
-fn defer_windows_windows(
+fn defer_windows(
     client_console_window_handles: &BTreeMap<usize, HWND>,
     daemon_handle: &HWND,
 ) {
