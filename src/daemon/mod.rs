@@ -26,14 +26,18 @@ use tokio::{
     sync::broadcast::{self, Receiver, Sender},
     task::JoinHandle,
 };
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
+};
 use windows::Win32::System::Console::{CONSOLE_CHARACTER_ATTRIBUTES, INPUT_RECORD_0};
+
+use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     VIRTUAL_KEY, VK_A, VK_CONTROL, VK_E, VK_ESCAPE, VK_R, VK_T,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    BeginDeferWindowPos, DeferWindowPos, EndDeferWindowPos, GetForegroundWindow, GetWindowTextW,
-    IsWindow, MoveWindow, SetForegroundWindow, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_SHOWWINDOW,
+    GetForegroundWindow, GetWindowPlacement, GetWindowTextW, IsWindow, MoveWindow,
+    SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOWMINIMIZED, WINDOWPLACEMENT,
 };
 use windows::Win32::{
     Foundation::{BOOL, COLORREF, FALSE, HWND, LPARAM, TRUE},
@@ -287,31 +291,42 @@ fn ensure_client_z_order_in_sync_with_daemon(client_console_window_handles: BTre
             }
             previous_foreground_window = foreground_window;
             if foreground_window == daemon_handle {
-                defer_client_windows(&client_console_window_handles);
+                defer_windows_windows(&client_console_window_handles, &daemon_handle);
             }
         }
     });
 }
 
-fn defer_client_windows(client_console_window_handles: &BTreeMap<usize, HWND>) {
-    let mut hdwp =
-        unsafe { BeginDeferWindowPos(client_console_window_handles.len() as i32) }.unwrap();
-    for client_handle in client_console_window_handles.values() {
-        hdwp = unsafe {
-            DeferWindowPos(
-                hdwp,
-                *client_handle,
-                HWND_TOP,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
-            )
+fn defer_windows_windows(
+    client_console_window_handles: &BTreeMap<usize, HWND>,
+    daemon_handle: &HWND,
+) {
+    unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).unwrap() };
+    for handle in client_console_window_handles
+        .values()
+        .chain([daemon_handle])
+    {
+        // First restore if window is minimized
+        let mut placement: WINDOWPLACEMENT = WINDOWPLACEMENT {
+            length: mem::size_of::<WINDOWPLACEMENT>() as u32,
+            ..Default::default()
+        };
+        match unsafe { GetWindowPlacement(*handle, &mut placement) } {
+            Ok(_) => {}
+            Err(_) => {
+                continue;
+            }
         }
-        .unwrap_or(hdwp);
+        if placement.showCmd == SW_SHOWMINIMIZED.0.try_into().unwrap() {
+            unsafe { ShowWindow(*handle, SW_RESTORE) };
+        }
+        // Then bring it to front using UI automation
+        let automation: IUIAutomation =
+            unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL) }.unwrap();
+        if let Ok(window) = unsafe { automation.ElementFromHandle(*handle) } {
+            unsafe { window.SetFocus() }.unwrap();
+        }
     }
-    unsafe { EndDeferWindowPos(hdwp).unwrap() };
 }
 
 fn determine_client_spatial_attributes(
