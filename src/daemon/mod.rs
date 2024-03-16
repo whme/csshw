@@ -258,7 +258,7 @@ impl Daemon<'_> {
                 self.config.aspect_ratio_adjustement,
             );
             unsafe {
-                MoveWindow(*handle, x, y, width, height, true);
+                MoveWindow(*handle, x, y, width, height, true).unwrap();
             }
         }
     }
@@ -311,7 +311,7 @@ fn defer_client_windows(client_console_window_handles: &BTreeMap<usize, HWND>) {
         }
         .unwrap_or(hdwp);
     }
-    unsafe { EndDeferWindowPos(hdwp) };
+    unsafe { EndDeferWindowPos(hdwp).unwrap() };
 }
 
 fn determine_client_spatial_attributes(
@@ -520,7 +520,7 @@ where
     let closure_pointer_pointer: *mut c_void = unsafe { mem::transmute(&mut trait_obj) };
 
     let lparam = LPARAM(closure_pointer_pointer as isize);
-    unsafe { EnumWindows(Some(enumerate_callback), lparam) };
+    unsafe { EnumWindows(Some(enumerate_callback), lparam).unwrap() };
 }
 
 unsafe extern "system" fn enumerate_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
@@ -537,10 +537,10 @@ fn disable_processed_input_mode() {
     let handle = get_console_input_buffer();
     let mut mode = CONSOLE_MODE(0u32);
     unsafe {
-        GetConsoleMode(handle, &mut mode);
+        GetConsoleMode(handle, &mut mode).unwrap();
     }
     unsafe {
-        SetConsoleMode(handle, CONSOLE_MODE(mode.0 ^ ENABLE_PROCESSED_INPUT.0));
+        SetConsoleMode(handle, CONSOLE_MODE(mode.0 ^ ENABLE_PROCESSED_INPUT.0)).unwrap();
     }
 }
 

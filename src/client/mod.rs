@@ -36,16 +36,22 @@ fn write_console_input(input_record: INPUT_RECORD_0) {
         Event: input_record,
     }];
     let mut nb_of_events_written: u32 = 0;
-    unsafe {
-        if WriteConsoleInputW(
+    match unsafe {
+        WriteConsoleInputW(
             get_console_input_buffer(),
             &buffer,
             &mut nb_of_events_written,
-        ) == false
-            || nb_of_events_written == 0
-        {
+        )
+    } {
+        Ok(_) => {
+            if nb_of_events_written == 0 {
+                println!("Failed to write console input");
+                println!("{:?}", unsafe { GetLastError() });
+            }
+        }
+        Err(_) => {
             println!("Failed to write console input");
-            println!("{:?}", GetLastError());
+            println!("{:?}", unsafe { GetLastError() });
         }
     };
 }
@@ -197,7 +203,7 @@ pub async fn main(host: String, username: String, config: &ClientConfig) {
     // Make sure the client and all its subprocesses
     // are aware they need to shutdown.
     unsafe {
-        GenerateConsoleCtrlEvent(0, 0);
+        GenerateConsoleCtrlEvent(0, 0).unwrap();
     }
     drop(child);
 }

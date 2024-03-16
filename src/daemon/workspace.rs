@@ -87,9 +87,10 @@ pub fn get_workspace_area(scaling: Scaling, daemon_console_height: i32) -> Works
         SystemParametersInfoW(
             SPI_GETWORKAREA,
             0,
-            Some(ptr::addr_of_mut!(workspace_rect) as *const c_void),
+            Some(ptr::addr_of_mut!(workspace_rect) as *mut c_void),
             SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
-        );
+        )
+        .unwrap();
     }
     let x_fixed_frame = unsafe { GetSystemMetrics(SM_CXFIXEDFRAME) };
     let y_fixed_frame = unsafe { GetSystemMetrics(SM_CYFIXEDFRAME) };
