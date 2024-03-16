@@ -297,10 +297,7 @@ fn ensure_client_z_order_in_sync_with_daemon(client_console_window_handles: BTre
     });
 }
 
-fn defer_windows(
-    client_console_window_handles: &BTreeMap<usize, HWND>,
-    daemon_handle: &HWND,
-) {
+fn defer_windows(client_console_window_handles: &BTreeMap<usize, HWND>, daemon_handle: &HWND) {
     unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).unwrap() };
     for handle in client_console_window_handles
         .values()
