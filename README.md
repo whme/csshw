@@ -3,6 +3,8 @@ _Cluster SSH tool for Windows inspired by [csshX](https://github.com/brockgr/css
 
 ![csshw demo](https://github.com/whme/csshw/blob/21d218db0d2c0366d413dad8379bdc9544f75bf8/demo/csshw.gif)[^1][^2]
 
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 ## Pre-requisites
 - ``Default terminal application`` is set to ``Windows Console Host`` in the windows Terminal Startup Settings (Windows 11 only)
 
