@@ -1,7 +1,7 @@
 use std::{mem, ptr, thread, time};
 
 use windows::core::HSTRING;
-use windows::Win32::Foundation::{COLORREF, HANDLE, RECT};
+use windows::Win32::Foundation::{COLORREF, HANDLE, HWND, RECT};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
 use windows::Win32::System::Console::{
     FillConsoleOutputAttribute, GetConsoleScreenBufferInfo, GetConsoleWindow, GetStdHandle,
@@ -119,17 +119,19 @@ pub fn set_console_border_color(color: COLORREF) {
 }
 
 pub fn get_console_title() -> String {
+    return get_window_title(unsafe { &GetConsoleWindow() });
+}
+
+pub fn get_window_title(handle: &HWND) -> String {
     let mut title: [u16; MAX_WINDOW_TITLE_LENGTH] = [0; MAX_WINDOW_TITLE_LENGTH];
-    let read_chars: i32;
     unsafe {
-        read_chars = GetWindowTextW(GetConsoleWindow(), &mut title);
+        GetWindowTextW(*handle, &mut title);
     }
-    let mut read_title = title.to_vec();
-    read_title.truncate(read_chars.try_into().unwrap());
-    return String::from_utf16(&read_title)
-        .expect("Failed to get console title")
-        .trim()
-        .to_string();
+    let vec: Vec<u16> = title
+        .into_iter()
+        .filter(|val| return *val != 0u16)
+        .collect();
+    return String::from_utf16(&vec).unwrap();
 }
 
 fn get_std_handle(nstdhandle: STD_HANDLE) -> HANDLE {
