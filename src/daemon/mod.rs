@@ -11,7 +11,7 @@ use std::{
 use std::{thread, time};
 
 use crate::utils::config::DaemonConfig;
-use crate::utils::{clear_screen, set_console_color};
+use crate::utils::{clear_screen, get_window_title, set_console_color};
 use crate::{
     serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
@@ -36,8 +36,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VIRTUAL_KEY, VK_A, VK_CONTROL, VK_E, VK_ESCAPE, VK_R, VK_T,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowPlacement, GetWindowTextW, IsWindow, MoveWindow,
-    SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOWMINIMIZED, WINDOWPLACEMENT,
+    GetForegroundWindow, GetWindowPlacement, IsWindow, MoveWindow, SetForegroundWindow, ShowWindow,
+    SW_RESTORE, SW_SHOWMINIMIZED, WINDOWPLACEMENT,
 };
 use windows::Win32::{
     Foundation::{BOOL, COLORREF, FALSE, HWND, LPARAM, TRUE},
@@ -475,18 +475,6 @@ async fn _launch_clients(hosts: Vec<String>, username: &Option<String>) -> Vec<H
     return client_handles;
 }
 
-fn _get_window_title(handle: &HWND) -> String {
-    let mut title: [u16; 1024] = [0; 1024];
-    unsafe {
-        GetWindowTextW(*handle, &mut title);
-    }
-    let vec: Vec<u16> = title
-        .into_iter()
-        .filter(|val| return *val != 0u16)
-        .collect();
-    return String::from_utf16(&vec).unwrap();
-}
-
 /// Launches a client console for each given host and
 /// waits for the client windows to exist before
 /// returning their handles.
@@ -497,7 +485,7 @@ async fn launch_clients(hosts: Vec<String>, username: &Option<String>) -> BTreeM
     loop {
         // Wait for all window titles to have been set before mapping anything
         if client_handles.iter().all(|handle| {
-            return _get_window_title(handle) != format!("{}.exe", PKG_NAME);
+            return get_window_title(handle) != format!("{}.exe", PKG_NAME);
         }) {
             break;
         }
@@ -507,7 +495,7 @@ async fn launch_clients(hosts: Vec<String>, username: &Option<String>) -> BTreeM
         // Account for duplicate hosts
         loop {
             if let Some(index) = hosts.iter().enumerate().position(|(position, host)| {
-                if _get_window_title(client_handle).contains(host) && position >= _index {
+                if get_window_title(client_handle).contains(host) && position >= _index {
                     return true;
                 }
                 return false;
