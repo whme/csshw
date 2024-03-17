@@ -39,15 +39,15 @@ pub fn set_console_title(title: &str) {
 
 pub fn set_console_color(color: CONSOLE_CHARACTER_ATTRIBUTES) {
     unsafe {
-        SetConsoleTextAttribute(get_std_handle(STD_OUTPUT_HANDLE), color).unwrap();
+        SetConsoleTextAttribute(get_console_output_buffer(), color).unwrap();
     }
     let mut number_of_attrs_written: u32 = 0;
     let mut buffer_info = CONSOLE_SCREEN_BUFFER_INFO::default();
     unsafe {
-        GetConsoleScreenBufferInfo(get_std_handle(STD_OUTPUT_HANDLE), &mut buffer_info).unwrap();
+        GetConsoleScreenBufferInfo(get_console_output_buffer(), &mut buffer_info).unwrap();
         for y in 0..buffer_info.dwSize.Y {
             FillConsoleOutputAttribute(
-                get_std_handle(STD_OUTPUT_HANDLE),
+                get_console_output_buffer(),
                 color.0,
                 buffer_info.dwSize.X.try_into().unwrap(),
                 COORD { X: 0, Y: y },
@@ -60,7 +60,7 @@ pub fn set_console_color(color: CONSOLE_CHARACTER_ATTRIBUTES) {
 
 pub fn clear_screen() {
     let mut buffer_info = CONSOLE_SCREEN_BUFFER_INFO::default();
-    let console_output_handle = get_std_handle(STD_OUTPUT_HANDLE);
+    let console_output_handle = get_console_output_buffer();
     unsafe {
         GetConsoleScreenBufferInfo(console_output_handle, &mut buffer_info).unwrap();
     }
@@ -143,6 +143,10 @@ fn get_std_handle(nstdhandle: STD_HANDLE) -> HANDLE {
 
 pub fn get_console_input_buffer() -> HANDLE {
     return get_std_handle(STD_INPUT_HANDLE);
+}
+
+pub fn get_console_output_buffer() -> HANDLE {
+    return get_std_handle(STD_OUTPUT_HANDLE);
 }
 
 fn read_console_input() -> INPUT_RECORD {
