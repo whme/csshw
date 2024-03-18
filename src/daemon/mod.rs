@@ -289,10 +289,15 @@ fn ensure_client_z_order_in_sync_with_daemon(client_console_window_handles: BTre
             if previous_foreground_window == foreground_window {
                 continue;
             }
-            previous_foreground_window = foreground_window;
-            if foreground_window == daemon_handle {
+            if foreground_window == daemon_handle
+                && !client_console_window_handles.values().any(|client_handle| {
+                    return *client_handle == previous_foreground_window
+                        || *client_handle == daemon_handle;
+                })
+            {
                 defer_windows(&client_console_window_handles, &daemon_handle);
             }
+            previous_foreground_window = foreground_window;
         }
     });
 }
