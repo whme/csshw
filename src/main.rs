@@ -1,11 +1,11 @@
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
 
-use clap::{Parser, Subcommand};
+use clap::{ArgAction, Parser, Subcommand};
 use csshw::client::main as client_main;
 use csshw::daemon::main as daemon_main;
-use csshw::spawn_console_process;
 use csshw::utils::config::{Cluster, Config, ConfigOpt};
+use csshw::{init_logger, spawn_console_process};
 use windows::core::PCWSTR;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{LoadImageW, IMAGE_ICON, LR_DEFAULTSIZE};
@@ -24,6 +24,9 @@ struct Args {
     /// Hosts to connect to
     #[clap(required = false)]
     hosts: Vec<String>,
+    /// Enable extensive logging
+    #[clap(short, long, action=ArgAction::SetTrue)]
+    debug: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -103,15 +106,30 @@ async fn main() {
 
     match &args.command {
         Some(Commands::Client { host, username }) => {
+            if args.debug {
+                init_logger(&format!("csshw_client_{host}"));
+            }
             client_main(host.to_owned(), username.to_owned(), &config.client).await;
         }
         Some(Commands::Daemon { username, hosts }) => {
-            daemon_main(hosts.to_owned(), username.clone(), &config.daemon).await;
+            if args.debug {
+                init_logger("csshw_daemon");
+            }
+            daemon_main(
+                hosts.to_owned(),
+                username.clone(),
+                &config.daemon,
+                args.debug,
+            )
+            .await;
         }
         None => {
             confy::store_path(&config_path, &config).unwrap();
 
             let mut daemon_args: Vec<&str> = Vec::new();
+            if args.debug {
+                daemon_args.push("-d");
+            }
             daemon_args.push("daemon");
             if let Some(username) = args.username.as_ref() {
                 daemon_args.push("-u");

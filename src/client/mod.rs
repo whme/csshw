@@ -1,6 +1,7 @@
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
 
+use log::error;
 use std::fs::File;
 use std::io::{self, BufReader};
 use std::path::Path;
@@ -92,12 +93,21 @@ fn get_username_and_host(username: &str, host: &str, config: &ClientConfig) -> S
 /// It might overwrite the console title once it launches, so we wait for that
 /// to happen and set the title again.
 async fn launch_ssh_process(username_host: &str, config: &ClientConfig) -> Child {
+    let arguments = config.arguments.clone().into_iter().map(|arg| {
+        return arg.replace(config.username_host_placeholder.as_str(), username_host);
+    });
     let child = Command::new(&config.program)
-        .args(config.arguments.clone().into_iter().map(|arg| {
-            return arg.replace(config.username_host_placeholder.as_str(), username_host);
-        }))
+        .args(arguments.clone())
         .spawn()
-        .unwrap();
+        .unwrap_or_else(|err| {
+            let args: String =
+                itertools::Itertools::intersperse(arguments, " ".to_owned()).collect();
+            error!("{}", err);
+            panic!(
+                "Failed to launch process `{}` with arguments `{}`",
+                config.program, args
+            )
+        });
     return child;
 }
 
@@ -137,7 +147,13 @@ async fn run(child: &mut Child) {
             }
         }
     };
-    named_pipe_client.ready(Interest::READABLE).await.unwrap();
+    named_pipe_client
+        .ready(Interest::READABLE)
+        .await
+        .unwrap_or_else(|err| {
+            error!("{}", err);
+            panic!("Named client pipe is not ready to be read",)
+        });
     let mut failure_iterations = 0;
     loop {
         match read_write_loop(&named_pipe_client).await {
@@ -208,7 +224,10 @@ pub async fn main(host: String, username: String, config: &ClientConfig) {
     // Make sure the client and all its subprocesses
     // are aware they need to shutdown.
     unsafe {
-        GenerateConsoleCtrlEvent(0, 0).unwrap();
+        GenerateConsoleCtrlEvent(0, 0).unwrap_or_else(|err| {
+            error!("{}", err);
+            panic!("Failed to send `ctrl + c` to remaining client windows",)
+        });
     }
     drop(child);
 }
