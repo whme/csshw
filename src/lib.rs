@@ -1,10 +1,12 @@
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
 use std::ffi::OsString;
+use std::fs::{create_dir, File};
 use std::{mem, ptr};
 
 use std::os::windows::ffi::OsStrExt;
 
+use simplelog::{Config, LevelFilter, WriteLogger};
 use windows::core::{HSTRING, PCWSTR, PWSTR};
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::System::Threading::{
@@ -54,4 +56,18 @@ pub fn spawn_console_process(application: &str, args: Vec<&str>) -> PROCESS_INFO
         .expect("Failed to create process");
     }
     return process_information;
+}
+
+pub fn init_logger(name: &str) {
+    let utc_now = chrono::offset::Utc::now()
+        .format("%Y-%m-%d_%H-%M-%S")
+        .to_string();
+    let _ = create_dir("logs"); // directory already exists is fine too
+    WriteLogger::init(
+        LevelFilter::Info,
+        Config::default(),
+        File::create(format!("logs/{utc_now}_{name}.log")).unwrap(),
+    )
+    .unwrap();
+    log_panics::init();
 }

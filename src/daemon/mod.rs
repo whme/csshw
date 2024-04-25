@@ -11,6 +11,7 @@ use std::{
 use std::{thread, time};
 
 use crate::utils::config::DaemonConfig;
+use crate::utils::debug::StringRepr;
 use crate::utils::{clear_screen, get_window_title, set_console_color};
 use crate::{
     serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
@@ -21,6 +22,7 @@ use crate::{
         get_console_input_buffer, read_keyboard_input, set_console_border_color, set_console_title,
     },
 };
+use log::error;
 use tokio::{
     net::windows::named_pipe::{NamedPipeServer, PipeMode, ServerOptions},
     sync::broadcast::{self, Receiver, Sender},
@@ -61,6 +63,7 @@ struct Daemon<'a> {
     username: Option<String>,
     config: &'a DaemonConfig,
     control_mode_state: ControlModeState,
+    debug: bool,
 }
 
 #[derive(PartialEq, Debug)]
@@ -89,7 +92,7 @@ impl Daemon<'_> {
         set_console_color(CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color));
 
         let client_console_window_handles =
-            launch_clients(self.hosts.to_vec(), &self.username).await;
+            launch_clients(self.hosts.to_vec(), &self.username, self.debug).await;
 
         self.rearrange_client_windows(&client_console_window_handles, &workspace_area);
 
@@ -116,7 +119,7 @@ impl Daemon<'_> {
         let mut servers = self.launch_named_pipe_servers(&sender);
 
         // FIXME: somehow we can't detect if the client consoles are being
-        // closes from the outside ...
+        // closed from the outside ...
         tokio::spawn(async move {
             loop {
                 servers.retain(|server| {
@@ -159,7 +162,10 @@ impl Daemon<'_> {
                 .access_outbound(true)
                 .pipe_mode(PipeMode::Message)
                 .create(PIPE_NAME)
-                .unwrap();
+                .unwrap_or_else(|err| {
+                    error!("{}", err);
+                    panic!("Failed to create named pipe server",)
+                });
             let mut receiver = sender.subscribe();
             servers.push(tokio::spawn(async move {
                 named_pipe_server_routine(named_pipe_server, &mut receiver).await;
@@ -202,10 +208,17 @@ impl Daemon<'_> {
             }
             return;
         }
+        let _error_handler = |err| {
+            error!("{}", err);
+            panic!(
+                "Failed to serialize input recored `{}`",
+                input_record.string_repr()
+            )
+        };
         match sender.send(
             input_record.serialize().as_mut_vec()[..]
                 .try_into()
-                .unwrap(),
+                .unwrap_or_else(_error_handler),
         ) {
             Ok(_) => {}
             Err(_) => {
@@ -262,7 +275,10 @@ impl Daemon<'_> {
                 self.config.aspect_ratio_adjustement,
             );
             unsafe {
-                MoveWindow(*handle, x, y, width, height, true).unwrap();
+                MoveWindow(*handle, x, y, width, height, true).unwrap_or_else(|err| {
+                    error!("{}", err);
+                    panic!("Failed to move window",)
+                });
             }
         }
     }
@@ -383,20 +399,21 @@ fn get_console_rect(
     );
 }
 
-fn launch_client_console(host: &str, username: Option<String>) -> PROCESS_INFORMATION {
+fn launch_client_console(host: &str, username: Option<String>, debug: bool) -> PROCESS_INFORMATION {
     // The first argument must be `--` to ensure all following arguments are treated
     // as positional arguments and not as options if they start with `-`.
-    return spawn_console_process(
-        &format!("{PKG_NAME}.exe"),
-        vec![
-            "client",
-            "--",
-            host,
-            username
-                .as_ref()
-                .unwrap_or(&DEFAULT_SSH_USERNAME_KEY.to_string()),
-        ],
-    );
+    let mut client_args: Vec<&str> = Vec::new();
+    if debug {
+        client_args.push("-d");
+    }
+    let default_username = DEFAULT_SSH_USERNAME_KEY.to_string();
+    client_args.extend(vec![
+        "client",
+        "--",
+        host,
+        username.as_ref().unwrap_or(&default_username),
+    ]);
+    return spawn_console_process(&format!("{PKG_NAME}.exe"), client_args);
 }
 
 async fn named_pipe_server_routine(
@@ -404,14 +421,20 @@ async fn named_pipe_server_routine(
     receiver: &mut Receiver<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
 ) {
     // wait for a client to connect
-    server.connect().await.unwrap();
+    server.connect().await.unwrap_or_else(|err| {
+        error!("{}", err);
+        panic!("Timeded out waiting for clients to connect to named pipe server",)
+    });
     loop {
         let ser_input_record = match receiver.recv().await {
             Ok(val) => val,
             Err(_) => return,
         };
         loop {
-            server.writable().await.unwrap();
+            server.writable().await.unwrap_or_else(|err| {
+                error!("{}", err);
+                panic!("Timed out waiting for named pipe server to become writable",)
+            });
             match server.try_write(&ser_input_record) {
                 Ok(_) => {
                     break;
@@ -433,6 +456,7 @@ async fn named_pipe_server_routine(
 async fn _launch_client_processes_and_wait(
     hosts: Vec<String>,
     username: &Option<String>,
+    debug: bool,
 ) -> Arc<Mutex<Vec<u32>>> {
     let mut handles = vec![];
     let process_ids = Arc::new(Mutex::new(Vec::<u32>::new()));
@@ -443,7 +467,7 @@ async fn _launch_client_processes_and_wait(
             process_ids_arc
                 .lock()
                 .unwrap()
-                .push(launch_client_console(&host, _username).dwProcessId);
+                .push(launch_client_console(&host, _username, debug).dwProcessId);
         });
         handles.push(future);
     }
@@ -454,9 +478,9 @@ async fn _launch_client_processes_and_wait(
     return process_ids;
 }
 
-async fn _launch_clients(hosts: Vec<String>, username: &Option<String>) -> Vec<HWND> {
+async fn _launch_clients(hosts: Vec<String>, username: &Option<String>, debug: bool) -> Vec<HWND> {
     let number_of_hosts = hosts.len();
-    let process_ids = _launch_client_processes_and_wait(hosts, username).await;
+    let process_ids = _launch_client_processes_and_wait(hosts, username, debug).await;
     let client_handles: Vec<HWND>;
     // Wait for each client process to have opened its console window
     loop {
@@ -483,8 +507,12 @@ async fn _launch_clients(hosts: Vec<String>, username: &Option<String>) -> Vec<H
 /// Launches a client console for each given host and
 /// waits for the client windows to exist before
 /// returning their handles.
-async fn launch_clients(hosts: Vec<String>, username: &Option<String>) -> BTreeMap<usize, HWND> {
-    let client_handles = _launch_clients(hosts.clone(), username).await;
+async fn launch_clients(
+    hosts: Vec<String>,
+    username: &Option<String>,
+    debug: bool,
+) -> BTreeMap<usize, HWND> {
+    let client_handles = _launch_clients(hosts.clone(), username, debug).await;
     let mut result = BTreeMap::new();
     // Map window handle to host based on window title
     loop {
@@ -549,12 +577,18 @@ fn disable_processed_input_mode() {
     }
 }
 
-pub async fn main(hosts: Vec<String>, username: Option<String>, config: &DaemonConfig) {
+pub async fn main(
+    hosts: Vec<String>,
+    username: Option<String>,
+    config: &DaemonConfig,
+    debug: bool,
+) {
     let daemon: Daemon = Daemon {
         hosts,
         username,
         config,
         control_mode_state: ControlModeState::Inactive,
+        debug,
     };
     daemon.launch().await;
 }

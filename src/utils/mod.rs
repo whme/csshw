@@ -1,3 +1,4 @@
+use log::error;
 use std::{mem, ptr, thread, time};
 
 use windows::core::HSTRING;
@@ -13,8 +14,6 @@ use windows::Win32::System::Console::{
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, GetWindowTextW, MoveWindow, SetWindowTextW,
 };
-
-use self::constants::MAX_WINDOW_TITLE_LENGTH;
 
 pub mod config;
 pub mod constants;
@@ -123,7 +122,7 @@ pub fn get_console_title() -> String {
 }
 
 pub fn get_window_title(handle: &HWND) -> String {
-    let mut title: [u16; MAX_WINDOW_TITLE_LENGTH] = [0; MAX_WINDOW_TITLE_LENGTH];
+    let mut title: [u16; 1024] = [0; 1024];
     unsafe {
         GetWindowTextW(*handle, &mut title);
     }
@@ -131,7 +130,10 @@ pub fn get_window_title(handle: &HWND) -> String {
         .into_iter()
         .filter(|val| return *val != 0u16)
         .collect();
-    return String::from_utf16(&vec).unwrap();
+    return String::from_utf16(&vec).unwrap_or_else(|err| {
+        error!("{}", err);
+        panic!("Failed to get window title, invalid utf16",)
+    });
 }
 
 fn get_std_handle(nstdhandle: STD_HANDLE) -> HANDLE {
