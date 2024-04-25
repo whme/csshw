@@ -15,6 +15,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, GetWindowTextW, MoveWindow, SetWindowTextW,
 };
 
+use self::constants::MAX_WINDOW_TITLE_LENGTH;
+
 pub mod config;
 pub mod constants;
 pub mod debug;
@@ -122,7 +124,7 @@ pub fn get_console_title() -> String {
 }
 
 pub fn get_window_title(handle: &HWND) -> String {
-    let mut title: [u16; 1024] = [0; 1024];
+    let mut title: [u16; MAX_WINDOW_TITLE_LENGTH] = [0; MAX_WINDOW_TITLE_LENGTH];
     unsafe {
         GetWindowTextW(*handle, &mut title);
     }
