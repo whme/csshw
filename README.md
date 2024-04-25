@@ -30,8 +30,9 @@ ARGS:
     <HOSTS>...    Hosts to connect to
 
 OPTIONS:
+    -d, --debug                  Enable extensive logging
     -h, --help                   Print help information
-    -u, --username <USERNAME>    Username used to connect to the hosts
+    -u, --username <USERNAME>    Username used to connect to the hosts 
     -V, --version                Print version information
 
 SUBCOMMANDS:
