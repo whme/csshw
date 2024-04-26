@@ -135,20 +135,13 @@ impl Daemon<'_> {
 
         ensure_client_z_order_in_sync_with_daemon(client_console_window_handles.clone());
 
-        let mut transmitted_records = 0;
         loop {
-            if transmitted_records == SENDER_CAPACITY - 1 {
-                thread::sleep(time::Duration::from_millis(1));
-                transmitted_records = 0;
-            }
-            let input_record = read_keyboard_input();
             self.handle_input_record(
                 &sender,
-                input_record,
+                read_keyboard_input(),
                 client_console_window_handles,
                 workspace_area,
             );
-            transmitted_records += 1;
         }
     }
 

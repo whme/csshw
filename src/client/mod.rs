@@ -1,7 +1,7 @@
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
 
-use log::error;
+use log::{error, info, warn};
 use std::fs::File;
 use std::io::{self, BufReader};
 use std::path::Path;
@@ -25,7 +25,7 @@ use crate::{
 };
 
 enum ReadWriteResult {
-    Success,
+    Success { remainder: Vec<u8> },
     WouldBlock,
     Err,
     Disconnect,
@@ -46,13 +46,13 @@ fn write_console_input(input_record: INPUT_RECORD_0) {
     } {
         Ok(_) => {
             if nb_of_events_written == 0 {
-                println!("Failed to write console input");
-                println!("{:?}", unsafe { GetLastError() });
+                error!("Failed to write console input");
+                error!("{:?}", unsafe { GetLastError() });
             }
         }
         Err(_) => {
-            println!("Failed to write console input");
-            println!("{:?}", unsafe { GetLastError() });
+            error!("Failed to write console input");
+            error!("{:?}", unsafe { GetLastError() });
         }
     };
 }
@@ -111,24 +111,36 @@ async fn launch_ssh_process(username_host: &str, config: &ClientConfig) -> Child
     return child;
 }
 
-async fn read_write_loop(named_pipe_client: &NamedPipeClient) -> ReadWriteResult {
-    let mut buf: [u8; SERIALIZED_INPUT_RECORD_0_LENGTH] = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
+async fn read_write_loop(
+    named_pipe_client: &NamedPipeClient,
+    internal_buffer: &mut Vec<u8>,
+) -> ReadWriteResult {
+    let mut buf: [u8; SERIALIZED_INPUT_RECORD_0_LENGTH * 10] =
+        [0; SERIALIZED_INPUT_RECORD_0_LENGTH * 10];
     match named_pipe_client.try_read(&mut buf) {
-        Ok(read_bytes) if read_bytes != SERIALIZED_INPUT_RECORD_0_LENGTH => {
+        Ok(0) => {
             // Seems to only happen if the pipe is closed/server disconnects
             // indicating that the daemon has been closed.
             // Exit the client too in that case.
             return ReadWriteResult::Disconnect;
         }
-        Ok(_) => {
-            write_console_input(INPUT_RECORD_0::deserialize(&mut buf));
-            return ReadWriteResult::Success;
+        Ok(n) => {
+            internal_buffer.extend(&mut buf[0..n].iter());
+            let iter = internal_buffer.chunks_exact(SERIALIZED_INPUT_RECORD_0_LENGTH);
+            for serialzied_input_record in iter.clone() {
+                write_console_input(INPUT_RECORD_0::deserialize(
+                    &mut serialzied_input_record.to_owned(),
+                ));
+            }
+            return ReadWriteResult::Success {
+                remainder: iter.remainder().to_vec(),
+            };
         }
         Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
             return ReadWriteResult::WouldBlock;
         }
         Err(e) => {
-            println!("{}", e);
+            error!("{}", e);
             return ReadWriteResult::Err;
         }
     }
@@ -147,22 +159,27 @@ async fn run(child: &mut Child) {
             }
         }
     };
-    named_pipe_client
-        .ready(Interest::READABLE)
-        .await
-        .unwrap_or_else(|err| {
-            error!("{}", err);
-            panic!("Named client pipe is not ready to be read",)
-        });
     let mut failure_iterations = 0;
+    let mut internal_buffer: Vec<u8> = Vec::new();
     loop {
-        match read_write_loop(&named_pipe_client).await {
-            ReadWriteResult::Success => {}
+        named_pipe_client
+            .ready(Interest::READABLE)
+            .await
+            .unwrap_or_else(|err| {
+                error!("{}", err);
+                panic!("Named client pipe is not ready to be read",)
+            });
+
+        match read_write_loop(&named_pipe_client, &mut internal_buffer).await {
+            ReadWriteResult::Success { remainder } => {
+                internal_buffer = remainder;
+            }
             ReadWriteResult::WouldBlock | ReadWriteResult::Err => {
                 // Sleep some time to avoid hogging 100% CPU usage.
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }
             ReadWriteResult::Disconnect => {
+                warn!("Encountered disconnect when trying to read from named pipe");
                 break;
             }
         }
@@ -172,6 +189,10 @@ async fn run(child: &mut Child) {
                     // 0 -> last command successful
                     // 1 -> last command unsuccessful
                     // 130 -> last command cancelled (Ctrl + C)
+                    info!(
+                        "Application terminated, last exit code: {}",
+                        exit_status.code().unwrap()
+                    );
                     return;
                 }
                 255 => {
