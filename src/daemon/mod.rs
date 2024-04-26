@@ -22,7 +22,7 @@ use crate::{
         get_console_input_buffer, read_keyboard_input, set_console_border_color, set_console_title,
     },
 };
-use log::error;
+use log::{debug, error, warn};
 use tokio::{
     net::windows::named_pipe::{NamedPipeServer, PipeMode, ServerOptions},
     sync::broadcast::{self, Receiver, Sender},
@@ -436,16 +436,30 @@ async fn named_pipe_server_routine(
                 panic!("Timed out waiting for named pipe server to become writable",)
             });
             match server.try_write(&ser_input_record) {
-                Ok(_) => {
+                Ok(SERIALIZED_INPUT_RECORD_0_LENGTH) => {
+                    debug!("Successfully written all data");
                     break;
+                }
+                Ok(n) => {
+                    // The data was only written partially, try again
+                    warn!(
+                        "Partially written data, expected {} but only wrote {}",
+                        SERIALIZED_INPUT_RECORD_0_LENGTH, n
+                    );
+                    continue;
                 }
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                     // Try again
+                    debug!("Writing to named pipe server would have blocked");
                     continue;
                 }
                 Err(_) => {
                     // Can happen if the pipe is closed because the
                     // client exited
+                    debug!(
+                        "Named pipe server ({:?}) is closed, stopping named pipe server routine",
+                        server
+                    );
                     return;
                 }
             }
