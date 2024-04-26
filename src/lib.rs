@@ -6,7 +6,7 @@ use std::{mem, ptr};
 
 use std::os::windows::ffi::OsStrExt;
 
-use simplelog::{Config, LevelFilter, WriteLogger};
+use simplelog::{format_description, ConfigBuilder, LevelFilter, WriteLogger};
 use windows::core::{HSTRING, PCWSTR, PWSTR};
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::System::Threading::{
@@ -64,8 +64,10 @@ pub fn init_logger(name: &str) {
         .to_string();
     let _ = create_dir("logs"); // directory already exists is fine too
     WriteLogger::init(
-        LevelFilter::Info,
-        Config::default(),
+        LevelFilter::Debug,
+        ConfigBuilder::new()
+            .set_time_format_custom(format_description!("[hour]:[minute]:[second].[subsecond]"))
+            .build(),
         File::create(format!("logs/{utc_now}_{name}.log")).unwrap(),
     )
     .unwrap();
