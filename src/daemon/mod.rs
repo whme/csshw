@@ -23,6 +23,7 @@ use crate::{
     },
 };
 use log::{debug, error, warn};
+use text_io::read;
 use tokio::{
     net::windows::named_pipe::{NamedPipeServer, PipeMode, ServerOptions},
     sync::broadcast::{self, Receiver, Sender},
@@ -35,7 +36,7 @@ use windows::Win32::System::Console::{CONSOLE_CHARACTER_ATTRIBUTES, INPUT_RECORD
 
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    VIRTUAL_KEY, VK_A, VK_CONTROL, VK_E, VK_ESCAPE, VK_R, VK_T,
+    VIRTUAL_KEY, VK_A, VK_C, VK_CONTROL, VK_E, VK_ESCAPE, VK_R, VK_T,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowPlacement, IsWindow, MoveWindow, SetForegroundWindow, ShowWindow,
@@ -91,7 +92,7 @@ impl Daemon<'_> {
         // Looks like on windows 10 re-arranging the console resets the console output buffer
         set_console_color(CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color));
 
-        let client_console_window_handles =
+        let mut client_console_window_handles =
             launch_clients(self.hosts.to_vec(), &self.username, self.debug).await;
 
         self.rearrange_client_windows(&client_console_window_handles, &workspace_area);
@@ -105,27 +106,29 @@ impl Daemon<'_> {
         unsafe { SetForegroundWindow(GetConsoleWindow()) };
 
         self.print_instructions();
-        self.run(&client_console_window_handles, &workspace_area);
+        self.run(&mut client_console_window_handles, &workspace_area)
+            .await;
     }
 
-    fn run(
+    async fn run(
         &mut self,
-        client_console_window_handles: &BTreeMap<usize, HWND>,
+        client_console_window_handles: &mut BTreeMap<usize, HWND>,
         workspace_area: &workspace::WorkspaceArea,
     ) {
         let (sender, _) =
             broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(SENDER_CAPACITY);
 
-        let mut servers = self.launch_named_pipe_servers(&sender);
+        let mut servers = Arc::new(Mutex::new(self.launch_named_pipe_servers(&sender)));
+        let mut _server_clone = Arc::clone(&servers);
 
         // FIXME: somehow we can't detect if the client consoles are being
         // closed from the outside ...
         tokio::spawn(async move {
             loop {
-                servers.retain(|server| {
+                _server_clone.lock().unwrap().retain(|server| {
                     return !server.is_finished();
                 });
-                if servers.is_empty() {
+                if _server_clone.lock().unwrap().is_empty() {
                     // All clients have exited, exit the daemon as well
                     std::process::exit(0);
                 }
@@ -141,7 +144,9 @@ impl Daemon<'_> {
                 read_keyboard_input(),
                 client_console_window_handles,
                 workspace_area,
-            );
+                &mut servers,
+            )
+            .await;
         }
     }
 
@@ -151,34 +156,43 @@ impl Daemon<'_> {
     ) -> Vec<JoinHandle<()>> {
         let mut servers: Vec<JoinHandle<()>> = Vec::new();
         for _ in &self.hosts {
-            let named_pipe_server = ServerOptions::new()
-                .access_outbound(true)
-                .pipe_mode(PipeMode::Message)
-                .create(PIPE_NAME)
-                .unwrap_or_else(|err| {
-                    error!("{}", err);
-                    panic!("Failed to create named pipe server",)
-                });
-            let mut receiver = sender.subscribe();
-            servers.push(tokio::spawn(async move {
-                named_pipe_server_routine(named_pipe_server, &mut receiver).await;
-            }));
+            self._launch_named_pipe_server(&mut servers, sender);
         }
         return servers;
     }
 
-    fn handle_input_record(
+    fn _launch_named_pipe_server(
+        &self,
+        servers: &mut Vec<JoinHandle<()>>,
+        sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
+    ) {
+        let named_pipe_server = ServerOptions::new()
+            .access_outbound(true)
+            .pipe_mode(PipeMode::Message)
+            .create(PIPE_NAME)
+            .unwrap_or_else(|err| {
+                error!("{}", err);
+                panic!("Failed to create named pipe server",)
+            });
+        let mut receiver = sender.subscribe();
+        servers.push(tokio::spawn(async move {
+            named_pipe_server_routine(named_pipe_server, &mut receiver).await;
+        }));
+    }
+
+    async fn handle_input_record(
         &mut self,
         sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
         input_record: INPUT_RECORD_0,
-        client_console_window_handles: &BTreeMap<usize, HWND>,
+        client_console_window_handles: &mut BTreeMap<usize, HWND>,
         workspace_area: &workspace::WorkspaceArea,
+        servers: &mut Arc<Mutex<Vec<JoinHandle<()>>>>,
     ) {
         if self.control_mode_is_active(input_record) {
             if self.control_mode_state == ControlModeState::Initiated {
                 clear_screen();
                 println!("Control Mode (Esc to exit)");
-                println!("[r]etile");
+                println!("[c]reate window, [r]etile");
                 self.control_mode_state = ControlModeState::Active;
                 return;
             }
@@ -196,6 +210,18 @@ impl Daemon<'_> {
                 }
                 VK_T => {
                     // TODO: trigger input on selected windows
+                }
+                VK_C => {
+                    clear_screen();
+                    // TODO: make ESC abort
+                    println!("Hostname: ");
+                    disable_processed_input_mode(); // As it was disabled before, this enables it again
+                    let hostname: String = read!("{}\n");
+                    // FIXME: a window gets launched but closes immediately afterwards
+                    client_console_window_handles
+                        .extend(launch_clients([hostname].to_vec(), &self.username, true).await);
+                    self._launch_named_pipe_server(&mut servers.lock().unwrap(), sender);
+                    disable_processed_input_mode();
                 }
                 _ => {}
             }
