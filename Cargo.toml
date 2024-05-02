@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 chrono = "0.4.38"
 clap = { version = "3.1.12", features = ["derive"] }
+cli-clipboard = "0.4.0"
 itertools = "0.12.1"
 log = "0.4.21"
 log-panics = "2.1.0"

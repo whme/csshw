@@ -36,7 +36,7 @@ use windows::Win32::System::Console::{CONSOLE_CHARACTER_ATTRIBUTES, INPUT_RECORD
 
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    VIRTUAL_KEY, VK_A, VK_C, VK_CONTROL, VK_E, VK_ESCAPE, VK_R, VK_T,
+    VIRTUAL_KEY, VK_A, VK_C, VK_CONTROL, VK_E, VK_ESCAPE, VK_H, VK_R, VK_T,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowPlacement, IsWindow, MoveWindow, SetForegroundWindow, ShowWindow,
@@ -58,6 +58,12 @@ use self::workspace::WorkspaceArea;
 mod workspace;
 
 const SENDER_CAPACITY: usize = 4096;
+
+#[derive(Clone)]
+struct ClientWindow {
+    hostname: String,
+    hwnd: HWND,
+}
 
 struct Daemon<'a> {
     hosts: Vec<String>,
@@ -112,7 +118,7 @@ impl Daemon<'_> {
 
     async fn run(
         &mut self,
-        client_console_window_handles: &mut BTreeMap<usize, HWND>,
+        client_console_window_handles: &mut BTreeMap<usize, ClientWindow>,
         workspace_area: &workspace::WorkspaceArea,
     ) {
         let (sender, _) =
@@ -184,7 +190,7 @@ impl Daemon<'_> {
         &mut self,
         sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
         input_record: INPUT_RECORD_0,
-        client_console_window_handles: &mut BTreeMap<usize, HWND>,
+        client_console_window_handles: &mut BTreeMap<usize, ClientWindow>,
         workspace_area: &workspace::WorkspaceArea,
         servers: &mut Arc<Mutex<Vec<JoinHandle<()>>>>,
     ) {
@@ -192,7 +198,7 @@ impl Daemon<'_> {
             if self.control_mode_state == ControlModeState::Initiated {
                 clear_screen();
                 println!("Control Mode (Esc to exit)");
-                println!("[c]reate window, [r]etile");
+                println!("[c]reate window, [r]etile, copy active [h]ostnames");
                 self.control_mode_state = ControlModeState::Active;
                 return;
             }
@@ -222,6 +228,16 @@ impl Daemon<'_> {
                         .extend(launch_clients([hostname].to_vec(), &self.username, true).await);
                     self._launch_named_pipe_server(&mut servers.lock().unwrap(), sender);
                     disable_processed_input_mode();
+                    self.quit_control_mode();
+                }
+                VK_H => {
+                    let mut active_hostnames: Vec<String> = vec![];
+                    for handle in client_console_window_handles.values() {
+                        if unsafe { IsWindow(handle.hwnd).as_bool() } {
+                            active_hostnames.push(handle.hostname.clone());
+                        }
+                    }
+                    cli_clipboard::set_contents(active_hostnames.join(" ")).unwrap();
                     self.quit_control_mode();
                 }
                 _ => {}
@@ -282,13 +298,13 @@ impl Daemon<'_> {
 
     fn rearrange_client_windows(
         &self,
-        client_console_window_handles: &BTreeMap<usize, HWND>,
+        client_console_window_handles: &BTreeMap<usize, ClientWindow>,
         workspace_area: &workspace::WorkspaceArea,
     ) {
         let mut valid_handles: Vec<HWND> = Vec::new();
         for handle in client_console_window_handles.values() {
-            if unsafe { IsWindow(*handle).as_bool() } {
-                valid_handles.push(*handle);
+            if unsafe { IsWindow(handle.hwnd).as_bool() } {
+                valid_handles.push(handle.hwnd);
             }
         }
         for (index, handle) in valid_handles.iter().enumerate() {
@@ -319,7 +335,9 @@ impl Daemon<'_> {
     }
 }
 
-fn ensure_client_z_order_in_sync_with_daemon(client_console_window_handles: BTreeMap<usize, HWND>) {
+fn ensure_client_z_order_in_sync_with_daemon(
+    client_console_window_handles: BTreeMap<usize, ClientWindow>,
+) {
     tokio::spawn(async move {
         let daemon_handle = unsafe { GetConsoleWindow() };
         let mut previous_foreground_window = unsafe { GetForegroundWindow() };
@@ -331,8 +349,8 @@ fn ensure_client_z_order_in_sync_with_daemon(client_console_window_handles: BTre
             }
             if foreground_window == daemon_handle
                 && !client_console_window_handles.values().any(|client_handle| {
-                    return *client_handle == previous_foreground_window
-                        || *client_handle == daemon_handle;
+                    return client_handle.hwnd == previous_foreground_window
+                        || client_handle.hwnd == daemon_handle;
                 })
             {
                 defer_windows(&client_console_window_handles, &daemon_handle);
@@ -342,30 +360,36 @@ fn ensure_client_z_order_in_sync_with_daemon(client_console_window_handles: BTre
     });
 }
 
-fn defer_windows(client_console_window_handles: &BTreeMap<usize, HWND>, daemon_handle: &HWND) {
+fn defer_windows(
+    client_console_window_handles: &BTreeMap<usize, ClientWindow>,
+    daemon_handle: &HWND,
+) {
     unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).unwrap() };
     for handle in client_console_window_handles
         .values()
-        .chain([daemon_handle])
+        .chain([&ClientWindow {
+            hostname: "root".to_owned(),
+            hwnd: *daemon_handle,
+        }])
     {
         // First restore if window is minimized
         let mut placement: WINDOWPLACEMENT = WINDOWPLACEMENT {
             length: mem::size_of::<WINDOWPLACEMENT>() as u32,
             ..Default::default()
         };
-        match unsafe { GetWindowPlacement(*handle, &mut placement) } {
+        match unsafe { GetWindowPlacement(handle.hwnd, &mut placement) } {
             Ok(_) => {}
             Err(_) => {
                 continue;
             }
         }
         if placement.showCmd == SW_SHOWMINIMIZED.0.try_into().unwrap() {
-            unsafe { ShowWindow(*handle, SW_RESTORE) };
+            unsafe { ShowWindow(handle.hwnd, SW_RESTORE) };
         }
         // Then bring it to front using UI automation
         let automation: IUIAutomation =
             unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL) }.unwrap();
-        if let Ok(window) = unsafe { automation.ElementFromHandle(*handle) } {
+        if let Ok(window) = unsafe { automation.ElementFromHandle(handle.hwnd) } {
             unsafe { window.SetFocus() }.unwrap();
         }
     }
@@ -549,7 +573,7 @@ async fn launch_clients(
     hosts: Vec<String>,
     username: &Option<String>,
     debug: bool,
-) -> BTreeMap<usize, HWND> {
+) -> BTreeMap<usize, ClientWindow> {
     let client_handles = _launch_clients(hosts.clone(), username, debug).await;
     let mut result = BTreeMap::new();
     // Map window handle to host based on window title
@@ -575,7 +599,13 @@ async fn launch_clients(
                     _index = index + 1;
                     continue;
                 }
-                result.insert(index, *client_handle);
+                result.insert(
+                    index,
+                    ClientWindow {
+                        hostname: hosts[index].clone(),
+                        hwnd: *client_handle,
+                    },
+                );
             }
             break;
         }
