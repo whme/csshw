@@ -222,6 +222,7 @@ impl Daemon<'_> {
                         .extend(launch_clients([hostname].to_vec(), &self.username, true).await);
                     self._launch_named_pipe_server(&mut servers.lock().unwrap(), sender);
                     disable_processed_input_mode();
+                    self.quit_control_mode();
                 }
                 _ => {}
             }
@@ -250,8 +251,7 @@ impl Daemon<'_> {
         let key_event = unsafe { input_record.KeyEvent };
         if self.control_mode_state == ControlModeState::Active {
             if key_event.wVirtualKeyCode == VK_ESCAPE.0 {
-                self.print_instructions();
-                self.control_mode_state = ControlModeState::Inactive;
+                self.quit_control_mode();
                 return false;
             }
             return true;
@@ -268,6 +268,11 @@ impl Daemon<'_> {
             return true;
         }
         return false;
+    }
+
+    fn quit_control_mode(&mut self) {
+        self.print_instructions();
+        self.control_mode_state = ControlModeState::Inactive;
     }
 
     fn print_instructions(&self) {
