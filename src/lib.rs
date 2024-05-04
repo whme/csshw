@@ -60,7 +60,7 @@ pub fn spawn_console_process(application: &str, args: Vec<&str>) -> PROCESS_INFO
 
 pub fn init_logger(name: &str) {
     let utc_now = chrono::offset::Utc::now()
-        .format("%Y-%m-%d_%H-%M-%S")
+        .format("%Y-%m-%d_%H-%M-%S.%f")
         .to_string();
     let _ = create_dir("logs"); // directory already exists is fine too
     WriteLogger::init(
