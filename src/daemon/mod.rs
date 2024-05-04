@@ -23,7 +23,6 @@ use crate::{
     },
 };
 use log::{debug, error, warn};
-use text_io::read;
 use tokio::{
     net::windows::named_pipe::{NamedPipeServer, PipeMode, ServerOptions},
     sync::broadcast::{self, Receiver, Sender},
@@ -98,10 +97,14 @@ impl Daemon<'_> {
         // Looks like on windows 10 re-arranging the console resets the console output buffer
         set_console_color(CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color));
 
-        let mut client_console_window_handles =
-            launch_clients(self.hosts.to_vec(), &self.username, self.debug).await;
+        let mut client_console_window_handles = Arc::new(Mutex::new(
+            launch_clients(self.hosts.to_vec(), &self.username, self.debug).await,
+        ));
 
-        self.rearrange_client_windows(&client_console_window_handles, &workspace_area);
+        self.rearrange_client_windows(
+            &client_console_window_handles.lock().unwrap(),
+            &workspace_area,
+        );
 
         // TODO: set some hook (CBTProc or SetWinEventHook) to detect
         // window focus changes and when the daemon console get's focus
@@ -118,7 +121,7 @@ impl Daemon<'_> {
 
     async fn run(
         &mut self,
-        client_console_window_handles: &mut BTreeMap<usize, ClientWindow>,
+        client_console_window_handles: &mut Arc<Mutex<BTreeMap<usize, ClientWindow>>>,
         workspace_area: &workspace::WorkspaceArea,
     ) {
         let (sender, _) =
@@ -142,7 +145,7 @@ impl Daemon<'_> {
             }
         });
 
-        ensure_client_z_order_in_sync_with_daemon(client_console_window_handles.clone());
+        ensure_client_z_order_in_sync_with_daemon(client_console_window_handles.to_owned());
 
         loop {
             self.handle_input_record(
@@ -190,7 +193,7 @@ impl Daemon<'_> {
         &mut self,
         sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
         input_record: INPUT_RECORD_0,
-        client_console_window_handles: &mut BTreeMap<usize, ClientWindow>,
+        client_console_window_handles: &mut Arc<Mutex<BTreeMap<usize, ClientWindow>>>,
         workspace_area: &workspace::WorkspaceArea,
         servers: &mut Arc<Mutex<Vec<JoinHandle<()>>>>,
     ) {
@@ -198,7 +201,7 @@ impl Daemon<'_> {
             if self.control_mode_state == ControlModeState::Initiated {
                 clear_screen();
                 println!("Control Mode (Esc to exit)");
-                println!("[c]reate window, [r]etile, copy active [h]ostnames");
+                println!("[c]reate window(s), [r]etile, copy active [h]ostname(s)");
                 self.control_mode_state = ControlModeState::Active;
                 return;
             }
@@ -208,7 +211,10 @@ impl Daemon<'_> {
             }
             match VIRTUAL_KEY(key_event.wVirtualKeyCode) {
                 VK_R => {
-                    self.rearrange_client_windows(client_console_window_handles, workspace_area);
+                    self.rearrange_client_windows(
+                        &client_console_window_handles.lock().unwrap(),
+                        workspace_area,
+                    );
                     self.arrange_daemon_console(workspace_area);
                 }
                 VK_E => {
@@ -220,19 +226,53 @@ impl Daemon<'_> {
                 VK_C => {
                     clear_screen();
                     // TODO: make ESC abort
-                    println!("Hostname: ");
+                    println!("Hostname(s): (leave empty to abort)");
                     disable_processed_input_mode(); // As it was disabled before, this enables it again
-                    let hostname: String = read!("{}\n");
-                    // FIXME: a window gets launched but closes immediately afterwards
-                    client_console_window_handles
-                        .extend(launch_clients([hostname].to_vec(), &self.username, true).await);
-                    self._launch_named_pipe_server(&mut servers.lock().unwrap(), sender);
+                    let mut hostnames = String::new();
+                    match io::stdin().read_line(&mut hostnames) {
+                        Ok(2) => {
+                            // Empty input (only newline '\n')
+                        }
+                        Ok(_) => {
+                            let new_clients = launch_clients(
+                                hostnames
+                                    .split(' ')
+                                    .map(|x| return x.trim().to_owned())
+                                    .collect(),
+                                &self.username,
+                                self.debug,
+                            )
+                            .await;
+                            let number_of_existing_client_console_window_handles =
+                                client_console_window_handles.lock().unwrap().len();
+                            for (index, client_window) in new_clients {
+                                client_console_window_handles.lock().unwrap().insert(
+                                    number_of_existing_client_console_window_handles + index + 1,
+                                    client_window,
+                                );
+                                self._launch_named_pipe_server(
+                                    &mut servers.lock().unwrap(),
+                                    sender,
+                                );
+                            }
+                        }
+                        Err(error) => {
+                            error!("{error}");
+                        }
+                    }
                     disable_processed_input_mode();
+                    self.rearrange_client_windows(
+                        &client_console_window_handles.lock().unwrap(),
+                        workspace_area,
+                    );
+                    self.arrange_daemon_console(workspace_area);
+                    // Focus the daemon console again.
+                    unsafe { SetForegroundWindow(GetConsoleWindow()) };
                     self.quit_control_mode();
                 }
                 VK_H => {
                     let mut active_hostnames: Vec<String> = vec![];
-                    for handle in client_console_window_handles.values() {
+                    for handle in client_console_window_handles.lock().unwrap().values() {
                         if unsafe { IsWindow(handle.hwnd).as_bool() } {
                             active_hostnames.push(handle.hostname.clone());
                         }
@@ -336,7 +376,7 @@ impl Daemon<'_> {
 }
 
 fn ensure_client_z_order_in_sync_with_daemon(
-    client_console_window_handles: BTreeMap<usize, ClientWindow>,
+    client_console_window_handles: Arc<Mutex<BTreeMap<usize, ClientWindow>>>,
 ) {
     tokio::spawn(async move {
         let daemon_handle = unsafe { GetConsoleWindow() };
@@ -348,12 +388,19 @@ fn ensure_client_z_order_in_sync_with_daemon(
                 continue;
             }
             if foreground_window == daemon_handle
-                && !client_console_window_handles.values().any(|client_handle| {
-                    return client_handle.hwnd == previous_foreground_window
-                        || client_handle.hwnd == daemon_handle;
-                })
+                && !client_console_window_handles
+                    .lock()
+                    .unwrap()
+                    .values()
+                    .any(|client_handle| {
+                        return client_handle.hwnd == previous_foreground_window
+                            || client_handle.hwnd == daemon_handle;
+                    })
             {
-                defer_windows(&client_console_window_handles, &daemon_handle);
+                defer_windows(
+                    &client_console_window_handles.lock().unwrap(),
+                    &daemon_handle,
+                );
             }
             previous_foreground_window = foreground_window;
         }
