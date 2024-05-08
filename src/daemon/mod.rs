@@ -12,7 +12,7 @@ use std::{thread, time};
 
 use crate::utils::config::DaemonConfig;
 use crate::utils::debug::StringRepr;
-use crate::utils::{clear_screen, get_window_title, set_console_color};
+use crate::utils::{clear_screen, set_console_color};
 use crate::{
     serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
@@ -37,6 +37,7 @@ use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     VIRTUAL_KEY, VK_A, VK_C, VK_CONTROL, VK_E, VK_ESCAPE, VK_H, VK_R, VK_T,
 };
+use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowPlacement, IsWindow, MoveWindow, SetForegroundWindow, ShowWindow,
     SW_RESTORE, SW_SHOWMINIMIZED, WINDOWPLACEMENT,
@@ -47,9 +48,6 @@ use windows::Win32::{
         GetConsoleMode, GetConsoleWindow, SetConsoleMode, CONSOLE_MODE, ENABLE_PROCESSED_INPUT,
     },
     UI::WindowsAndMessaging::EnumWindows,
-};
-use windows::Win32::{
-    System::Threading::PROCESS_INFORMATION, UI::WindowsAndMessaging::GetWindowThreadProcessId,
 };
 
 use self::workspace::WorkspaceArea;
@@ -98,13 +96,15 @@ impl Daemon<'_> {
         set_console_color(CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color));
 
         let mut client_console_window_handles = Arc::new(Mutex::new(
-            launch_clients(self.hosts.to_vec(), &self.username, self.debug).await,
+            launch_clients(
+                self.hosts.to_vec(),
+                &self.username,
+                self.debug,
+                &workspace_area,
+                self.config.aspect_ratio_adjustement,
+            )
+            .await,
         ));
-
-        self.rearrange_client_windows(
-            &client_console_window_handles.lock().unwrap(),
-            &workspace_area,
-        );
 
         // TODO: set some hook (CBTProc or SetWinEventHook) to detect
         // window focus changes and when the daemon console get's focus
@@ -241,6 +241,8 @@ impl Daemon<'_> {
                                     .collect(),
                                 &self.username,
                                 self.debug,
+                                workspace_area,
+                                self.config.aspect_ratio_adjustement,
                             )
                             .await;
                             let number_of_existing_client_console_window_handles =
@@ -348,18 +350,13 @@ impl Daemon<'_> {
             }
         }
         for (index, handle) in valid_handles.iter().enumerate() {
-            let (x, y, width, height) = determine_client_spatial_attributes(
-                index as i32,
-                valid_handles.len() as i32,
+            arrage_client_window(
+                handle,
                 workspace_area,
+                index,
+                valid_handles.len(),
                 self.config.aspect_ratio_adjustement,
-            );
-            unsafe {
-                MoveWindow(*handle, x, y, width, height, true).unwrap_or_else(|err| {
-                    error!("{}", err);
-                    panic!("Failed to move window",)
-                });
-            }
+            )
         }
     }
 
@@ -372,6 +369,27 @@ impl Daemon<'_> {
             workspace_area,
         );
         arrange_console(x, y, width, height);
+    }
+}
+
+fn arrage_client_window(
+    handle: &HWND,
+    workspace_area: &workspace::WorkspaceArea,
+    index: usize,
+    number_of_consoles: usize,
+    aspect_ratio_adjustment: f64,
+) {
+    let (x, y, width, height) = determine_client_spatial_attributes(
+        index as i32,
+        number_of_consoles as i32,
+        workspace_area,
+        aspect_ratio_adjustment,
+    );
+    unsafe {
+        MoveWindow(*handle, x, y, width, height, true).unwrap_or_else(|err| {
+            error!("{}", err);
+            panic!("Failed to move window",)
+        });
     }
 }
 
@@ -494,7 +512,15 @@ fn get_console_rect(
     );
 }
 
-fn launch_client_console(host: &str, username: Option<String>, debug: bool) -> PROCESS_INFORMATION {
+fn launch_client_console(
+    host: &str,
+    username: Option<String>,
+    debug: bool,
+    index: usize,
+    workspace_area: &workspace::WorkspaceArea,
+    number_of_consoles: usize,
+    aspect_ratio_adjustment: f64,
+) -> HWND {
     // The first argument must be `--` to ensure all following arguments are treated
     // as positional arguments and not as options if they start with `-`.
     let mut client_args: Vec<&str> = Vec::new();
@@ -508,7 +534,29 @@ fn launch_client_console(host: &str, username: Option<String>, debug: bool) -> P
         host,
         username.as_ref().unwrap_or(&default_username),
     ]);
-    return spawn_console_process(&format!("{PKG_NAME}.exe"), client_args);
+    let process_id = spawn_console_process(&format!("{PKG_NAME}.exe"), client_args).dwProcessId;
+    let mut client_window_handle: Option<HWND> = None;
+    loop {
+        enumerate_windows(|handle| {
+            let mut window_process_id: u32 = 0;
+            unsafe { GetWindowThreadProcessId(handle, Some(&mut window_process_id)) };
+            if process_id == window_process_id {
+                client_window_handle = Some(handle);
+            }
+            return true;
+        });
+        if client_window_handle.is_some() {
+            break;
+        }
+    }
+    arrage_client_window(
+        &client_window_handle.unwrap(),
+        workspace_area,
+        index,
+        number_of_consoles,
+        aspect_ratio_adjustment,
+    );
+    return client_window_handle.unwrap();
 }
 
 async fn named_pipe_server_routine(
@@ -562,57 +610,6 @@ async fn named_pipe_server_routine(
     }
 }
 
-async fn _launch_client_processes_and_wait(
-    hosts: Vec<String>,
-    username: &Option<String>,
-    debug: bool,
-) -> Arc<Mutex<Vec<u32>>> {
-    let mut handles = vec![];
-    let process_ids = Arc::new(Mutex::new(Vec::<u32>::new()));
-    for host in hosts.into_iter() {
-        let _username = username.clone();
-        let process_ids_arc = Arc::clone(&process_ids);
-        let future = tokio::spawn(async move {
-            process_ids_arc
-                .lock()
-                .unwrap()
-                .push(launch_client_console(&host, _username, debug).dwProcessId);
-        });
-        handles.push(future);
-    }
-    // Wait for each client process to actually have started
-    for handle in handles {
-        handle.await.unwrap();
-    }
-    return process_ids;
-}
-
-async fn _launch_clients(hosts: Vec<String>, username: &Option<String>, debug: bool) -> Vec<HWND> {
-    let number_of_hosts = hosts.len();
-    let process_ids = _launch_client_processes_and_wait(hosts, username, debug).await;
-    let client_handles: Vec<HWND>;
-    // Wait for each client process to have opened its console window
-    loop {
-        // FIXME: doesn't have to be ArcMutex
-        let client_handles_arc_mutex = Arc::new(Mutex::new(Vec::<HWND>::new()));
-        let client_handles_arc_mutex_clone = Arc::clone(&client_handles_arc_mutex);
-        enumerate_windows(|handle| {
-            let mut window_process_id: u32 = 0;
-            unsafe { GetWindowThreadProcessId(handle, Some(&mut window_process_id)) };
-            if process_ids.lock().unwrap().contains(&window_process_id) {
-                client_handles_arc_mutex_clone.lock().unwrap().push(handle);
-            }
-            return true;
-        });
-        let _client_handles = client_handles_arc_mutex.lock().unwrap();
-        if _client_handles.len() == number_of_hosts {
-            client_handles = _client_handles.to_vec();
-            break;
-        }
-    }
-    return client_handles;
-}
-
 /// Launches a client console for each given host and
 /// waits for the client windows to exist before
 /// returning their handles.
@@ -620,44 +617,41 @@ async fn launch_clients(
     hosts: Vec<String>,
     username: &Option<String>,
     debug: bool,
+    workspace_area: &workspace::WorkspaceArea,
+    aspect_ratio_adjustment: f64,
 ) -> BTreeMap<usize, ClientWindow> {
-    let client_handles = _launch_clients(hosts.clone(), username, debug).await;
-    let mut result = BTreeMap::new();
-    // Map window handle to host based on window title
-    loop {
-        // Wait for all window titles to have been set before mapping anything
-        if client_handles.iter().all(|handle| {
-            return get_window_title(handle) != format!("{}.exe", PKG_NAME);
-        }) {
-            break;
-        }
+    let result = Arc::new(Mutex::new(BTreeMap::new()));
+    let len_hosts = hosts.len();
+    let host_iter = IntoIterator::into_iter(hosts);
+    let mut handles = vec![];
+    for (index, host) in host_iter.enumerate() {
+        let _username = username.clone();
+        let _workspace = *workspace_area;
+        let result_arc = Arc::clone(&result);
+        let future = tokio::spawn(async move {
+            let handle = launch_client_console(
+                &host,
+                _username,
+                debug,
+                index,
+                &_workspace,
+                len_hosts,
+                aspect_ratio_adjustment,
+            );
+            result_arc.lock().unwrap().insert(
+                index,
+                ClientWindow {
+                    hostname: host.to_string(),
+                    hwnd: handle,
+                },
+            );
+        });
+        handles.push(future);
     }
-    for client_handle in client_handles.iter() {
-        let mut _index = 0;
-        // Account for duplicate hosts
-        loop {
-            if let Some(index) = hosts.iter().enumerate().position(|(position, host)| {
-                if get_window_title(client_handle).contains(host) && position >= _index {
-                    return true;
-                }
-                return false;
-            }) {
-                if result.contains_key(&index) {
-                    _index = index + 1;
-                    continue;
-                }
-                result.insert(
-                    index,
-                    ClientWindow {
-                        hostname: hosts[index].clone(),
-                        hwnd: *client_handle,
-                    },
-                );
-            }
-            break;
-        }
+    for handle in handles {
+        handle.await.unwrap();
     }
-    return result;
+    return result.lock().unwrap().clone();
 }
 
 fn enumerate_windows<F>(mut callback: F)
