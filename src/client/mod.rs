@@ -159,7 +159,7 @@ async fn run(child: &mut Child) {
             }
         }
     };
-    let mut failure_iterations = 0;
+    let mut failure_timestamp = None;
     let mut internal_buffer: Vec<u8> = Vec::new();
     loop {
         named_pipe_client
@@ -193,29 +193,19 @@ async fn run(child: &mut Child) {
                         "Application terminated, last exit code: {}",
                         exit_status.code().unwrap()
                     );
-                    return;
-                }
-                255 => {
-                    if failure_iterations == 0 {
-                        println!("Failed to establish SSH connection: {exit_status}");
-                        println!("Exiting after 60 seconds ...");
-                        // TODO: alternatively exit upon a keypress; either in the daemon
-                        // or directly in the client
-                    } else if failure_iterations >= 60 * 1000 / 5 {
-                        return;
-                    }
-                    failure_iterations += 1;
+                    break;
                 }
                 _ => {
-                    if failure_iterations == 0 {
-                        println!("SSH terminated with status {exit_status}");
+                    if failure_timestamp.is_none() {
+                        println!("Failed to establish SSH connection: {exit_status}");
                         println!("Exiting after 60 seconds ...");
-                        // TODO: alternatively exit upon a keypress; either in the daemon
-                        // or directly in the client
-                    } else if failure_iterations >= 60 * 1000 / 5 {
-                        return;
+                        failure_timestamp = Some(chrono::offset::Utc::now());
                     }
-                    failure_iterations += 1;
+                    if failure_timestamp.unwrap() + chrono::Duration::seconds(60)
+                        <= chrono::Utc::now()
+                    {
+                        break;
+                    }
                 }
             },
             Ok(None) => (
