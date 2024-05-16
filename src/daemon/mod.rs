@@ -31,11 +31,13 @@ use tokio::{
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
 };
-use windows::Win32::System::Console::{CONSOLE_CHARACTER_ATTRIBUTES, INPUT_RECORD_0};
+use windows::Win32::System::Console::{
+    CONSOLE_CHARACTER_ATTRIBUTES, INPUT_RECORD_0, LEFT_CTRL_PRESSED, RIGHT_CTRL_PRESSED,
+};
 
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    VIRTUAL_KEY, VK_A, VK_C, VK_CONTROL, VK_E, VK_ESCAPE, VK_H, VK_R, VK_T,
+    VIRTUAL_KEY, VK_A, VK_C, VK_E, VK_ESCAPE, VK_H, VK_R, VK_T,
 };
 use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -314,15 +316,11 @@ impl Daemon<'_> {
             }
             return true;
         }
-        if key_event.wVirtualKeyCode == VK_CONTROL.0 {
-            if key_event.bKeyDown.as_bool() {
-                self.control_mode_state = ControlModeState::Initiated
-            } else {
-                self.control_mode_state = ControlModeState::Inactive
-            }
-        } else if key_event.wVirtualKeyCode == VK_A.0
-            && self.control_mode_state == ControlModeState::Initiated
+        if (key_event.dwControlKeyState & LEFT_CTRL_PRESSED >= 1
+            || key_event.dwControlKeyState & RIGHT_CTRL_PRESSED >= 1)
+            && key_event.wVirtualKeyCode == VK_A.0
         {
+            self.control_mode_state = ControlModeState::Initiated;
             return true;
         }
         return false;
