@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::{self, BufReader};
 use std::path::Path;
 use std::time::Duration;
+use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::utils::config::ClientConfig;
 use crate::utils::constants::DEFAULT_SSH_USERNAME_KEY;
@@ -17,6 +18,7 @@ use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
 use windows::Win32::Foundation::GetLastError;
 use windows::Win32::System::Console::{
     GenerateConsoleCtrlEvent, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT,
+    KEY_EVENT_RECORD, LEFT_ALT_PRESSED, RIGHT_ALT_PRESSED, SHIFT_PRESSED,
 };
 
 use crate::{
@@ -25,7 +27,10 @@ use crate::{
 };
 
 enum ReadWriteResult {
-    Success { remainder: Vec<u8> },
+    Success {
+        remainder: Vec<u8>,
+        key_event_records: Vec<KEY_EVENT_RECORD>,
+    },
     WouldBlock,
     Err,
     Disconnect,
@@ -127,13 +132,16 @@ async fn read_write_loop(
         Ok(n) => {
             internal_buffer.extend(&mut buf[0..n].iter());
             let iter = internal_buffer.chunks_exact(SERIALIZED_INPUT_RECORD_0_LENGTH);
+            let mut key_event_records: Vec<KEY_EVENT_RECORD> = Vec::new();
             for serialzied_input_record in iter.clone() {
-                write_console_input(INPUT_RECORD_0::deserialize(
-                    &mut serialzied_input_record.to_owned(),
-                ));
+                let input_record =
+                    INPUT_RECORD_0::deserialize(&mut serialzied_input_record.to_owned());
+                write_console_input(input_record);
+                key_event_records.push(unsafe { input_record.KeyEvent });
             }
             return ReadWriteResult::Success {
                 remainder: iter.remainder().to_vec(),
+                key_event_records,
             };
         }
         Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -171,8 +179,22 @@ async fn run(child: &mut Child) {
             });
 
         match read_write_loop(&named_pipe_client, &mut internal_buffer).await {
-            ReadWriteResult::Success { remainder } => {
+            ReadWriteResult::Success {
+                remainder,
+                key_event_records,
+            } => {
                 internal_buffer = remainder;
+                if failure_timestamp.is_some() {
+                    for key_event in key_event_records.into_iter() {
+                        if (key_event.dwControlKeyState & LEFT_ALT_PRESSED >= 1
+                            || key_event.dwControlKeyState & RIGHT_ALT_PRESSED == 1)
+                            && key_event.dwControlKeyState & SHIFT_PRESSED >= 1
+                            && key_event.wVirtualKeyCode == VK_C.0
+                        {
+                            return;
+                        }
+                    }
+                }
             }
             ReadWriteResult::WouldBlock | ReadWriteResult::Err => {
                 // Sleep some time to avoid hogging 100% CPU usage.
@@ -198,7 +220,7 @@ async fn run(child: &mut Child) {
                 _ => {
                     if failure_timestamp.is_none() {
                         println!("Failed to establish SSH connection: {exit_status}");
-                        println!("Exiting after 60 seconds ...");
+                        println!("Exiting after 60 seconds (Shift-Alt-C to exit early)");
                         failure_timestamp = Some(chrono::offset::Utc::now());
                     }
                     if failure_timestamp.unwrap() + chrono::Duration::seconds(60)
