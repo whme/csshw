@@ -242,12 +242,14 @@ pub async fn main(host: String, username: String, config: &ClientConfig) {
     let username_host = get_username_and_host(&username, &host, config);
     let _username_host = username_host.clone();
     tokio::spawn(async move {
-        // Set the console title (child might overwrite it, so we have to keep checking it)
-        let console_title = format!("{} - {}", PKG_NAME, _username_host);
-        if console_title != get_console_title() {
-            set_console_title(console_title.as_str());
+        loop {
+            // Set the console title (child might overwrite it, so we have to keep checking it)
+            let console_title = format!("{} - {}", PKG_NAME, _username_host);
+            if console_title != get_console_title() {
+                set_console_title(console_title.as_str());
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
         }
-        tokio::time::sleep(Duration::from_millis(5)).await;
     });
 
     let mut child = launch_ssh_process(&username_host, config).await;
