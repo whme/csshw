@@ -117,7 +117,7 @@ impl Daemon<'_> {
         // SetForegroundWindow.
 
         // Now that all clients started, focus the daemon console again.
-        unsafe { SetForegroundWindow(GetConsoleWindow()) };
+        let _ = unsafe { SetForegroundWindow(GetConsoleWindow()) };
 
         self.print_instructions();
         self.run(
@@ -284,7 +284,7 @@ impl Daemon<'_> {
                     );
                     self.arrange_daemon_console(workspace_area, is_windows_10);
                     // Focus the daemon console again.
-                    unsafe { SetForegroundWindow(GetConsoleWindow()) };
+                    let _ = unsafe { SetForegroundWindow(GetConsoleWindow()) };
                     self.quit_control_mode();
                 }
                 VK_H => {
@@ -465,7 +465,7 @@ fn defer_windows(
             }
         }
         if placement.showCmd == SW_SHOWMINIMIZED.0.try_into().unwrap() {
-            unsafe { ShowWindow(handle.hwnd, SW_RESTORE) };
+            let _ = unsafe { ShowWindow(handle.hwnd, SW_RESTORE) };
         }
         // Then bring it to front using UI automation
         let automation: IUIAutomation =
