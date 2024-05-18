@@ -167,7 +167,7 @@ async fn run(child: &mut Child) {
             }
         }
     };
-    let mut failure_timestamp = None;
+    let mut child_error = false;
     let mut internal_buffer: Vec<u8> = Vec::new();
     loop {
         named_pipe_client
@@ -184,7 +184,7 @@ async fn run(child: &mut Child) {
                 key_event_records,
             } => {
                 internal_buffer = remainder;
-                if failure_timestamp.is_some() {
+                if child_error {
                     for key_event in key_event_records.into_iter() {
                         if (key_event.dwControlKeyState & LEFT_ALT_PRESSED >= 1
                             || key_event.dwControlKeyState & RIGHT_ALT_PRESSED == 1)
@@ -218,15 +218,10 @@ async fn run(child: &mut Child) {
                     break;
                 }
                 _ => {
-                    if failure_timestamp.is_none() {
+                    if !child_error {
                         println!("Failed to establish SSH connection: {exit_status}");
-                        println!("Exiting after 60 seconds (Shift-Alt-C to exit early)");
-                        failure_timestamp = Some(chrono::offset::Utc::now());
-                    }
-                    if failure_timestamp.unwrap() + chrono::Duration::seconds(60)
-                        <= chrono::Utc::now()
-                    {
-                        break;
+                        println!("Shift-Alt-C to exit");
+                        child_error = true;
                     }
                 }
             },
