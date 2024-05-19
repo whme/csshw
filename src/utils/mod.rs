@@ -1,5 +1,4 @@
 use log::error;
-use registry::{Hive, Security};
 use std::{mem, ptr, thread, time};
 
 use windows::core::HSTRING;
@@ -100,14 +99,7 @@ pub fn clear_screen() {
 }
 
 pub fn set_console_border_color(color: COLORREF) {
-    let version = os_info::get().version().to_string();
-    let mut iter = version.split('.');
-    let (major, _, build) = (
-        iter.next().unwrap().parse::<usize>().unwrap(),
-        iter.next().unwrap().parse::<usize>().unwrap(),
-        iter.next().unwrap().parse::<usize>().unwrap(),
-    );
-    if major >= 10 && build >= 22000 {
+    if !is_windows_10() {
         unsafe {
             DwmSetWindowAttribute(
                 GetConsoleWindow(),
@@ -198,24 +190,12 @@ pub fn arrange_console(x: i32, y: i32, width: i32, height: i32) {
 }
 
 pub fn is_windows_10() -> bool {
-    let regkey = Hive::LocalMachine
-        .open(
-            r"SOFTWARE\Microsoft\Windows NT\CurrentVersion",
-            Security::Read,
-        )
-        .unwrap();
-    match regkey
-        .value("CurrentBuild")
-        .unwrap()
-        .to_string()
-        .parse::<usize>()
-    {
-        Ok(build_number) => {
-            return build_number <= 22000;
-        }
-        Err(e) => {
-            error!("Failed to get current windows build number from registry ({e}), assuming Windows 11 or greater.");
-            return false;
-        }
-    }
+    let version = os_info::get().version().to_string();
+    let mut iter = version.split('.');
+    let (major, _, build) = (
+        iter.next().unwrap().parse::<usize>().unwrap(),
+        iter.next().unwrap().parse::<usize>().unwrap(),
+        iter.next().unwrap().parse::<usize>().unwrap(),
+    );
+    return major <= 10 && build <= 22000;
 }
