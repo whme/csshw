@@ -108,11 +108,6 @@ impl Daemon<'_> {
             .await,
         ));
 
-        // TODO: set some hook (CBTProc or SetWinEventHook) to detect
-        // window focus changes and when the daemon console get's focus
-        // iterate through all client windows + daemon and use
-        // SetForegroundWindow.
-
         // Now that all clients started, focus the daemon console again.
         let _ = unsafe { SetForegroundWindow(GetConsoleWindow()) };
 
@@ -130,7 +125,7 @@ impl Daemon<'_> {
             broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(SENDER_CAPACITY);
 
         let mut servers = Arc::new(Mutex::new(self.launch_named_pipe_servers(&sender)));
-        let mut _server_clone = Arc::clone(&servers);
+        let mut _server_clone: Arc<Mutex<Vec<JoinHandle<()>>>> = Arc::clone(&servers);
 
         // FIXME: somehow we can't detect if the client consoles are being
         // closed from the outside ...
