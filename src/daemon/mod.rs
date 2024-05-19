@@ -135,6 +135,7 @@ impl Daemon<'_> {
                     return !server.is_finished();
                 });
                 if _server_clone.lock().unwrap().is_empty() {
+                    debug!("Sending exit!");
                     // All clients have exited, exit the daemon as well
                     std::process::exit(0);
                 }
@@ -562,6 +563,9 @@ async fn named_pipe_server_routine(
         panic!("Timeded out waiting for clients to connect to named pipe server",)
     });
     loop {
+        // FIXME: we might block the daemon from exiting by waiting for
+        // the next input record before detecting the named pipe server
+        // closed
         let ser_input_record = match receiver.recv().await {
             Ok(val) => val,
             Err(_) => return,
@@ -693,4 +697,5 @@ pub async fn main(
         debug,
     };
     daemon.launch().await;
+    debug!("Actually exiting");
 }
