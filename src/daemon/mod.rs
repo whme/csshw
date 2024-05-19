@@ -12,7 +12,7 @@ use std::{thread, time};
 
 use crate::utils::config::DaemonConfig;
 use crate::utils::debug::StringRepr;
-use crate::utils::{clear_screen, is_windows_10, set_console_color};
+use crate::utils::{clear_screen, set_console_color};
 use crate::{
     serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
@@ -89,12 +89,10 @@ impl Daemon<'_> {
         // https://learn.microsoft.com/en-us/windows/console/ctrl-c-and-ctrl-break-signals
         disable_processed_input_mode();
 
-        let is_windows_10 = is_windows_10();
-
         let workspace_area =
             workspace::get_workspace_area(workspace::Scaling::Logical, self.config.height);
 
-        self.arrange_daemon_console(&workspace_area, is_windows_10);
+        self.arrange_daemon_console(&workspace_area);
 
         // Looks like on windows 10 re-arranging the console resets the console output buffer
         set_console_color(CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color));
@@ -106,7 +104,6 @@ impl Daemon<'_> {
                 self.debug,
                 &workspace_area,
                 self.config.aspect_ratio_adjustement,
-                is_windows_10,
             )
             .await,
         ));
@@ -120,19 +117,14 @@ impl Daemon<'_> {
         let _ = unsafe { SetForegroundWindow(GetConsoleWindow()) };
 
         self.print_instructions();
-        self.run(
-            &mut client_console_window_handles,
-            &workspace_area,
-            is_windows_10,
-        )
-        .await;
+        self.run(&mut client_console_window_handles, &workspace_area)
+            .await;
     }
 
     async fn run(
         &mut self,
         client_console_window_handles: &mut Arc<Mutex<BTreeMap<usize, ClientWindow>>>,
         workspace_area: &workspace::WorkspaceArea,
-        is_windows_10: bool,
     ) {
         let (sender, _) =
             broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(SENDER_CAPACITY);
@@ -164,7 +156,6 @@ impl Daemon<'_> {
                 client_console_window_handles,
                 workspace_area,
                 &mut servers,
-                is_windows_10,
             )
             .await;
         }
@@ -207,7 +198,6 @@ impl Daemon<'_> {
         client_console_window_handles: &mut Arc<Mutex<BTreeMap<usize, ClientWindow>>>,
         workspace_area: &workspace::WorkspaceArea,
         servers: &mut Arc<Mutex<Vec<JoinHandle<()>>>>,
-        is_windows_10: bool,
     ) {
         if self.control_mode_is_active(input_record) {
             if self.control_mode_state == ControlModeState::Initiated {
@@ -226,9 +216,8 @@ impl Daemon<'_> {
                     self.rearrange_client_windows(
                         &client_console_window_handles.lock().unwrap(),
                         workspace_area,
-                        is_windows_10,
                     );
-                    self.arrange_daemon_console(workspace_area, is_windows_10);
+                    self.arrange_daemon_console(workspace_area);
                 }
                 VK_E => {
                     // TODO: Select windows
@@ -256,7 +245,6 @@ impl Daemon<'_> {
                                 self.debug,
                                 workspace_area,
                                 self.config.aspect_ratio_adjustement,
-                                is_windows_10,
                             )
                             .await;
                             let number_of_existing_client_console_window_handles =
@@ -280,9 +268,8 @@ impl Daemon<'_> {
                     self.rearrange_client_windows(
                         &client_console_window_handles.lock().unwrap(),
                         workspace_area,
-                        is_windows_10,
                     );
-                    self.arrange_daemon_console(workspace_area, is_windows_10);
+                    self.arrange_daemon_console(workspace_area);
                     // Focus the daemon console again.
                     let _ = unsafe { SetForegroundWindow(GetConsoleWindow()) };
                     self.quit_control_mode();
@@ -353,7 +340,6 @@ impl Daemon<'_> {
         &self,
         client_console_window_handles: &BTreeMap<usize, ClientWindow>,
         workspace_area: &workspace::WorkspaceArea,
-        is_windows_10: bool,
     ) {
         let mut valid_handles: Vec<HWND> = Vec::new();
         for handle in client_console_window_handles.values() {
@@ -368,19 +354,17 @@ impl Daemon<'_> {
                 index,
                 valid_handles.len(),
                 self.config.aspect_ratio_adjustement,
-                is_windows_10,
             )
         }
     }
 
-    fn arrange_daemon_console(&self, workspace_area: &WorkspaceArea, is_windows_10: bool) {
+    fn arrange_daemon_console(&self, workspace_area: &WorkspaceArea) {
         let (x, y, width, height) = get_console_rect(
             0,
             workspace_area.height,
             workspace_area.width,
             self.config.height,
             workspace_area,
-            is_windows_10,
         );
         arrange_console(x, y, width, height);
     }
@@ -392,14 +376,12 @@ fn arrage_client_window(
     index: usize,
     number_of_consoles: usize,
     aspect_ratio_adjustment: f64,
-    is_windows_10: bool,
 ) {
     let (x, y, width, height) = determine_client_spatial_attributes(
         index as i32,
         number_of_consoles as i32,
         workspace_area,
         aspect_ratio_adjustment,
-        is_windows_10,
     );
     unsafe {
         MoveWindow(*handle, x, y, width, height, true).unwrap_or_else(|err| {
@@ -481,7 +463,6 @@ fn determine_client_spatial_attributes(
     number_of_consoles: i32,
     workspace_area: &workspace::WorkspaceArea,
     aspect_ratio_adjustment: f64,
-    is_windows_10: bool,
 ) -> (i32, i32, i32, i32) {
     let aspect_ratio = workspace_area.width as f64 / workspace_area.height as f64;
 
@@ -511,14 +492,7 @@ fn determine_client_spatial_attributes(
     let x = grid_column_index * console_width;
     let y = grid_row_index * console_height;
 
-    return get_console_rect(
-        x,
-        y,
-        console_width,
-        console_height,
-        workspace_area,
-        is_windows_10,
-    );
+    return get_console_rect(x, y, console_width, console_height, workspace_area);
 }
 
 fn get_console_rect(
@@ -527,14 +501,11 @@ fn get_console_rect(
     width: i32,
     height: i32,
     workspace_area: &workspace::WorkspaceArea,
-    is_windows_10: bool,
 ) -> (i32, i32, i32, i32) {
     return (
         workspace_area.x + x,
         workspace_area.y + y,
-        width
-            + workspace_area.x_fixed_frame
-            + workspace_area.x_size_frame * (if is_windows_10 { 1 } else { 2 }),
+        width + workspace_area.x_fixed_frame + workspace_area.x_size_frame * 2,
         height + workspace_area.y_size_frame * 2,
     );
 }
@@ -547,7 +518,6 @@ fn launch_client_console(
     workspace_area: &workspace::WorkspaceArea,
     number_of_consoles: usize,
     aspect_ratio_adjustment: f64,
-    is_windows_10: bool,
 ) -> HWND {
     // The first argument must be `--` to ensure all following arguments are treated
     // as positional arguments and not as options if they start with `-`.
@@ -583,7 +553,6 @@ fn launch_client_console(
         index,
         number_of_consoles,
         aspect_ratio_adjustment,
-        is_windows_10,
     );
     return client_window_handle.unwrap();
 }
@@ -648,7 +617,6 @@ async fn launch_clients(
     debug: bool,
     workspace_area: &workspace::WorkspaceArea,
     aspect_ratio_adjustment: f64,
-    is_windows_10: bool,
 ) -> BTreeMap<usize, ClientWindow> {
     let result = Arc::new(Mutex::new(BTreeMap::new()));
     let len_hosts = hosts.len();
@@ -667,7 +635,6 @@ async fn launch_clients(
                 &_workspace,
                 len_hosts,
                 aspect_ratio_adjustment,
-                is_windows_10,
             );
             result_arc.lock().unwrap().insert(
                 index,

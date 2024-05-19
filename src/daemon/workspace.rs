@@ -9,6 +9,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SM_CYSIZEFRAME, SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
 };
 
+use crate::utils::is_windows_10;
+
 #[derive(Clone, Copy, Debug)]
 pub enum Scaling {
     Physical,
@@ -99,7 +101,8 @@ pub fn get_workspace_area(scaling: Scaling, daemon_console_height: i32) -> Works
     let workspace_area = WorkspaceArea {
         x: workspace_rect.left - (x_fixed_frame + x_size_frame),
         y: workspace_rect.top,
-        width: workspace_rect.right - workspace_rect.left,
+        width: workspace_rect.right - workspace_rect.left
+            + (if is_windows_10() { -x_size_frame } else { 0 }),
         height: workspace_rect.bottom - workspace_rect.top - daemon_console_height,
         scaling: Scaling::Physical,
         scale_factor: get_scale_factor(),
