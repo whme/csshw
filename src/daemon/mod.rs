@@ -23,6 +23,7 @@ use crate::{
     },
 };
 use log::{debug, error, warn};
+use tokio::sync::broadcast::error::TryRecvError;
 use tokio::{
     net::windows::named_pipe::{NamedPipeServer, PipeMode, ServerOptions},
     sync::broadcast::{self, Receiver, Sender},
@@ -563,12 +564,27 @@ async fn named_pipe_server_routine(
         panic!("Timeded out waiting for clients to connect to named pipe server",)
     });
     loop {
-        // FIXME: we might block the daemon from exiting by waiting for
-        // the next input record before detecting the named pipe server
-        // closed
-        let ser_input_record = match receiver.recv().await {
+        let ser_input_record = match receiver.try_recv() {
             Ok(val) => val,
-            Err(_) => return,
+            Err(TryRecvError::Empty) => {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+                // Try sending dummy data to detect early if the pipe is closed because the client exited
+                match server.try_write(&[u8::MAX; 18]) {
+                    Ok(_) => continue,
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                    Err(_) => {
+                        debug!(
+                            "Named pipe server ({:?}) is closed, stopping named pipe server routine",
+                            server
+                        );
+                        return;
+                    }
+                }
+            }
+            Err(err) => {
+                error!("{}", err);
+                panic!("Failed to receive data from the Receiver");
+            }
         };
         loop {
             server.writable().await.unwrap_or_else(|err| {
