@@ -136,7 +136,6 @@ impl Daemon<'_> {
                     return !server.is_finished();
                 });
                 if _server_clone.lock().unwrap().is_empty() {
-                    debug!("Sending exit!");
                     // All clients have exited, exit the daemon as well
                     std::process::exit(0);
                 }
