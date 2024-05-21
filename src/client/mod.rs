@@ -134,6 +134,10 @@ async fn read_write_loop(
             let iter = internal_buffer.chunks_exact(SERIALIZED_INPUT_RECORD_0_LENGTH);
             let mut key_event_records: Vec<KEY_EVENT_RECORD> = Vec::new();
             for serialzied_input_record in iter.clone() {
+                if serialzied_input_record == [u8::MAX; 18] {
+                    // Just a keep alive packet from the daemon, ignore it
+                    continue;
+                };
                 let input_record =
                     INPUT_RECORD_0::deserialize(&mut serialzied_input_record.to_owned());
                 write_console_input(input_record);
