@@ -57,7 +57,7 @@ use self::workspace::WorkspaceArea;
 
 mod workspace;
 
-const SENDER_CAPACITY: usize = 4096;
+const SENDER_CAPACITY: usize = 1024 * 1024;
 
 #[derive(Clone)]
 struct ClientWindow {
@@ -298,7 +298,7 @@ impl Daemon<'_> {
         ) {
             Ok(_) => {}
             Err(_) => {
-                thread::sleep(time::Duration::from_millis(1));
+                thread::sleep(time::Duration::from_nanos(1));
             }
         }
     }

@@ -202,7 +202,7 @@ async fn run(child: &mut Child) {
             }
             ReadWriteResult::WouldBlock | ReadWriteResult::Err => {
                 // Sleep some time to avoid hogging 100% CPU usage.
-                tokio::time::sleep(Duration::from_millis(5)).await;
+                tokio::time::sleep(Duration::from_nanos(5)).await;
             }
             ReadWriteResult::Disconnect => {
                 warn!("Encountered disconnect when trying to read from named pipe");
