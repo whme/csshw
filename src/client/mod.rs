@@ -11,7 +11,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 use crate::utils::config::ClientConfig;
 use crate::utils::constants::DEFAULT_SSH_USERNAME_KEY;
 use crate::utils::{get_console_input_buffer, get_console_title, set_console_title};
-use ssh2_config::SshConfig;
+use ssh2_config::{ParseRule, SshConfig};
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::process::{Child, Command};
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
@@ -75,18 +75,15 @@ fn get_username_and_host(username: &str, host: &str, config: &ClientConfig) -> S
             File::open(ssh_config_path).expect("Could not open SSH configuration file."),
         );
         ssh_config = SshConfig::default()
-            .parse(&mut reader)
+            .parse(&mut reader, ParseRule::ALLOW_UNKNOWN_FIELDS)
             .expect("Failed to parse SSH configuration file");
     }
 
-    let default_params = ssh_config.default_params();
     let host_specific_params = ssh_config.query(<&str>::clone(&host));
 
     let username: String = if username == DEFAULT_SSH_USERNAME_KEY {
         // FIXME: find a better default
-        host_specific_params
-            .user
-            .unwrap_or(default_params.user.unwrap_or("undefined".to_string()))
+        host_specific_params.user.unwrap_or_default()
     } else {
         username.to_owned()
     };

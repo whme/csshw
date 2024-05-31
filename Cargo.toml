@@ -23,7 +23,7 @@ rmp = "0.8.11"
 serde = "1.0.163"
 serde_derive = "1.0.163"
 simplelog = "0.12.2"
-ssh2-config = "0.1.6"
+ssh2-config = "0.2.3"
 time = "0.3.36"
 tokio = { version = "1.36.0", features = ["rt", "rt-multi-thread", "net", "sync", "macros", "time", "signal", "process"] }
 
