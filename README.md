@@ -7,7 +7,7 @@ _Cluster SSH tool for Windows inspired by [csshX](https://github.com/brockgr/css
 
 ## Pre-requisites
 - Any SSH client (Windows 10 and Windows 11 already include a built-in SSH server and client - [docs](https://learn.microsoft.com/en-us/windows/terminal/tutorials/ssh))
-- ``Default terminal application`` is set to ``Windows Console Host`` in the windows Terminal Startup Settings (Windows 11 only)
+- ``Default terminal application`` is set to ``Windows Console Host`` in the windows Terminal Startup Settings (only if Windows Terminal app is installed, which is the case for Windows 11)
 
 ## Overview
 csshW will launch 1 daemon and N client windows (with N being the number of hosts to SSH onto).<br>
@@ -33,7 +33,7 @@ ARGS:
 OPTIONS:
     -d, --debug                  Enable extensive logging
     -h, --help                   Print help information
-    -u, --username <USERNAME>    Username used to connect to the hosts 
+    -u, --username <USERNAME>    Username used to connect to the hosts
     -V, --version                Print version information
 
 SUBCOMMANDS:
