@@ -20,9 +20,9 @@ pub mod daemon;
 pub mod serde;
 pub mod utils;
 
-// https://github.com/microsoft/terminal/blob/main/src/propslib/DelegationConfig.hpp#L105
+// https://github.com/microsoft/terminal/blob/v1.22.3232.0/src/propslib/DelegationConfig.hpp#L105
 const CLSID_CONHOST: &str = "{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}";
-// https://github.com/microsoft/terminal/blob/main/src/propslib/DelegationConfig.cpp#L29
+// https://github.com/microsoft/terminal/blob/v1.22.3232.0/src/propslib/DelegationConfig.cpp#L29
 const DEFAULT_TERMINAL_APP_REGISTRY_PATH: &str = r"Console\%%Startup";
 const DELEGATION_CONSOLE: &str = "DelegationConsole";
 const DELEGATION_TERMINAL: &str = "DelegationTerminal";
