@@ -5,7 +5,7 @@ _Cluster SSH tool for Windows inspired by [csshX](https://github.com/brockgr/css
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-## Pre-requisites
+## Pre-requisite
 - Any SSH client (Windows 10 and Windows 11 already include a built-in SSH server and client - [docs](https://learn.microsoft.com/en-us/windows/terminal/tutorials/ssh))
 
 ## Overview
