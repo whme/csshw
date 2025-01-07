@@ -98,30 +98,36 @@ impl WindowsSettingsDefaultTerminalApplicationGuard {
             Ok(value) => match value {
                 Data::String(value) => value.to_string_lossy(),
                 _ => {
-                    warn!("Failed to read {} value from registry", DELEGATION_CONSOLE);
-                    return WindowsSettingsDefaultTerminalApplicationGuard::default();
+                    panic!(
+                        "Expected string data for {} registry value",
+                        DELEGATION_CONSOLE
+                    )
                 }
             },
-            Err(_) => {
-                panic!(
-                    "Expected string data for {} registry value",
-                    DELEGATION_CONSOLE
-                )
+            Err(err) => {
+                warn!(
+                    "Failed to read {} value from registry: {}",
+                    DELEGATION_CONSOLE, err
+                );
+                return WindowsSettingsDefaultTerminalApplicationGuard::default();
             }
         };
         let old_windows_terminal_terminal = match regkey.value(DELEGATION_TERMINAL) {
             Ok(value) => match value {
                 Data::String(value) => value.to_string_lossy(),
                 _ => {
-                    warn!("Failed to read {} value from registry", DELEGATION_TERMINAL);
-                    return WindowsSettingsDefaultTerminalApplicationGuard::default();
+                    panic!(
+                        "Expected string data for {} registry value",
+                        DELEGATION_CONSOLE
+                    )
                 }
             },
-            Err(_) => {
-                panic!(
-                    "Expected string data for {} registry value",
-                    DELEGATION_CONSOLE
-                )
+            Err(err) => {
+                warn!(
+                    "Failed to read {} value from registry: {}",
+                    DELEGATION_TERMINAL, err
+                );
+                return WindowsSettingsDefaultTerminalApplicationGuard::default();
             }
         };
 
