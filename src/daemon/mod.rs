@@ -3,13 +3,13 @@
 use std::cmp::max;
 use std::collections::BTreeMap;
 use std::{
-    ffi::c_void,
     io, mem,
     sync::{Arc, Mutex},
     time::Duration,
 };
 use std::{thread, time};
 
+use crate::get_concole_window_handle;
 use crate::utils::config::DaemonConfig;
 use crate::utils::debug::StringRepr;
 use crate::utils::{clear_screen, set_console_color};
@@ -21,6 +21,7 @@ use crate::{
         constants::{DEFAULT_SSH_USERNAME_KEY, PIPE_NAME, PKG_NAME},
         get_console_input_buffer, read_keyboard_input, set_console_border_color, set_console_title,
     },
+    WindowsSettingsDefaultTerminalApplicationGuard,
 };
 use log::{debug, error, warn};
 use tokio::sync::broadcast::error::TryRecvError;
@@ -40,17 +41,15 @@ use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     VIRTUAL_KEY, VK_A, VK_C, VK_E, VK_ESCAPE, VK_H, VK_R, VK_T,
 };
-use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowPlacement, IsWindow, MoveWindow, SetForegroundWindow, ShowWindow,
     SW_RESTORE, SW_SHOWMINIMIZED, WINDOWPLACEMENT,
 };
 use windows::Win32::{
-    Foundation::{BOOL, COLORREF, FALSE, HWND, LPARAM, TRUE},
+    Foundation::{COLORREF, HWND},
     System::Console::{
         GetConsoleMode, GetConsoleWindow, SetConsoleMode, CONSOLE_MODE, ENABLE_PROCESSED_INPUT,
     },
-    UI::WindowsAndMessaging::EnumWindows,
 };
 
 use self::workspace::WorkspaceArea;
@@ -528,29 +527,17 @@ fn launch_client_console(
         host,
         username.as_ref().unwrap_or(&default_username),
     ]);
-    let process_id = spawn_console_process(&format!("{PKG_NAME}.exe"), client_args).dwProcessId;
-    let mut client_window_handle: Option<HWND> = None;
-    loop {
-        enumerate_windows(|handle| {
-            let mut window_process_id: u32 = 0;
-            unsafe { GetWindowThreadProcessId(handle, Some(&mut window_process_id)) };
-            if process_id == window_process_id {
-                client_window_handle = Some(handle);
-            }
-            return true;
-        });
-        if client_window_handle.is_some() {
-            break;
-        }
-    }
+    let client_window_handle = get_concole_window_handle(
+        spawn_console_process(&format!("{PKG_NAME}.exe"), client_args).dwProcessId,
+    );
     arrage_client_window(
-        &client_window_handle.unwrap(),
+        &client_window_handle,
         workspace_area,
         index,
         number_of_consoles,
         aspect_ratio_adjustment,
     );
-    return client_window_handle.unwrap();
+    return client_window_handle;
 }
 
 async fn named_pipe_server_routine(
@@ -636,6 +623,7 @@ async fn launch_clients(
     let len_hosts = hosts.len();
     let host_iter = IntoIterator::into_iter(hosts);
     let mut handles = vec![];
+    let _guard = WindowsSettingsDefaultTerminalApplicationGuard::new();
     for (index, host) in host_iter.enumerate() {
         let _username = username.clone();
         let _workspace = *workspace_area;
@@ -664,27 +652,6 @@ async fn launch_clients(
         handle.await.unwrap();
     }
     return result.lock().unwrap().clone();
-}
-
-fn enumerate_windows<F>(mut callback: F)
-where
-    F: FnMut(HWND) -> bool,
-{
-    let mut trait_obj: &mut dyn FnMut(HWND) -> bool = &mut callback;
-    let closure_pointer_pointer: *mut c_void = unsafe { mem::transmute(&mut trait_obj) };
-
-    let lparam = LPARAM(closure_pointer_pointer as isize);
-    unsafe { EnumWindows(Some(enumerate_callback), lparam).unwrap() };
-}
-
-unsafe extern "system" fn enumerate_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
-    let closure: &mut &mut dyn FnMut(HWND) -> bool = &mut *(lparam.0 as *mut c_void
-        as *mut &mut dyn std::ops::FnMut(windows::Win32::Foundation::HWND) -> bool);
-    if closure(hwnd) {
-        return TRUE;
-    } else {
-        return FALSE;
-    }
 }
 
 fn disable_processed_input_mode() {
