@@ -5,7 +5,10 @@ use clap::{ArgAction, Parser, Subcommand};
 use csshw::client::main as client_main;
 use csshw::daemon::main as daemon_main;
 use csshw::utils::config::{Cluster, Config, ConfigOpt};
-use csshw::{init_logger, spawn_console_process};
+use csshw::{
+    get_concole_window_handle, init_logger, spawn_console_process,
+    WindowsSettingsDefaultTerminalApplicationGuard,
+};
 use windows::core::PCWSTR;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{LoadImageW, IMAGE_ICON, LR_DEFAULTSIZE};
@@ -139,7 +142,12 @@ async fn main() {
                 args.hosts.iter().map(|host| return &**host).collect(),
                 &config.clusters,
             ));
-            spawn_console_process(&format!("{PKG_NAME}.exe"), daemon_args);
+            let _guard = WindowsSettingsDefaultTerminalApplicationGuard::new();
+            // We must wait for the window to actually launch before dropping the _guard as we might otherwise
+            // reset the configuration before the window was launched
+            let _ = get_concole_window_handle(
+                spawn_console_process(&format!("{PKG_NAME}.exe"), daemon_args).dwProcessId,
+            );
         }
     }
 }
