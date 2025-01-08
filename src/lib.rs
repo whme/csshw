@@ -23,6 +23,7 @@ pub mod utils;
 
 // https://github.com/microsoft/terminal/blob/v1.22.3232.0/src/propslib/DelegationConfig.hpp#L105
 const CLSID_CONHOST: &str = "{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}";
+const CLSID_DEFAULT: &str = "{00000000-0000-0000-0000-000000000000}";
 // https://github.com/microsoft/terminal/blob/v1.22.3232.0/src/propslib/DelegationConfig.cpp#L29
 const DEFAULT_TERMINAL_APP_REGISTRY_PATH: &str = r"Console\%%Startup";
 const DELEGATION_CONSOLE: &str = "DelegationConsole";
@@ -79,6 +80,24 @@ fn write_registry_values(
         });
 }
 
+// Tries to retrieve the registry value for the given value_name from the given regkey
+// returns a default value if no value is found for the given value_name
+fn get_registry_value(regkey: &RegKey, value_name: &str) -> Option<String> {
+    return match regkey.value(value_name) {
+        Ok(value) => match value {
+            Data::String(value) => Some(value.to_string_lossy()),
+            _ => {
+                panic!("Expected string data for {} registry value", value_name)
+            }
+        },
+        Err(value::Error::NotFound(_, _)) => Some(CLSID_DEFAULT.to_owned()),
+        Err(err) => {
+            warn!("Failed to read {} value from registry: {}", value_name, err);
+            None
+        }
+    };
+}
+
 impl WindowsSettingsDefaultTerminalApplicationGuard {
     // Read the existing default terminal application setting from the registry
     // before overwriting it with the value for conhost.exe
@@ -94,41 +113,13 @@ impl WindowsSettingsDefaultTerminalApplicationGuard {
                 return WindowsSettingsDefaultTerminalApplicationGuard::default();
             }
         };
-        let old_windows_terminal_console = match regkey.value(DELEGATION_CONSOLE) {
-            Ok(value) => match value {
-                Data::String(value) => value.to_string_lossy(),
-                _ => {
-                    panic!(
-                        "Expected string data for {} registry value",
-                        DELEGATION_CONSOLE
-                    )
-                }
-            },
-            Err(err) => {
-                warn!(
-                    "Failed to read {} value from registry: {}",
-                    DELEGATION_CONSOLE, err
-                );
-                return WindowsSettingsDefaultTerminalApplicationGuard::default();
-            }
+        let old_windows_terminal_console = match get_registry_value(&regkey, DELEGATION_CONSOLE) {
+            Some(val) => val,
+            _ => return WindowsSettingsDefaultTerminalApplicationGuard::default(),
         };
-        let old_windows_terminal_terminal = match regkey.value(DELEGATION_TERMINAL) {
-            Ok(value) => match value {
-                Data::String(value) => value.to_string_lossy(),
-                _ => {
-                    panic!(
-                        "Expected string data for {} registry value",
-                        DELEGATION_CONSOLE
-                    )
-                }
-            },
-            Err(err) => {
-                warn!(
-                    "Failed to read {} value from registry: {}",
-                    DELEGATION_TERMINAL, err
-                );
-                return WindowsSettingsDefaultTerminalApplicationGuard::default();
-            }
+        let old_windows_terminal_terminal = match get_registry_value(&regkey, DELEGATION_TERMINAL) {
+            Some(val) => val,
+            _ => return WindowsSettingsDefaultTerminalApplicationGuard::default(),
         };
 
         // No need to change the default terminal application if it is already set to conhost.exe
