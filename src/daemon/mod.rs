@@ -64,6 +64,32 @@ struct ClientWindow {
     hwnd: HWND,
 }
 
+unsafe impl Send for ClientWindow {}
+
+struct HWNDWrapper {
+    hwdn: HWND,
+}
+
+unsafe impl Send for HWNDWrapper {}
+
+impl PartialEq for HWNDWrapper {
+    fn eq(&self, other: &Self) -> bool {
+        return self.hwdn == other.hwdn;
+    }
+}
+
+fn get_console_window_wrapper() -> HWNDWrapper {
+    return HWNDWrapper {
+        hwdn: unsafe { GetConsoleWindow() },
+    };
+}
+
+fn get_foreground_window_wrapper() -> HWNDWrapper {
+    return HWNDWrapper {
+        hwdn: unsafe { GetForegroundWindow() },
+    };
+}
+
 struct Daemon<'a> {
     hosts: Vec<String>,
     username: Option<String>,
@@ -272,7 +298,7 @@ impl Daemon<'_> {
                 VK_H => {
                     let mut active_hostnames: Vec<String> = vec![];
                     for handle in client_console_window_handles.lock().unwrap().values() {
-                        if unsafe { IsWindow(handle.hwnd).as_bool() } {
+                        if unsafe { IsWindow(Some(handle.hwnd)).as_bool() } {
                             active_hostnames.push(handle.hostname.clone());
                         }
                     }
@@ -338,7 +364,7 @@ impl Daemon<'_> {
     ) {
         let mut valid_handles: Vec<HWND> = Vec::new();
         for handle in client_console_window_handles.values() {
-            if unsafe { IsWindow(handle.hwnd).as_bool() } {
+            if unsafe { IsWindow(Some(handle.hwnd)).as_bool() } {
                 valid_handles.push(handle.hwnd);
             }
         }
@@ -390,11 +416,11 @@ fn ensure_client_z_order_in_sync_with_daemon(
     client_console_window_handles: Arc<Mutex<BTreeMap<usize, ClientWindow>>>,
 ) {
     tokio::spawn(async move {
-        let daemon_handle = unsafe { GetConsoleWindow() };
-        let mut previous_foreground_window = unsafe { GetForegroundWindow() };
+        let daemon_handle = get_console_window_wrapper();
+        let mut previous_foreground_window = get_foreground_window_wrapper();
         loop {
             tokio::time::sleep(Duration::from_millis(1)).await;
-            let foreground_window = unsafe { GetForegroundWindow() };
+            let foreground_window = get_foreground_window_wrapper();
             if previous_foreground_window == foreground_window {
                 continue;
             }
@@ -404,13 +430,13 @@ fn ensure_client_z_order_in_sync_with_daemon(
                     .unwrap()
                     .values()
                     .any(|client_handle| {
-                        return client_handle.hwnd == previous_foreground_window
-                            || client_handle.hwnd == daemon_handle;
+                        return client_handle.hwnd == previous_foreground_window.hwdn
+                            || client_handle.hwnd == daemon_handle.hwdn;
                     })
             {
                 defer_windows(
                     &client_console_window_handles.lock().unwrap(),
-                    &daemon_handle,
+                    &daemon_handle.hwdn,
                 );
             }
             previous_foreground_window = foreground_window;
