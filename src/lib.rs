@@ -181,10 +181,10 @@ pub fn spawn_console_process(application: &str, args: Vec<&str>) -> PROCESS_INFO
     unsafe {
         CreateProcessW(
             &HSTRING::from(application),
-            command_line,
+            Some(command_line),
             Some(ptr::null_mut()),
             Some(ptr::null_mut()),
-            BOOL::from(false),
+            false,
             CREATE_NEW_CONSOLE,
             Some(ptr::null_mut()),
             PCWSTR::null(),

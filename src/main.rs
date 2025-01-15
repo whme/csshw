@@ -76,7 +76,7 @@ fn resolve_cluster_tags<'a>(hosts: Vec<&'a str>, clusters: &'a Vec<Cluster>) -> 
 async fn main() {
     unsafe {
         LoadImageW(
-            GetModuleHandleW(None).unwrap(),
+            Some(GetModuleHandleW(None).unwrap().into()),
             PCWSTR(1 as _), // Value must match the `nameID` in the .rc script
             IMAGE_ICON,
             0,
