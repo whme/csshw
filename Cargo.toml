@@ -26,7 +26,7 @@ serde_derive = "1.0.217"
 simplelog = "0.12.2"
 ssh2-config = "0.3.0"
 time = "0.3.37"
-tokio = { version = "1.36.0", features = ["rt", "rt-multi-thread", "net", "sync", "macros", "time", "signal", "process"] }
+tokio = { version = "1.43.0", features = ["rt", "rt-multi-thread", "net", "sync", "macros", "time", "signal", "process"] }
 
 [dependencies.confy]
 version = "0.5.1"
