@@ -9,9 +9,6 @@ use csshw::{
     get_concole_window_handle, init_logger, spawn_console_process,
     WindowsSettingsDefaultTerminalApplicationGuard,
 };
-use windows::core::PCWSTR;
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::WindowsAndMessaging::{LoadImageW, IMAGE_ICON, LR_DEFAULTSIZE};
 
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -74,18 +71,6 @@ fn resolve_cluster_tags<'a>(hosts: Vec<&'a str>, clusters: &'a Vec<Cluster>) -> 
 
 #[tokio::main]
 async fn main() {
-    unsafe {
-        LoadImageW(
-            Some(GetModuleHandleW(None).unwrap().into()),
-            PCWSTR(1 as _), // Value must match the `nameID` in the .rc script
-            IMAGE_ICON,
-            0,
-            0,
-            LR_DEFAULTSIZE,
-        )
-        .unwrap()
-    };
-
     match std::env::current_exe() {
         Ok(path) => match path.parent() {
             None => {
