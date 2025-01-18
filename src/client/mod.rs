@@ -34,7 +34,7 @@ enum ReadWriteResult {
         /// Incomplete [INPUT_RECORD_0] sequence.
         ///
         /// What we read from the named pipe is a serialized [INPUT_RECORD_0].`KeyEvent`.
-        /// As this is simply a 19 byte long sequence and we try to read from the pipe until we
+        /// As this is simply a [`SERIALIZED_INPUT_RECORD_0_LENGTH`] byte long sequence and we try to read from the pipe until we
         /// have some of the data it can happen that during any one read/write iteration we don't
         /// read the full sequence so we must keep track of what we read for next iterations
         /// where we will be able to read the remainder of the sequence.
@@ -151,6 +151,9 @@ async fn launch_ssh_process(username_host: &str, config: &ClientConfig) -> Child
 /// This function also extracts the [KEY_EVENT_RECORD]s, making them available to the caller via
 /// `ReadWriteResult::Success` and handles incomple reads from the named pipe via the internal buffer.
 ///
+/// The daemon might send a "keep alive packet", which is just [`SERIALIZED_INPUT_RECORD_0_LENGTH`] bytes of `1`s,
+/// we ignore this.
+///
 /// # Arguments
 ///
 /// * `named_pipe_client`   - The [Windows named pipe][1] client that has successfully connected to
@@ -181,7 +184,7 @@ async fn read_write_loop(
             let iter = internal_buffer.chunks_exact(SERIALIZED_INPUT_RECORD_0_LENGTH);
             let mut key_event_records: Vec<KEY_EVENT_RECORD> = Vec::new();
             for serialzied_input_record in iter.clone() {
-                if serialzied_input_record == [u8::MAX; 18] {
+                if serialzied_input_record == [u8::MAX; SERIALIZED_INPUT_RECORD_0_LENGTH] {
                     // Just a keep alive packet from the daemon, ignore it
                     continue;
                 };
