@@ -5,25 +5,30 @@ use windows::Win32::System::Console::{
     FOREGROUND_RED,
 };
 
+/// Placeholder for the `<username>@<host>` argument to the chosen SSH program.
 const DEFAULT_USERNAME_HOST_PLACEHOLDER: &str = "{{USERNAME_AT_HOST}}";
 
+/// Representation of the project configuration.
+///
+/// Includes subcommand specific configurations for `client` and `daemon` subcommands
+/// as well es the cluster tags.
 #[derive(Serialize, Deserialize, Default)]
 pub struct Config {
+    /// List of cluster tags.
+    ///
+    /// Includes the name of the cluster tag and a list of hostnames.
     pub clusters: Vec<Cluster>,
+    /// Configuration relevant for the `client` subcommand.
     pub client: ClientConfig,
+    /// Configuration relevant for the `daemon` subcommand.
     pub daemon: DaemonConfig,
 }
 
-impl From<Config> for ConfigOpt {
-    fn from(val: Config) -> Self {
-        return ConfigOpt {
-            clusters: Some(val.clusters),
-            client: Some(val.client.into()),
-            daemon: Some(val.daemon.into()),
-        };
-    }
-}
-
+/// Representation of the project configuration
+/// where everything is optional.
+///
+/// Used to handle cases where only some or none of the configurations are present.
+/// Enables backwards compatiblity with configuration files written by older versions.
 #[derive(Serialize, Deserialize, Default)]
 pub struct ConfigOpt {
     pub clusters: Option<Vec<Cluster>>,
@@ -32,6 +37,7 @@ pub struct ConfigOpt {
 }
 
 impl From<ConfigOpt> for Config {
+    /// Unwraps the existing configuration values or applies the default.
     fn from(val: ConfigOpt) -> Self {
         return Config {
             clusters: val.clusters.unwrap_or_default(),
@@ -41,30 +47,69 @@ impl From<ConfigOpt> for Config {
     }
 }
 
+impl From<Config> for ConfigOpt {
+    /// Wraps all configuration values as options.
+    fn from(val: Config) -> Self {
+        return ConfigOpt {
+            clusters: Some(val.clusters),
+            client: Some(val.client.into()),
+            daemon: Some(val.daemon.into()),
+        };
+    }
+}
+
+/// Representation of a cluster tag.
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct Cluster {
+    /// Name of the cluster tag, used to identify it.
     pub name: String,
+    /// List of hostnames the cluster tag is an alias for.
     pub hosts: Vec<String>,
 }
 
+/// Representation of the `client` subcommand configurations.
 #[derive(Serialize, Deserialize)]
 pub struct ClientConfig {
     /// Full path to the SSH config.
-    /// e.g. `'C:\Users\<username>\.ssh\config'`
+    ///
+    /// # Example
+    ///
+    /// `'C:\Users\<username>\.ssh\config'`
     pub ssh_config_path: String,
     /// Name of the program used to establish the SSH connection.
-    /// e.g. `'ssh'`
+    /// # Example
+    ///
+    /// `'ssh'`
     pub program: String,
     /// List of arguments provided to the program.
+    ///
     /// Must include the `username_host_placeholder`.
-    /// e.g. `['-XY' '{{USERNAME_AT_HOST}}']`
+    ///
+    /// # Example
+    ///
+    /// `['-XY', '{{USERNAME_AT_HOST}}']`
     pub arguments: Vec<String>,
     /// Placeholder string used to inject `<user>@<host>` into the list of arguments.
-    /// e.g. `'{{USERNAME_AT_HOST}}'`
+    ///
+    /// # Example
+    ///
+    /// `'{{USERNAME_AT_HOST}}'`
     pub username_host_placeholder: String,
 }
 
 impl Default for ClientConfig {
+    /// Returns a sensible default `ClientConfig`.
+    ///
+    /// # Returns
+    ///
+    /// `ClientConfig` with the following values:
+    /// * `ssh_config_path`             - `%USERPROFILE%\.ssh\config`
+    /// * `program`                     - `ssh`
+    /// * `arguments`                   - `-XY {{USERNAME_AT_HOST}}`
+    /// * `usernamt_host_placeholder`   - `{{USERNAME_AT_HOST}}`
+    ///
+    /// Note: %USERPROFILE% actually is resolved by us, so the actual value
+    ///       is whatever the environment variable at runtime points to.
     fn default() -> Self {
         return ClientConfig {
             ssh_config_path: format!("{}\\.ssh\\config", env::var("USERPROFILE").unwrap()),
@@ -78,17 +123,8 @@ impl Default for ClientConfig {
     }
 }
 
-impl From<ClientConfig> for ClientConfigOpt {
-    fn from(val: ClientConfig) -> Self {
-        return ClientConfigOpt {
-            ssh_config_path: Some(val.ssh_config_path),
-            program: Some(val.program),
-            arguments: Some(val.arguments),
-            username_host_placeholder: Some(val.username_host_placeholder),
-        };
-    }
-}
-
+/// Representation of the `client` subcommand configurations
+/// where everything is optional.
 #[derive(Serialize, Deserialize)]
 pub struct ClientConfigOpt {
     pub ssh_config_path: Option<String>,
@@ -104,6 +140,7 @@ impl Default for ClientConfigOpt {
 }
 
 impl From<ClientConfigOpt> for ClientConfig {
+    /// Unwraps the existing configuration values or applies the default.
     fn from(val: ClientConfigOpt) -> Self {
         let _default = ClientConfig::default();
         return ClientConfig {
@@ -117,24 +154,69 @@ impl From<ClientConfigOpt> for ClientConfig {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct DaemonConfig {
-    pub height: i32,
-    pub aspect_ratio_adjustement: f64,
-    pub console_color: u16,
-}
-
-impl From<DaemonConfig> for DaemonConfigOpt {
-    fn from(val: DaemonConfig) -> Self {
-        return DaemonConfigOpt {
-            height: Some(val.height),
-            aspect_ratio_adjustement: Some(val.aspect_ratio_adjustement),
-            console_color: Some(val.console_color),
+impl From<ClientConfig> for ClientConfigOpt {
+    /// Wraps all configuration values as options.
+    fn from(val: ClientConfig) -> Self {
+        return ClientConfigOpt {
+            ssh_config_path: Some(val.ssh_config_path),
+            program: Some(val.program),
+            arguments: Some(val.arguments),
+            username_host_placeholder: Some(val.username_host_placeholder),
         };
     }
 }
 
+/// Representation of the `daemon` subcommand configurations.
+#[derive(Serialize, Deserialize)]
+pub struct DaemonConfig {
+    /// Height in pixel of the daemon console window.
+    ///
+    /// Note: we are [DPI Unaware][1] which means the number of pixels
+    ///       represents the `logical` scale, not the physical.
+    ///
+    /// [1]: https://learn.microsoft.com/en-us/windows/win32/hidpi/high-dpi-desktop-application-development-on-windows#dpi-unaware
+    pub height: i32,
+    /// Controls how the client console windows make use of the available screen space.
+    ///
+    /// * `> 0.0` - Aims for vertical rectangle shape.
+    ///             The larger the value, the more exaggerated the "verticality".
+    ///             Eventually the windows will all be columns.
+    /// * `= 0.0` - Aims for square shape.
+    /// * `< 0.0` - Aims for horizontal rectangle shape.
+    ///             The smaller the value, the more exaggerated the "horizontality".
+    ///             Eventually the windows will all be rows.
+    ///             `-1.0` is the sweetspot for mostly preserving a 16:9 ratio.
+    pub aspect_ratio_adjustement: f64,
+    /// Controls back- and foreground colors of the daemon console window.
+    ///
+    /// All [standard windows color combinations][1] are available:
+    ///
+    /// FOREGROUND_BLUE:        1   \
+    /// FOREGROUND_GREEN:       2   \
+    /// FOREGROUND_RED:         4   \
+    /// FOREGROUND_INTENSITY:   8   \
+    /// BACKGROUND_BLUE:        16  \
+    /// BACKGROUND_GREEN:       32  \
+    /// BACKGROUND_RED:         64  \
+    /// BACKGROUND_INTENSITY:   128 \
+    ///
+    /// # Example
+    ///
+    /// White font on red background: 8 + 4 + 2 + 1 + 128 + 64 = `207`
+    ///
+    /// [1]: https://learn.microsoft.com/en-us/windows/console/console-screen-buffers#character-attributes
+    pub console_color: u16,
+}
+
 impl Default for DaemonConfig {
+    /// Returns a sensible default `DaemonConfig`.
+    ///
+    /// # Returns
+    ///
+    /// `DaemonConfig` with the following values:
+    /// * `height`                      - `200`
+    /// * `aspect_ration_adjustment`    - `-1.0`
+    /// * `console_color`               - `207`
     fn default() -> Self {
         return DaemonConfig {
             height: 200,
@@ -150,6 +232,8 @@ impl Default for DaemonConfig {
     }
 }
 
+/// Representation of the `daemon` subcommand configurations
+/// where everything is optional.
 #[derive(Serialize, Deserialize)]
 pub struct DaemonConfigOpt {
     pub height: Option<i32>,
@@ -164,6 +248,7 @@ impl Default for DaemonConfigOpt {
 }
 
 impl From<DaemonConfigOpt> for DaemonConfig {
+    /// Unwraps the existing configuration values or applies the default.
     fn from(val: DaemonConfigOpt) -> Self {
         let _default = DaemonConfig::default();
         return DaemonConfig {
@@ -172,6 +257,17 @@ impl From<DaemonConfigOpt> for DaemonConfig {
                 .aspect_ratio_adjustement
                 .unwrap_or(_default.aspect_ratio_adjustement),
             console_color: val.console_color.unwrap_or(_default.console_color),
+        };
+    }
+}
+
+impl From<DaemonConfig> for DaemonConfigOpt {
+    /// Wraps all configuration values as options.
+    fn from(val: DaemonConfig) -> Self {
+        return DaemonConfigOpt {
+            height: Some(val.height),
+            aspect_ratio_adjustement: Some(val.aspect_ratio_adjustement),
+            console_color: Some(val.console_color),
         };
     }
 }
