@@ -28,13 +28,13 @@ pub mod utils;
 /// CLSID identifying `conhost.exe` in the registry.
 ///
 /// As used in Windows Terminal:
-/// https://github.com/microsoft/terminal/blob/v1.22.3232.0/src/propslib/DelegationConfig.hpp#L105
+/// <https://github.com/microsoft/terminal/blob/v1.22.3232.0/src/propslib/DelegationConfig.hpp#L105>
 const CLSID_CONHOST: &str = "{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}";
 /// CLSID identifying the default configuration in the registry.
 ///
 /// The default configuration is "let windows choose".
 /// Also defined in Windows Terminal:
-/// https://github.com/microsoft/terminal/blob/v1.22.3232.0/src/propslib/DelegationConfig.hpp#L104
+/// <https://github.com/microsoft/terminal/blob/v1.22.3232.0/src/propslib/DelegationConfig.hpp#L104>
 const CLSID_DEFAULT: &str = "{00000000-0000-0000-0000-000000000000}";
 /// Registry path where `DelegationConsole` and `DelegationTerminal` registry keys are stored.
 ///
@@ -43,12 +43,12 @@ const DEFAULT_TERMINAL_APP_REGISTRY_PATH: &str = r"Console\%%Startup";
 /// `DelegationConsole` registry key.
 ///
 /// As used in Windows Terminal:
-/// https://github.com/microsoft/terminal/blob/v1.22.3232.0/src/propslib/DelegationConfig.cpp#L29
+/// <https://github.com/microsoft/terminal/blob/v1.22.3232.0/src/propslib/DelegationConfig.cpp#L29>
 const DELEGATION_CONSOLE: &str = "DelegationConsole";
 /// `DelegationTerminal` registry key.
 ///
 /// As used in Windows Terminal:
-/// https://github.com/microsoft/terminal/blob/v1.22.3232.0/src/propslib/DelegationConfig.cpp#L30
+/// <https://github.com/microsoft/terminal/blob/v1.22.3232.0/src/propslib/DelegationConfig.cpp#L30>
 const DELEGATION_TERMINAL: &str = "DelegationTerminal";
 
 /// Guard storing previous/old `DelegationConsole` and `DelegationTerminal` registry values.
@@ -314,7 +314,7 @@ where
 /// Callback function used in `enumerate_windows` to pass a Rust closure to windows C code.
 ///
 /// This function must comply with the
-/// [EnumWindowsProc][https://learn.microsoft.com/en-us/previous-versions/windows/desktop/legacy/ms633498(v=vs.85)]
+/// [EnumWindowsProc][<https://learn.microsoft.com/en-us/previous-versions/windows/desktop/legacy/ms633498(v=vs.85)>]
 /// function signature.
 ///
 /// # Arguments

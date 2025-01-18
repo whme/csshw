@@ -20,6 +20,8 @@ jobs:
       run: cargo clippy --all-targets --all-features -- -D warnings
     - name: Build
       run: cargo build --verbose
+    - name: Doc
+      run: cargo doc --bins --lib --no-deps
     - name: Run tests
       run: cargo test --verbose
     - name: Archive PDBs

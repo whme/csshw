@@ -1,4 +1,4 @@
-//! Utilities shared by daemon daemon and client.
+//! Utilities shared by daemon and client.
 
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
@@ -234,7 +234,8 @@ fn read_console_input() -> INPUT_RECORD {
     return input_buffer[0];
 }
 
-/// Returns a single [INPUT_RECORD_0] where `EventType` == [KEY_EVENT].
+#[allow(rustdoc::private_intra_doc_links)]
+/// Returns a single [INPUT_RECORD_0] where `EventType` == [`KEY_EVENT`].
 ///
 /// Blocks until 1 key event record was read.
 pub fn read_keyboard_input() -> INPUT_RECORD_0 {

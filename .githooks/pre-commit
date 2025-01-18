@@ -2,3 +2,4 @@
 cargo fmt
 cargo clippy --all-targets --all-features -- -D warnings
 cargo build
+cargo doc --bins --lib --no-deps

@@ -60,7 +60,7 @@ enum ReadWriteResult {
 ///
 /// # Arguments
 ///
-/// * `input_record` - The [INTPUT_RECORD_0].`KeyEvent` input record to write.
+/// * `input_record` - The [INPUT_RECORD_0].`KeyEvent` input record to write.
 fn write_console_input(input_record: INPUT_RECORD_0) {
     let buffer: [INPUT_RECORD; 1] = [INPUT_RECORD {
         EventType: KEY_EVENT as u16,
