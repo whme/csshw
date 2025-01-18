@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_USERNAME_HOST_PLACEHOLDER"],"struct":["ClientConfig","ClientConfigOpt","Cluster","Config","ConfigOpt","DaemonConfig","DaemonConfigOpt"]};
