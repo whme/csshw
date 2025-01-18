@@ -21,6 +21,7 @@
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
 #![warn(missing_docs)]
+#![doc(html_no_source)]
 
 use clap::{ArgAction, Parser, Subcommand};
 use csshw_lib::client::main as client_main;

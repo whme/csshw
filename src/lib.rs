@@ -3,6 +3,7 @@
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
 #![warn(missing_docs)]
+#![doc(html_no_source)]
 
 use std::fs::{create_dir, File};
 use std::{ffi::c_void, ffi::OsString};

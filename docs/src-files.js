@@ -1,3 +1,0 @@
-var srcIndex = new Map(JSON.parse('[["csshw",["",[["client",[],["mod.rs"]],["daemon",[],["mod.rs","workspace.rs"]],["serde",[],["deserialization.rs","mod.rs","serialization.rs"]],["utils",[],["config.rs","constants.rs","debug.rs","mod.rs"]]],["lib.rs"]]],["csshw",["",[],["main.rs"]]],["csshw_lib",["",[["client",[],["mod.rs"]],["daemon",[],["mod.rs","workspace.rs"]],["serde",[],["deserialization.rs","mod.rs","serialization.rs"]],["utils",[],["config.rs","constants.rs","debug.rs","mod.rs"]]],["lib.rs"]]]]'));
-createSrcSidebar();
-//{"start":36,"fragment_lengths":[218,30,223]}
