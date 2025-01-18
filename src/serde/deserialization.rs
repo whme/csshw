@@ -23,6 +23,7 @@ impl Deserialize for KEY_EVENT_RECORD_0 {
 
 impl Deserialize for KEY_EVENT_RECORD {
     /// Constructs and returns a [KEY_EVENT_RECORD] struct from the given u8 slice.
+    /// The slice is expected to be [`SERIALIZED_INPUT_RECORD_0_LENGTH`] long.
     ///
     /// Tries to read various datatypes in the following order:
     ///
