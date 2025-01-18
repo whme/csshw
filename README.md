@@ -23,22 +23,21 @@ To download the csshW application refer to the [Releases 📦](https://github.co
 csshw.exe --help
 Cluster SSH tool for Windows inspired by csshX
 
-USAGE:
-    csshw.exe [OPTIONS] [HOSTS]... [SUBCOMMAND]
+Usage: csshw.exe [OPTIONS] [HOSTS]... [COMMAND]
 
-ARGS:
-    <HOSTS>...    Hosts to connect to
+Commands:
+  client  Subcommand that will launch a single client window
+  daemon  Subcommand that will launch the daemon window
+  help    Print this message or the help of the given subcommand(s)
 
-OPTIONS:
-    -d, --debug                  Enable extensive logging
-    -h, --help                   Print help information
-    -u, --username <USERNAME>    Username used to connect to the hosts
-    -V, --version                Print version information
+Arguments:
+  [HOSTS]...  Hosts to connect to
 
-SUBCOMMANDS:
-    client
-    daemon
-    help      Print this message or the help of the given subcommand(s)
+Options:
+  -u, --username <USERNAME>  Optional username used to connect to the hosts
+  -d, --debug                Enable extensive logging
+  -h, --help                 Print help
+  -V, --version              Print version
 ```
 Example:
 `csshw.exe -u root hosta.dev hostb.dev hostc.dev`
@@ -98,6 +97,14 @@ The height of the daemon console.
 
 ##### `aspect_ratio_adjustment`
 Configures whether the available screen space should rather be used horizontally or vertically.
+* `> 0.0` - Aims for vertical rectangle shape.
+  The larger the value, the more exaggerated the "verticality".
+  Eventually the windows will all be columns.
+* `= 0.0` - Aims for square shape.
+* `< 0.0` - Aims for horizontal rectangle shape.
+  The smaller the value, the more exaggerated the "horizontality".
+  Eventually the windows will all be rows.
+  `-1.0` is the sweetspot for mostly preserving a 16:9 ratio.
 
 ##### `console_color`
 Configures background and foreground colors used by the daemon console.
