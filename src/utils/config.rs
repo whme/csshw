@@ -224,7 +224,7 @@ impl Default for DaemonConfig {
     ///
     /// `DaemonConfig` with the following values:
     /// * `height`                      - `200`
-    /// * `aspect_ration_adjustment`    - `-1.0`
+    /// * `aspect_ratio_adjustment`    - `-1.0`
     /// * `console_color`               - `207`
     fn default() -> Self {
         return DaemonConfig {

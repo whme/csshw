@@ -586,7 +586,7 @@ fn toggle_processed_input_mode() {
 /// * `workspace_area`           - The available workspace area on the primary monitor
 ///                                minus the space occupied by the daemon console window.
 ///                                Used to arrange the client window.
-/// * `aspect_ration_adjustment` - The `aspect_ratio_adjustment` daemon configuration.
+/// * `aspect_ratio_adjustment` - The `aspect_ratio_adjustment` daemon configuration.
 ///                                Used to arrange the client window.
 ///
 /// # Returns
@@ -787,7 +787,7 @@ async fn named_pipe_server_routine(
 ///                                minus the space occupied by the daemon console window.
 /// * `index`                    - The index of the client in the list of all clients.
 /// * `number_of_consoles`       - The total number of active client console windows.
-/// * `aspect_ration_adjustment` - The `aspect_ratio_adjustment` daemon configuration.
+/// * `aspect_ratio_adjustment` - The `aspect_ratio_adjustment` daemon configuration.
 fn arrage_client_window(
     handle: &HWND,
     workspace_area: &workspace::WorkspaceArea,
@@ -818,7 +818,7 @@ fn arrage_client_window(
 /// * `number_of_consoles`       - The total number of active client console windows.
 /// * `workspace_area`           - The available workspace area on the primary monitor
 ///                                minus the space occupied by the daemon console window.
-/// * `aspect_ration_adjustment` - The `aspect_ratio_adjustment` daemon configuration.
+/// * `aspect_ratio_adjustment` - The `aspect_ratio_adjustment` daemon configuration.
 ///     * `> 0.0` - Aims for vertical rectangle shape.
 ///       The larger the value, the more exaggerated the "verticality".
 ///       Eventually the windows will all be columns.
