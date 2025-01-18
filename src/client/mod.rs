@@ -9,7 +9,6 @@ use std::time::Duration;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::utils::config::ClientConfig;
-use crate::utils::constants::DEFAULT_SSH_USERNAME_KEY;
 use crate::utils::{get_console_input_buffer, get_console_title, set_console_title};
 use ssh2_config::{ParseRule, SshConfig};
 use tokio::net::windows::named_pipe::NamedPipeClient;
@@ -65,7 +64,7 @@ fn write_console_input(input_record: INPUT_RECORD_0) {
 /// Use `username` or load the adequate one from SSH config.
 ///
 /// Returns `<username>@<host>`.
-fn get_username_and_host(username: &str, host: &str, config: &ClientConfig) -> String {
+fn get_username_and_host(username: Option<String>, host: &str, config: &ClientConfig) -> String {
     let mut ssh_config = SshConfig::default();
 
     let ssh_config_path = Path::new(config.ssh_config_path.as_str());
@@ -81,11 +80,10 @@ fn get_username_and_host(username: &str, host: &str, config: &ClientConfig) -> S
 
     let host_specific_params = ssh_config.query(<&str>::clone(&host));
 
-    let username: String = if username == DEFAULT_SSH_USERNAME_KEY {
-        // FIXME: find a better default
-        host_specific_params.user.unwrap_or_default()
+    let username: String = if let Some(val) = username {
+        val
     } else {
-        username.to_owned()
+        host_specific_params.user.unwrap_or_default()
     };
 
     return format!("{}@{}", username, host);
@@ -234,8 +232,8 @@ async fn run(child: &mut Child) {
     }
 }
 
-pub async fn main(host: String, username: String, config: &ClientConfig) {
-    let username_host = get_username_and_host(&username, &host, config);
+pub async fn main(host: String, username: Option<String>, config: &ClientConfig) {
+    let username_host = get_username_and_host(username, &host, config);
     let _username_host = username_host.clone();
     tokio::spawn(async move {
         loop {
