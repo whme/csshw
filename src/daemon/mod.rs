@@ -1,5 +1,6 @@
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
+
 use std::cmp::max;
 use std::collections::BTreeMap;
 use std::{
