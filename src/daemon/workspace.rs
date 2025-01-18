@@ -11,27 +11,50 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::utils::is_windows_10;
 
+/// Possible scalings for any pixel related values
 #[derive(Clone, Copy, Debug)]
 pub enum Scaling {
+    /// Pixel values represent the actual physical pixel of the screen.
     Physical,
+    /// Pixel values are normalized. A scale factor needs to be applied to get physical values.
     Logical,
 }
 
+/// The available workspace area on the primary monitor
+///
+/// Also includes `fixed_frame` and `size_frame` attributes respecitvely indicating
+/// the thickness of the frame around the perimeter of a window and the thickness
+/// of the sizing border around the perimeter of a window.
+///
+/// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics
 #[derive(Clone, Copy, Debug)]
 pub struct WorkspaceArea {
+    /// The `x` coordinate of the workspace area in pixels.
+    /// From the top left of the screen.
     pub x: i32,
+    /// The `y` coordinate of the workspace area in pixels.
+    /// From the top left of the screen.
     pub y: i32,
+    /// The width in pixels of the workspace area.
     pub width: i32,
+    /// The height in pixels of the workspace area.
     pub height: i32,
+    /// The scaling of the pixels. Logical or Physical
     pub scaling: Scaling,
+    /// The thickness of the frame around the perimeter of a window on the x-axis.
     pub x_fixed_frame: i32,
+    /// The thickness of the frame around the perimeter of a window on the y-axis.
     pub y_fixed_frame: i32,
+    /// The thickness of the sizing border around the perimter of a window on the x-axis.
     pub x_size_frame: i32,
+    /// The thickness of the sizing border around the perimter of a window on the y-axis.
     pub y_size_frame: i32,
+    /// The scale factor of the primary monitor.
     scale_factor: f64,
 }
 
 impl WorkspaceArea {
+    /// Returns the workspace area in logical scaling.
     pub fn logical(&self) -> WorkspaceArea {
         match self.scaling {
             Scaling::Logical => return *self,
@@ -39,14 +62,11 @@ impl WorkspaceArea {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn physical(&self) -> WorkspaceArea {
-        match self.scaling {
-            Scaling::Logical => return self.convert_scaling(),
-            Scaling::Physical => return *self,
-        }
-    }
-
+    /// Converts physical to logical scaling.
+    ///
+    /// # Returns
+    ///
+    /// The workspace area in logical scaling.
     fn convert_scaling(&self) -> WorkspaceArea {
         let scale_factor = 1_f64 / self.scale_factor;
         let x = self.x as f64 * scale_factor;
@@ -68,11 +88,13 @@ impl WorkspaceArea {
     }
 }
 
+/// Returns a handle to the primary monitor.
 fn get_primary_monitor() -> HMONITOR {
     // By convention the primary monitor has it's upper left corner as 0,0.
     return unsafe { MonitorFromPoint(POINT::default(), MONITOR_DEFAULTTOPRIMARY) };
 }
 
+/// Returns the scaling factor of the primary monitor.
 fn get_scale_factor() -> f64 {
     let scale_factor = unsafe {
         GetScaleFactorForMonitor(get_primary_monitor())
@@ -83,6 +105,21 @@ fn get_scale_factor() -> f64 {
     return (scale_factor / 100).into();
 }
 
+/// Returns the available workspace area on the primary monitor in the specified scaling minus the space
+/// occupied by the daemon console.
+///
+/// # Arguments
+///
+/// * `scaling`                 - The desired scaling for the workspace area. Physical or logical.
+///                               This does not control which scaling is used by the system but only
+///                               in which scalin the returned values are.
+/// * `daemon_console_height`   - Height of the daemon console that will be substraced
+///                               from the workspace area height.
+///
+/// # Returns
+///
+/// The available workspace area on the primary monitor in the specified scaling minus the space
+/// occupied by the daemon console.
 pub fn get_workspace_area(scaling: Scaling, daemon_console_height: i32) -> WorkspaceArea {
     let mut workspace_rect = RECT::default();
     unsafe {
