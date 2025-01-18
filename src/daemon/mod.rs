@@ -18,7 +18,7 @@ use crate::{
     spawn_console_process,
     utils::{
         arrange_console,
-        constants::{DEFAULT_SSH_USERNAME_KEY, PIPE_NAME, PKG_NAME},
+        constants::{PIPE_NAME, PKG_NAME},
         get_console_input_buffer, read_keyboard_input, set_console_border_color, set_console_title,
     },
     WindowsSettingsDefaultTerminalApplicationGuard,
@@ -546,13 +546,13 @@ fn launch_client_console(
     if debug {
         client_args.push("-d");
     }
-    let default_username = DEFAULT_SSH_USERNAME_KEY.to_string();
-    client_args.extend(vec![
-        "client",
-        "--",
-        host,
-        username.as_ref().unwrap_or(&default_username),
-    ]);
+    client_args.push("client");
+    let actual_username: String;
+    if username.is_some() {
+        actual_username = username.unwrap();
+        client_args.extend(vec!["-u", &actual_username]);
+    }
+    client_args.extend(vec!["--", host]);
     let client_window_handle = get_concole_window_handle(
         spawn_console_process(&format!("{PKG_NAME}.exe"), client_args).dwProcessId,
     );

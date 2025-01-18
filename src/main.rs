@@ -32,10 +32,11 @@ struct Args {
 #[derive(Debug, Subcommand)]
 enum Commands {
     Client {
+        /// Username used to connect to the host
+        #[clap(long, short = 'u')]
+        username: Option<String>,
         /// Host to connect to
         host: String,
-        /// Username used to connect to the hosts
-        username: String,
     },
     Daemon {
         /// Username used to connect to the hosts
