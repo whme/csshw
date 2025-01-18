@@ -136,6 +136,9 @@ pub fn clear_screen() {
 /// # Examples
 ///
 /// ```
+/// use csshw_lib::utils::set_console_border_color;
+/// use windows::Win32::Foundation::COLORREF;
+///
 /// // Note: inversed order of RGB        BBGGRR
 /// set_console_border_color(COLORREF(0x001A2B3C));
 /// ```
