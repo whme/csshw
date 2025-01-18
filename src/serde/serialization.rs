@@ -28,9 +28,6 @@ impl Serialize for KEY_EVENT_RECORD {
 
 impl Serialize for INPUT_RECORD_0 {
     fn serialize(&self) -> ByteBuf {
-        let mut buf = ByteBuf::new();
-        buf.as_mut_vec()
-            .append(unsafe { self.KeyEvent }.serialize().as_mut_vec());
-        return buf;
+        return unsafe { self.KeyEvent }.serialize();
     }
 }
