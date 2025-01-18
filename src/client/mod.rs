@@ -25,16 +25,39 @@ use crate::{
     utils::constants::{PIPE_NAME, PKG_NAME},
 };
 
+/// Possible results when reading from the named pipe and writing to the
+/// current process's stdinput.
 enum ReadWriteResult {
+    /// We wrote all complete [INPUT_RECORD_0] sequences we read from
+    /// the named pipe to stdin.
     Success {
+        /// Incomplete [INPUT_RECORD_0] sequence.
+        ///
+        /// What we read from the named pipe is a serialized [INPUT_RECORD_0].`KeyEvent`.
+        /// As this is simply a 19 byte long sequence and we try to read from the pipe until we
+        /// have some of the data it can happen that during any one read/write iteration we don't
+        /// read the full sequence so we must keep track of what we read for next iterations
+        /// where we will be able to read the remainder of the sequence.
         remainder: Vec<u8>,
+        /// List of [KEY_EVENT_RECORD]s we have read from the named pipe.
+        ///
+        /// Used to detect the `Alt + Shift + C` key combination used
+        /// to close the console window after the client process encountered an unexpected error.
         key_event_records: Vec<KEY_EVENT_RECORD>,
     },
+    /// Trying to read from the pipe would require us to wait for data.
     WouldBlock,
+    /// Something went wrong.
     Err,
+    /// The pipe was closed.
     Disconnect,
 }
 
+/// Write the given [INPUT_RECORD_0] to the console input buffer.
+///
+/// # Arguments
+///
+/// * `input_record` - The [INTPUT_RECORD_0].`KeyEvent` input record to write.
 fn write_console_input(input_record: INPUT_RECORD_0) {
     let buffer: [INPUT_RECORD; 1] = [INPUT_RECORD {
         EventType: KEY_EVENT as u16,
@@ -63,7 +86,9 @@ fn write_console_input(input_record: INPUT_RECORD_0) {
 
 /// Use `username` or load the adequate one from SSH config.
 ///
-/// Returns `<username>@<host>`.
+/// # Returns
+///
+/// The username and hostname in the format expected by SSH `<username>@<host>`.
 fn get_username_and_host(username: Option<String>, host: &str, config: &ClientConfig) -> String {
     let mut ssh_config = SshConfig::default();
 
@@ -90,8 +115,18 @@ fn get_username_and_host(username: Option<String>, host: &str, config: &ClientCo
 }
 
 /// Launch the SSH process.
-/// It might overwrite the console title once it launches, so we wait for that
+///
+/// The process might overwrite the console title once it launched, so we wait for that
 /// to happen and set the title again.
+///
+/// # Arguments
+///
+/// * `username_host`   - `<username>@<hostname>` string.
+/// * `config`          - The client config indicating how to call the SSH program.
+///
+/// # Returns
+///
+/// The handle to created [Child] process.
 async fn launch_ssh_process(username_host: &str, config: &ClientConfig) -> Child {
     let arguments = config.arguments.clone().into_iter().map(|arg| {
         return arg.replace(config.username_host_placeholder.as_str(), username_host);
@@ -111,6 +146,23 @@ async fn launch_ssh_process(username_host: &str, config: &ClientConfig) -> Child
     return child;
 }
 
+/// Read all available [INPUT_RECORD_0] from the named pipe and write them to the console input buffer.
+///
+/// This function also extracts the [KEY_EVENT_RECORD]s, making them available to the caller via
+/// `ReadWriteResult::Success` and handles incomple reads from the named pipe via the internal buffer.
+///
+/// # Arguments
+///
+/// * `named_pipe_client`   - The [Windows named pipe][1] client that has successfully connected to
+///                           the named pipe created by the daemon.
+/// * `internal_buffer`     - Vector containing incomplete `SERIALIZED_INPUT_RECORD_0` sequences
+///                           that were read in a previous call.
+/// # Returns
+///
+/// A `ReadWriteResult` indicating whether we were able to read from the named pipe and write the available INPUT_RECORDs
+/// to the console input buffer or not.
+///
+/// [1]: https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipes
 async fn read_write_loop(
     named_pipe_client: &NamedPipeClient,
     internal_buffer: &mut Vec<u8>,
@@ -153,6 +205,16 @@ async fn read_write_loop(
     }
 }
 
+/// The main run loop of the client.
+///
+/// Connects to the named pipe opened by the daemon, reads all input records from it
+/// and replays them to the console input buffer of the given child process.
+/// Handles the `Alt + Shift + C` key combination used to close the console window
+/// after the child process encountered an unexpected error.
+///
+/// # Arguments
+///
+/// * `child` - Handle to the running SSH process.
 async fn run(child: &mut Child) {
     // Many clients trying to open the pipe at the same time can cause
     // a file not found error, so keep trying until we managed to open it
@@ -232,6 +294,20 @@ async fn run(child: &mut Child) {
     }
 }
 
+/// The entrypoint for the `client` subcommand.
+///
+/// Spawns a tokio background thread to ensure the console window title is not replaced
+/// by the name of the child process once its launched.
+/// Starts the SSH process as child process.
+/// Executes the main run loop.
+///
+/// # Arguments
+///
+/// * `host`        - The name of the host to connect tol
+/// * `username`    - The username to be used.
+///                   Will try to resolve the correct username from the ssh config
+///                   if none is given.
+/// * `config`      - A reference to the `ClientConfig`.
 pub async fn main(host: String, username: Option<String>, config: &ClientConfig) {
     let username_host = get_username_and_host(username, &host, config);
     let _username_host = username_host.clone();
