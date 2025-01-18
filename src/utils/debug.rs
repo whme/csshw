@@ -1,3 +1,6 @@
+//! Implements string representations for INPUT_RECORD related structs.
+//! For debugging only.
+
 use windows::Win32::System::Console::{INPUT_RECORD_0, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0};
 
 /// String represation trait.

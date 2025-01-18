@@ -1,3 +1,5 @@
+//! Shared constants.
+
 /// Name of the package.
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 /// Name of the Pipe used for interprocess comunication between daemon and clients.

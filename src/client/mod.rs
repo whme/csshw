@@ -1,5 +1,8 @@
+//! Client implementation
+
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
+#![warn(missing_docs)]
 
 use log::{error, info, warn};
 use std::fs::File;

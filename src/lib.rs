@@ -1,5 +1,8 @@
+//! Shared code between daemon and client
+
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
+#![warn(missing_docs)]
 
 use std::fs::{create_dir, File};
 use std::{ffi::c_void, ffi::OsString};
