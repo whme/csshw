@@ -56,16 +56,27 @@ use self::workspace::WorkspaceArea;
 
 mod workspace;
 
+/// The capacity of the broadcast channel used
+/// to send the input records read from the console input buffer
+/// to the named pipe servers connected to each client in parallel.
 const SENDER_CAPACITY: usize = 1024 * 1024;
 
+/// Representation of a client window, holding a copy of the hostname the client
+/// is connected to and a window handle to the clients console window.
 #[derive(Clone)]
 struct ClientWindow {
+    /// Hostname the client is connect to (or supposed to connect to).
     hostname: String,
+    /// Window handle to the clients console window.
     hwnd: HWND,
 }
 
 unsafe impl Send for ClientWindow {}
 
+/// Hacky wrapper around a window handle.
+///
+/// As we cannot implement foreign traits for foreign structs
+/// we introduce this wrapper to implement [Send] for [HWND].
 struct HWNDWrapper {
     hwdn: HWND,
 }
@@ -73,47 +84,81 @@ struct HWNDWrapper {
 unsafe impl Send for HWNDWrapper {}
 
 impl PartialEq for HWNDWrapper {
+    /// Returns whether to `HWNDWrapper` instances are equal or not
+    /// based on the [HWND] they wrap.
     fn eq(&self, other: &Self) -> bool {
         return self.hwdn == other.hwdn;
     }
 }
 
+/// Returns a window handle to the current console window.
+///
+/// The [HWDN] is wrapped in a `HWNDWrapper` so that
+/// we can pass it inbetween threads.
 fn get_console_window_wrapper() -> HWNDWrapper {
     return HWNDWrapper {
         hwdn: unsafe { GetConsoleWindow() },
     };
 }
 
+/// Returns a window handle to the foreground window.
+///
+/// The [HWDN] is wrapped in a `HWNDWrapper` so that
+/// we can pass it inbetween threads.
 fn get_foreground_window_wrapper() -> HWNDWrapper {
     return HWNDWrapper {
         hwdn: unsafe { GetForegroundWindow() },
     };
 }
 
-struct Daemon<'a> {
-    hosts: Vec<String>,
-    username: Option<String>,
-    config: &'a DaemonConfig,
-    control_mode_state: ControlModeState,
-    debug: bool,
-}
-
+/// Enum of all possible control mode states.
 #[derive(PartialEq, Debug)]
 enum ControlModeState {
+    /// Controle mode is inactive.
     Inactive,
+    /// One of the keys required for the control mode key combination
+    /// is currently being pressed.
     Initiated,
+    /// All required keys for the control mode key combination were pressed
+    /// and control mode is now active.
+    ///
+    /// Active control mode prevents any input records from being sent to clients.
     Active,
 }
 
+/// The daemon is responsible to launch a client for
+/// each host, positioning the client windows, forwarding
+/// input records to all clients and handling control mode.
+struct Daemon<'a> {
+    /// A list of hostnames to connect to.
+    hosts: Vec<String>,
+    /// A username to use to connect to all clients.
+    ///
+    /// If it is empty the clients will use the SSH config to find an approriate
+    /// username.
+    username: Option<String>,
+    /// The `DaemonConfig` that controls how the daemon console window looks like.
+    config: &'a DaemonConfig,
+    /// The current control mode state.
+    control_mode_state: ControlModeState,
+    /// If debug mode is enabled on the daemon it will also be enabled on all
+    /// clients.
+    debug: bool,
+}
+
 impl Daemon<'_> {
+    /// Launches all client windows and blocks on the main run loop.
+    ///
+    /// Sets up the daemon console by disabling processed input mode and applying
+    /// the configured colors and dimensions.
+    /// Once all client windows have successfully started the daemon console window
+    /// is moved to the foreground and receives focus.
     async fn launch(mut self) {
         set_console_title(format!("{} daemon", PKG_NAME).as_str());
         set_console_color(CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color));
         set_console_border_color(COLORREF(0x000000FF));
 
-        // Makes sure ctrl+c is reported as a keyboard input rather than as signal
-        // https://learn.microsoft.com/en-us/windows/console/ctrl-c-and-ctrl-break-signals
-        disable_processed_input_mode();
+        toggle_processed_input_mode(); // Disable processed input mode
 
         let workspace_area =
             workspace::get_workspace_area(workspace::Scaling::Logical, self.config.height);
@@ -142,6 +187,29 @@ impl Daemon<'_> {
             .await;
     }
 
+    /// The main run loop of the `daemon` subcommand.
+    ///
+    /// Opens a multi-producer, multi-consumer broadcasting channel used to
+    /// send the read input records in parallel to the name pipe servers
+    /// the clients are listening on.
+    /// Spawns a background thread that waits for all clients to terminate
+    /// and then stops the current process.
+    /// Spawns a background thread that ensures the z-order of all client
+    /// windows is in sync with the daemon window.
+    /// I.e. if the daemon window is focussed, all clients should be moved to the foreground.
+    ///
+    /// The main loop consists of waiting for input records to read from the keyboard,
+    /// sending them to all clients and handling control mode.
+    ///
+    /// # Arguments
+    ///
+    /// * `client_console_window_handles`   - A thread safe mapping from the number
+    ///                                       a client console window was launched at
+    ///                                       in relation to the other client windows
+    ///                                       and the clients console window handle.
+    /// * `workspace_area`                  - The available workspace area on the
+    ///                                       primary monitor minus the space occupied
+    ///                                       by the daemon console window.
     async fn run(
         &mut self,
         client_console_window_handles: &mut Arc<Mutex<BTreeMap<usize, ClientWindow>>>,
@@ -182,6 +250,17 @@ impl Daemon<'_> {
         }
     }
 
+    /// Launch a named pipe server for each host in a dedicated thread.
+    ///
+    /// # Arguments
+    ///
+    /// * `sender` - The sender end of the broadcast channel through which
+    ///              the main thread will send the input records that are to
+    ///              be forwarded to the clients.
+    ///
+    /// # Returns
+    ///
+    /// Returns a list of [JoinHandle]s, one handle for each thread.
     fn launch_named_pipe_servers(
         &self,
         sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
@@ -193,6 +272,15 @@ impl Daemon<'_> {
         return servers;
     }
 
+    /// Launch a named pipe server in a dedicated thread.
+    ///
+    /// # Arguments
+    ///
+    /// * `servers` - A list of [JoinHandle]s to which the join handle for
+    ///               the new thread will be added.
+    /// * `sender`  - The sender end of the broadcast channel through which
+    ///               the main thread will send the input records that are to
+    ///               be forwarded to the clients.
     fn _launch_named_pipe_server(
         &self,
         servers: &mut Vec<JoinHandle<()>>,
@@ -212,6 +300,34 @@ impl Daemon<'_> {
         }));
     }
 
+    /// Handle the given input record.
+    ///
+    /// Input records are being forwarded to all clients.
+    /// If a sequence of input records matches the control mode
+    /// key combination, forwarding is temporarily interrupted,
+    /// until control mode is exited.
+    ///
+    /// # Arguments
+    ///
+    /// * `sender`                          - The sender end of the broadcast channel
+    ///                                       through which we will send the input records
+    ///                                       that are being forwarded to the clients
+    ///                                       by the named pipe servers (`servers`).
+    /// * `input_record`                    - The [INPUT_RECORD_0].`KeyEvent` read from the
+    ///                                       console input buffer.
+    /// * `client_console_window_handles`   - A thread safe mapping from the number
+    ///                                       a client console window was launched at
+    ///                                       in relation to the other client windows
+    ///                                       and the clients console window handle.
+    ///                                       The mapping will be extended if additional clients
+    ///                                       are being added through control mode `[c]reate window(s)`.
+    /// * `workspace_area`                  - The available workspace area on the
+    ///                                       primary monitor minus the space occupied
+    ///                                       by the daemon console window.
+    /// * `servers`                         - A thread safe list of [JoinHandle]s,
+    ///                                       one handle for each named pipe server background thread.
+    ///                                       The list will be extended if additional clients are being added
+    ///                                       through control mode `[c]reate window(s)`.
     async fn handle_input_record(
         &mut self,
         sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
@@ -250,7 +366,7 @@ impl Daemon<'_> {
                     clear_screen();
                     // TODO: make ESC abort
                     println!("Hostname(s): (leave empty to abort)");
-                    disable_processed_input_mode(); // As it was disabled before, this enables it again
+                    toggle_processed_input_mode(); // As it was disabled before, this enables it again
                     let mut hostnames = String::new();
                     match io::stdin().read_line(&mut hostnames) {
                         Ok(2) => {
@@ -285,7 +401,7 @@ impl Daemon<'_> {
                             error!("{error}");
                         }
                     }
-                    disable_processed_input_mode();
+                    toggle_processed_input_mode(); // Re-disable processed input mode.
                     self.rearrange_client_windows(
                         &client_console_window_handles.lock().unwrap(),
                         workspace_area,
@@ -328,6 +444,21 @@ impl Daemon<'_> {
         }
     }
 
+    /// Returns whether control mode is active or not given the input_record.
+    ///
+    /// For control mode to be active this function needs to be called
+    /// multiple times, as a key press translates to an input record and
+    /// the key combination that activates control mode has 2 keys:
+    /// `Ctrl + A`.
+    /// The current control mode state is stored in `self.control_mode_state`.
+    ///
+    /// # Arguments
+    ///
+    /// * `input_record` -  A KeyEvent input record.
+    ///
+    /// # Returns
+    ///
+    /// Whether or not control mode is active.
     fn control_mode_is_active(&mut self, input_record: INPUT_RECORD_0) -> bool {
         let key_event = unsafe { input_record.KeyEvent };
         if self.control_mode_state == ControlModeState::Active {
@@ -347,16 +478,36 @@ impl Daemon<'_> {
         return false;
     }
 
+    /// Prints the default daemon instructions to the daemon console and
+    /// sets `self.control_mode_state` to inactive.
     fn quit_control_mode(&mut self) {
         self.print_instructions();
         self.control_mode_state = ControlModeState::Inactive;
     }
 
+    /// Clears the console screen and prints the default daemon instructions.
     fn print_instructions(&self) {
         clear_screen();
         println!("Input to terminal: (Ctrl-A to enter control mode)");
     }
 
+    /// Iterates over all still open client windows and re-arranges them
+    /// on the screen based on the aspect ration adjustment daemon configuration.
+    ///
+    /// Client windows will be re-sized and re-positioned.
+    ///
+    /// # Arguments
+    ///
+    /// * `client_console_window_handles`   - A thread safe mapping from the number
+    ///                                       a client console window was launched at
+    ///                                       in relation to the other client windows
+    ///                                       and the clients console window handle.
+    ///                                       The number is relevant to determine the
+    ///                                       position on the screen the window should
+    ///                                       be placed at.
+    /// * `workspace_area`                  - The available workspace area on the
+    ///                                       primary monitor minus the space occupied
+    ///                                       by the daemon console window.
     fn rearrange_client_windows(
         &self,
         client_console_window_handles: &BTreeMap<usize, ClientWindow>,
@@ -379,6 +530,14 @@ impl Daemon<'_> {
         }
     }
 
+    /// Re-sizes and re-positions the daemon console window on the screen
+    /// based on the daemon height configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `workspace_area` - The available workspace area on the
+    ///                      primary monitor minus the space occupied
+    ///                      by the daemon console window.
     fn arrange_daemon_console(&self, workspace_area: &WorkspaceArea) {
         let (x, y, width, height) = get_console_rect(
             0,
@@ -391,146 +550,109 @@ impl Daemon<'_> {
     }
 }
 
-fn arrage_client_window(
-    handle: &HWND,
-    workspace_area: &workspace::WorkspaceArea,
-    index: usize,
-    number_of_consoles: usize,
-    aspect_ratio_adjustment: f64,
-) {
-    let (x, y, width, height) = determine_client_spatial_attributes(
-        index as i32,
-        number_of_consoles as i32,
-        workspace_area,
-        aspect_ratio_adjustment,
-    );
+/// The processed console input mode controls whether special key combinations
+/// such as `Ctrl + c` or `Ctrl + BREAK` receive special handling or are treated
+/// as simple key presses.
+///
+/// By default processed input mode is enabled, meaning `Ctrl + c` is treated as
+/// a signal, not key presses.
+///
+/// https://learn.microsoft.com/en-us/windows/console/ctrl-c-and-ctrl-break-signals
+fn toggle_processed_input_mode() {
+    let handle = get_console_input_buffer();
+    let mut mode = CONSOLE_MODE(0u32);
     unsafe {
-        MoveWindow(*handle, x, y, width, height, true).unwrap_or_else(|err| {
-            error!("{}", err);
-            panic!("Failed to move window",)
-        });
+        GetConsoleMode(handle, &mut mode).unwrap();
+    }
+    unsafe {
+        SetConsoleMode(handle, CONSOLE_MODE(mode.0 ^ ENABLE_PROCESSED_INPUT.0)).unwrap();
     }
 }
 
-fn ensure_client_z_order_in_sync_with_daemon(
-    client_console_window_handles: Arc<Mutex<BTreeMap<usize, ClientWindow>>>,
-) {
-    tokio::spawn(async move {
-        let daemon_handle = get_console_window_wrapper();
-        let mut previous_foreground_window = get_foreground_window_wrapper();
-        loop {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-            let foreground_window = get_foreground_window_wrapper();
-            if previous_foreground_window == foreground_window {
-                continue;
-            }
-            if foreground_window == daemon_handle
-                && !client_console_window_handles
-                    .lock()
-                    .unwrap()
-                    .values()
-                    .any(|client_handle| {
-                        return client_handle.hwnd == previous_foreground_window.hwdn
-                            || client_handle.hwnd == daemon_handle.hwdn;
-                    })
-            {
-                defer_windows(
-                    &client_console_window_handles.lock().unwrap(),
-                    &daemon_handle.hwdn,
-                );
-            }
-            previous_foreground_window = foreground_window;
-        }
-    });
-}
-
-fn defer_windows(
-    client_console_window_handles: &BTreeMap<usize, ClientWindow>,
-    daemon_handle: &HWND,
-) {
-    unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).unwrap() };
-    for handle in client_console_window_handles
-        .values()
-        .chain([&ClientWindow {
-            hostname: "root".to_owned(),
-            hwnd: *daemon_handle,
-        }])
-    {
-        // First restore if window is minimized
-        let mut placement: WINDOWPLACEMENT = WINDOWPLACEMENT {
-            length: mem::size_of::<WINDOWPLACEMENT>() as u32,
-            ..Default::default()
-        };
-        match unsafe { GetWindowPlacement(handle.hwnd, &mut placement) } {
-            Ok(_) => {}
-            Err(_) => {
-                continue;
-            }
-        }
-        if placement.showCmd == SW_SHOWMINIMIZED.0.try_into().unwrap() {
-            let _ = unsafe { ShowWindow(handle.hwnd, SW_RESTORE) };
-        }
-        // Then bring it to front using UI automation
-        let automation: IUIAutomation =
-            unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL) }.unwrap();
-        if let Ok(window) = unsafe { automation.ElementFromHandle(handle.hwnd) } {
-            unsafe { window.SetFocus() }.unwrap();
-        }
-    }
-}
-
-fn determine_client_spatial_attributes(
-    index: i32,
-    number_of_consoles: i32,
+/// Launches a client console for each given host and waits for
+/// the client windows to exist before returning their handles.
+///
+/// # Arguments
+///
+/// * `hosts`                    - List of hosts
+/// * `username`                 - Optional username, if none is given
+///                                the client will use the SSH config to
+///                                determine a username.
+/// * `debug`                    - Toggles debug mode on the client.
+/// * `workspace_area`           - The available workspace area on the primary monitor
+///                                minus the space occupied by the daemon console window.
+///                                Used to arrange the client window.
+/// * `aspect_ration_adjustment` - The `aspect_ratio_adjustment` daemon configuration.
+///                                Used to arrange the client window.
+///
+/// # Returns
+///
+/// A mapping from the order a client console window was launched at
+/// in relation to the other client windows and the clients console window handle.
+async fn launch_clients(
+    hosts: Vec<String>,
+    username: &Option<String>,
+    debug: bool,
     workspace_area: &workspace::WorkspaceArea,
     aspect_ratio_adjustment: f64,
-) -> (i32, i32, i32, i32) {
-    let aspect_ratio = workspace_area.width as f64 / workspace_area.height as f64;
-
-    let grid_columns = max(
-        ((number_of_consoles as f64).sqrt() * (aspect_ratio + aspect_ratio_adjustment)) as i32,
-        1,
-    );
-    let grid_rows = max(
-        (number_of_consoles as f64 / grid_columns as f64).ceil() as i32,
-        1,
-    );
-
-    let grid_column_index = index % grid_columns;
-    let grid_row_index = index / grid_columns;
-
-    let is_last_row = grid_row_index == grid_rows - 1;
-    let last_row_console_count = number_of_consoles % grid_columns;
-
-    let console_width = if is_last_row && last_row_console_count != 0 {
-        workspace_area.width / last_row_console_count
-    } else {
-        workspace_area.width / grid_columns
-    };
-
-    let console_height = workspace_area.height / grid_rows;
-
-    let x = grid_column_index * console_width;
-    let y = grid_row_index * console_height;
-
-    return get_console_rect(x, y, console_width, console_height, workspace_area);
+) -> BTreeMap<usize, ClientWindow> {
+    let result = Arc::new(Mutex::new(BTreeMap::new()));
+    let len_hosts = hosts.len();
+    let host_iter = IntoIterator::into_iter(hosts);
+    let mut handles = vec![];
+    let _guard = WindowsSettingsDefaultTerminalApplicationGuard::new();
+    for (index, host) in host_iter.enumerate() {
+        let _username = username.clone();
+        let _workspace = *workspace_area;
+        let result_arc = Arc::clone(&result);
+        let future = tokio::spawn(async move {
+            let handle = launch_client_console(
+                &host,
+                _username,
+                debug,
+                index,
+                &_workspace,
+                len_hosts,
+                aspect_ratio_adjustment,
+            );
+            result_arc.lock().unwrap().insert(
+                index,
+                ClientWindow {
+                    hostname: host.to_string(),
+                    hwnd: handle,
+                },
+            );
+        });
+        handles.push(future);
+    }
+    for handle in handles {
+        handle.await.unwrap();
+    }
+    return result.lock().unwrap().clone();
 }
 
-fn get_console_rect(
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-    workspace_area: &workspace::WorkspaceArea,
-) -> (i32, i32, i32, i32) {
-    return (
-        workspace_area.x + x,
-        workspace_area.y + y,
-        width + workspace_area.x_fixed_frame + workspace_area.x_size_frame * 2,
-        height + workspace_area.y_size_frame * 2,
-    );
-}
-
+/// Launchs a `client` console process with its own window with the given
+/// CLI arguments/options: `host`, `username`, `debug`.
+///
+/// Waits for the window to open, then re-arranges it based on
+/// the total number of clients, the size of the daemon console window and
+/// its index relative to the other client windows.
+///
+/// # Arguments
+///
+/// * `host`                    - Hostname the client should connect to
+/// * `username`                - Username the client should use
+/// * `debug`                   - Toggle debug mode on the client
+/// * `index`                   - The index of the client in the list of all clients.
+///                               Used to re-arrange the client window.
+/// * `workspace_area`          - The available workspace area on the primary monitor
+///                               minus the space occupied by the daemon console window.
+/// * `number_of_consoles`      - The total number of active client console windows.
+/// * `aspect_ratio_adjustment` - The `aspect_ratio_adjustment` daemon configuration.
+///
+/// # Returns
+///
+/// The window handle to the console window of the client process.
 fn launch_client_console(
     host: &str,
     username: Option<String>,
@@ -566,6 +688,22 @@ fn launch_client_console(
     return client_window_handle;
 }
 
+/// Wait for the named pipe server to connect, then forward serialized
+/// input records read from the broadcast channel to the named pipe server.
+///
+/// If writing to the pipe fails the pipe is closed and the routine ends.
+/// To detect if a client is still alive even if we are currently
+/// not sending data, we send a "keep alive packet",
+/// [`SERIALIZED_INPUT_RECORD_0_LENGTH`] bytes of `1`s. If that fails, the routine ends.
+///
+/// # Arguments
+///
+/// * `server`   - The named pipe server over which we send data to the
+///                client.
+/// * `receiver` - The receiving end of the broadcast channel through
+///                which we get the serialize input records from the main
+///                thread that are to be sent to the client via the named
+///                pipe.
 async fn named_pipe_server_routine(
     server: NamedPipeServer,
     receiver: &mut Receiver<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
@@ -581,7 +719,7 @@ async fn named_pipe_server_routine(
             Err(TryRecvError::Empty) => {
                 tokio::time::sleep(Duration::from_millis(5)).await;
                 // Try sending dummy data to detect early if the pipe is closed because the client exited
-                match server.try_write(&[u8::MAX; 18]) {
+                match server.try_write(&[u8::MAX; SERIALIZED_INPUT_RECORD_0_LENGTH]) {
                     Ok(_) => continue,
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
                     Err(_) => {
@@ -635,62 +773,241 @@ async fn named_pipe_server_routine(
     }
 }
 
-/// Launches a client console for each given host and
-/// waits for the client windows to exist before
-/// returning their handles.
-async fn launch_clients(
-    hosts: Vec<String>,
-    username: &Option<String>,
-    debug: bool,
+/// Re-sizes and re-positions the given client window based on the total number of clients,
+/// the size of the daemon console window and its index relative to the other client windows.
+///
+/// # Arguments
+///
+/// * `handle`                   - Reference the windows handle of a client console window.
+/// * `workspace_area`           - The available workspace area on the primary monitor
+///                                minus the space occupied by the daemon console window.
+/// * `index`                    - The index of the client in the list of all clients.
+/// * `number_of_consoles`       - The total number of active client console windows.
+/// * `aspect_ration_adjustment` - The `aspect_ratio_adjustment` daemon configuration.
+fn arrage_client_window(
+    handle: &HWND,
+    workspace_area: &workspace::WorkspaceArea,
+    index: usize,
+    number_of_consoles: usize,
+    aspect_ratio_adjustment: f64,
+) {
+    let (x, y, width, height) = determine_client_spatial_attributes(
+        index as i32,
+        number_of_consoles as i32,
+        workspace_area,
+        aspect_ratio_adjustment,
+    );
+    unsafe {
+        MoveWindow(*handle, x, y, width, height, true).unwrap_or_else(|err| {
+            error!("{}", err);
+            panic!("Failed to move window",)
+        });
+    }
+}
+
+/// Calculates the position and dimensions for a client window given its index,
+/// the total number of clients and the `aspect_ratio_adjustment` daemon configuration.
+///
+/// # Arguments
+///
+/// * `index`                    - The index of the client in the list of all clients.
+/// * `number_of_consoles`       - The total number of active client console windows.
+/// * `workspace_area`           - The available workspace area on the primary monitor
+///                                minus the space occupied by the daemon console window.
+/// * `aspect_ration_adjustment` - The `aspect_ratio_adjustment` daemon configuration.
+///     * `> 0.0` - Aims for vertical rectangle shape.
+///       The larger the value, the more exaggerated the "verticality".
+///       Eventually the windows will all be columns.
+///     * `= 0.0` - Aims for square shape.
+///     * `< 0.0` - Aims for horizontal rectangle shape.
+///       The smaller the value, the more exaggerated the "horizontality".
+///       Eventually the windows will all be rows.
+///       `-1.0` is the sweetspot for mostly preserving a 16:9 ratio.
+fn determine_client_spatial_attributes(
+    index: i32,
+    number_of_consoles: i32,
     workspace_area: &workspace::WorkspaceArea,
     aspect_ratio_adjustment: f64,
-) -> BTreeMap<usize, ClientWindow> {
-    let result = Arc::new(Mutex::new(BTreeMap::new()));
-    let len_hosts = hosts.len();
-    let host_iter = IntoIterator::into_iter(hosts);
-    let mut handles = vec![];
-    let _guard = WindowsSettingsDefaultTerminalApplicationGuard::new();
-    for (index, host) in host_iter.enumerate() {
-        let _username = username.clone();
-        let _workspace = *workspace_area;
-        let result_arc = Arc::clone(&result);
-        let future = tokio::spawn(async move {
-            let handle = launch_client_console(
-                &host,
-                _username,
-                debug,
-                index,
-                &_workspace,
-                len_hosts,
-                aspect_ratio_adjustment,
-            );
-            result_arc.lock().unwrap().insert(
-                index,
-                ClientWindow {
-                    hostname: host.to_string(),
-                    hwnd: handle,
-                },
-            );
-        });
-        handles.push(future);
-    }
-    for handle in handles {
-        handle.await.unwrap();
-    }
-    return result.lock().unwrap().clone();
+) -> (i32, i32, i32, i32) {
+    let aspect_ratio = workspace_area.width as f64 / workspace_area.height as f64;
+
+    let grid_columns = max(
+        ((number_of_consoles as f64).sqrt() * (aspect_ratio + aspect_ratio_adjustment)) as i32,
+        1,
+    );
+    let grid_rows = max(
+        (number_of_consoles as f64 / grid_columns as f64).ceil() as i32,
+        1,
+    );
+
+    let grid_column_index = index % grid_columns;
+    let grid_row_index = index / grid_columns;
+
+    let is_last_row = grid_row_index == grid_rows - 1;
+    let last_row_console_count = number_of_consoles % grid_columns;
+
+    let console_width = if is_last_row && last_row_console_count != 0 {
+        workspace_area.width / last_row_console_count
+    } else {
+        workspace_area.width / grid_columns
+    };
+
+    let console_height = workspace_area.height / grid_rows;
+
+    let x = grid_column_index * console_width;
+    let y = grid_row_index * console_height;
+
+    return get_console_rect(x, y, console_width, console_height, workspace_area);
 }
 
-fn disable_processed_input_mode() {
-    let handle = get_console_input_buffer();
-    let mut mode = CONSOLE_MODE(0u32);
-    unsafe {
-        GetConsoleMode(handle, &mut mode).unwrap();
-    }
-    unsafe {
-        SetConsoleMode(handle, CONSOLE_MODE(mode.0 ^ ENABLE_PROCESSED_INPUT.0)).unwrap();
+/// Transform the position and dimensions of a console window based
+/// on the workspace area.
+///
+/// To minimize empty space between windows, width and height must be adjusted
+/// by the `fixed_frame` and `size_frame` values.
+///
+/// # Arguments
+///
+/// * `x`              - The `x` coordinate of the window.
+/// * `y`              - The `y` coordinate of the window.
+/// * `width`          - The `width` in pixels of the window.
+/// * `height`         - The `height` in pixels of the window.
+/// * `workspace_area` - The available workspace area on the primary monitor minus
+///                      the space occupied by the daemon console window.
+///
+/// # Returns
+///
+/// ```
+/// (`x`, `y`, `width`, `height`)
+/// ```
+fn get_console_rect(
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    workspace_area: &workspace::WorkspaceArea,
+) -> (i32, i32, i32, i32) {
+    return (
+        workspace_area.x + x,
+        workspace_area.y + y,
+        width + workspace_area.x_fixed_frame + workspace_area.x_size_frame * 2,
+        height + workspace_area.y_size_frame * 2,
+    );
+}
+
+/// Spawns a background thread that ensures the z-order of all client
+/// windows is in sync with the daemon window.
+/// I.e. if the daemon window is focussed, all clients should be moved to the foreground.
+///
+/// # Arguments
+///
+/// * `client_console_window_handles` - A thread safe mapping from the number
+///                                     a client console window was launched at
+///                                     in relation to the other client windows
+///                                     and the clients console window handle.
+///                                     The mapping must be thread safe to allow
+///                                     it to be modified by the main thread
+///                                     while we periodically read from it in the
+///                                     background thread.
+fn ensure_client_z_order_in_sync_with_daemon(
+    client_console_window_handles: Arc<Mutex<BTreeMap<usize, ClientWindow>>>,
+) {
+    tokio::spawn(async move {
+        let daemon_handle = get_console_window_wrapper();
+        let mut previous_foreground_window = get_foreground_window_wrapper();
+        loop {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            let foreground_window = get_foreground_window_wrapper();
+            if previous_foreground_window == foreground_window {
+                continue;
+            }
+            if foreground_window == daemon_handle
+                && !client_console_window_handles
+                    .lock()
+                    .unwrap()
+                    .values()
+                    .any(|client_handle| {
+                        return client_handle.hwnd == previous_foreground_window.hwdn
+                            || client_handle.hwnd == daemon_handle.hwdn;
+                    })
+            {
+                defer_windows(
+                    &client_console_window_handles.lock().unwrap(),
+                    &daemon_handle.hwdn,
+                );
+            }
+            previous_foreground_window = foreground_window;
+        }
+    });
+}
+
+/// Move all given windows to the foreground.
+///
+/// Restores minimized windows.
+/// If a window handle no longer points to a valid window, it is skipped.
+/// The daemon window is deferred last and receives focus.
+///
+/// # Arguments
+///
+/// * `client_console_window_handles` - A thread safe mapping from the number
+///                                     a client console window was launched at
+///                                     in relation to the other client windows
+///                                     and the clients console window handle.
+/// * `daemon_handle`                 - Handle to the daemon console window.
+fn defer_windows(
+    client_console_window_handles: &BTreeMap<usize, ClientWindow>,
+    daemon_handle: &HWND,
+) {
+    unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).unwrap() };
+    for handle in client_console_window_handles
+        .values()
+        .chain([&ClientWindow {
+            hostname: "root".to_owned(),
+            hwnd: *daemon_handle,
+        }])
+    {
+        // First restore if window is minimized
+        let mut placement: WINDOWPLACEMENT = WINDOWPLACEMENT {
+            length: mem::size_of::<WINDOWPLACEMENT>() as u32,
+            ..Default::default()
+        };
+        match unsafe { GetWindowPlacement(handle.hwnd, &mut placement) } {
+            Ok(_) => {}
+            Err(_) => {
+                continue;
+            }
+        }
+        if placement.showCmd == SW_SHOWMINIMIZED.0.try_into().unwrap() {
+            let _ = unsafe { ShowWindow(handle.hwnd, SW_RESTORE) };
+        }
+        // Then bring it to front using UI automation
+        let automation: IUIAutomation =
+            unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL) }.unwrap();
+        if let Ok(window) = unsafe { automation.ElementFromHandle(handle.hwnd) } {
+            unsafe { window.SetFocus() }.unwrap();
+        }
     }
 }
 
+/// The entrypoint for the `daemon` subcommand.
+///
+/// Spawns 1 client process with its own window for each host
+/// and 1 worker thread that handles communication with the client
+/// over a named pipe.
+/// Responsible for client window positioning and sizing.
+/// Handles control mode.
+/// Main thread reads input records from the console input buffer
+/// and propagates them via the background threads to all clients
+/// simultaneously.
+///
+/// # Arguments
+///
+/// * `hosts`    - List of hostnames for which to launch clients.
+/// * `username` - Username used to connect to the hosts.
+///                If none, each client will use the SSH config to determine
+///                a suitable username for their respective host.
+/// * `config`   - The `DaemonConfig`.
+/// * `debug`    - Enables debug logging
 pub async fn main(
     hosts: Vec<String>,
     username: Option<String>,
