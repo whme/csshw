@@ -26,7 +26,7 @@ pub enum Scaling {
 /// the thickness of the frame around the perimeter of a window and the thickness
 /// of the sizing border around the perimeter of a window.
 ///
-/// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics
+/// <https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics>
 #[derive(Clone, Copy, Debug)]
 pub struct WorkspaceArea {
     /// The `x` coordinate of the workspace area in pixels.

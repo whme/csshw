@@ -1,14 +1,32 @@
-//! Cluter SSH for windows
+//! Cluster SSH tool for Windows inspired by csshX - Binary
+//! ---
+//! ```
+//! Usage: csshw.exe [OPTIONS] [HOSTS]... [COMMAND]
+//!
+//! Commands:
+//!   client  Subcommand that will launch a single client window
+//!   daemon  Subcommand that will launch the daemon window
+//!   help    Print this message or the help of the given subcommand(s)
+//!
+//! Arguments:
+//!   [HOSTS]...  Hosts to connect to
+//!
+//! Options:
+//!   -u, --username <USERNAME>  Optional username used to connect to the hosts
+//!   -d, --debug                Enable extensive logging
+//!   -h, --help                 Print help
+//!   -V, --version              Print version
+//! ```
 
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
 #![warn(missing_docs)]
 
 use clap::{ArgAction, Parser, Subcommand};
-use csshw::client::main as client_main;
-use csshw::daemon::main as daemon_main;
-use csshw::utils::config::{Cluster, Config, ConfigOpt};
-use csshw::{
+use csshw_lib::client::main as client_main;
+use csshw_lib::daemon::main as daemon_main;
+use csshw_lib::utils::config::{Cluster, Config, ConfigOpt};
+use csshw_lib::{
     get_concole_window_handle, init_logger, spawn_console_process,
     WindowsSettingsDefaultTerminalApplicationGuard,
 };

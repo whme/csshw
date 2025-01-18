@@ -1,4 +1,4 @@
-//! Serialization/Deserialization implemention for windows [INPUT_RECORD_0].
+//! Serialization/Deserialization implemention for windows INPUT_RECORD_0.
 
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]

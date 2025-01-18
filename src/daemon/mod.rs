@@ -97,7 +97,7 @@ impl PartialEq for HWNDWrapper {
 
 /// Returns a window handle to the current console window.
 ///
-/// The [HWDN] is wrapped in a `HWNDWrapper` so that
+/// The [HWND] is wrapped in a `HWNDWrapper` so that
 /// we can pass it inbetween threads.
 fn get_console_window_wrapper() -> HWNDWrapper {
     return HWNDWrapper {
@@ -107,7 +107,7 @@ fn get_console_window_wrapper() -> HWNDWrapper {
 
 /// Returns a window handle to the foreground window.
 ///
-/// The [HWDN] is wrapped in a `HWNDWrapper` so that
+/// The [HWND] is wrapped in a `HWNDWrapper` so that
 /// we can pass it inbetween threads.
 fn get_foreground_window_wrapper() -> HWNDWrapper {
     return HWNDWrapper {
@@ -561,7 +561,7 @@ impl Daemon<'_> {
 /// By default processed input mode is enabled, meaning `Ctrl + c` is treated as
 /// a signal, not key presses.
 ///
-/// https://learn.microsoft.com/en-us/windows/console/ctrl-c-and-ctrl-break-signals
+/// <https://learn.microsoft.com/en-us/windows/console/ctrl-c-and-ctrl-break-signals>
 fn toggle_processed_input_mode() {
     let handle = get_console_input_buffer();
     let mut mode = CONSOLE_MODE(0u32);
@@ -881,9 +881,8 @@ fn determine_client_spatial_attributes(
 ///
 /// # Returns
 ///
-/// ```
 /// (`x`, `y`, `width`, `height`)
-/// ```
+///
 fn get_console_rect(
     x: i32,
     y: i32,

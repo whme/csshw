@@ -5,6 +5,9 @@ edition = "2021"
 license-file = "LICENSE.txt"
 default-run = "csshw"
 
+[lib]
+name = "csshw_lib"
+
 [[bin]]
 name = "csshw"
 path = "src/main.rs"
