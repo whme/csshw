@@ -1,5 +1,6 @@
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
+
 use std::fs::{create_dir, File};
 use std::{ffi::c_void, ffi::OsString};
 use std::{mem, ptr};

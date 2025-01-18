@@ -1,3 +1,6 @@
+#![deny(clippy::implicit_return)]
+#![allow(clippy::needless_return)]
+
 use log::error;
 use std::{mem, ptr, thread, time};
 
