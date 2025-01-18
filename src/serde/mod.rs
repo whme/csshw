@@ -1,6 +1,12 @@
+//! Serialization/Deserialization implemention for windows [INPUT_RECORD_0].
+
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
+#![warn(missing_docs)]
+
+#[allow(missing_docs)]
 pub mod deserialization;
+#[allow(missing_docs)]
 pub mod serialization;
 
 /// Lenght of a serialized [INPUT_RECORD_0][1]

@@ -1,3 +1,5 @@
+//! Utilities shared by daemon daemon and client.
+
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
 

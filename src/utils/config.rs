@@ -1,3 +1,5 @@
+//! Client and Daemon configuration structs.
+
 use serde_derive::{Deserialize, Serialize};
 use std::env;
 use windows::Win32::System::Console::{
@@ -31,8 +33,11 @@ pub struct Config {
 /// Enables backwards compatiblity with configuration files written by older versions.
 #[derive(Serialize, Deserialize, Default)]
 pub struct ConfigOpt {
+    #[allow(missing_docs)]
     pub clusters: Option<Vec<Cluster>>,
+    #[allow(missing_docs)]
     pub client: Option<ClientConfigOpt>,
+    #[allow(missing_docs)]
     pub daemon: Option<DaemonConfigOpt>,
 }
 
@@ -127,9 +132,13 @@ impl Default for ClientConfig {
 /// where everything is optional.
 #[derive(Serialize, Deserialize)]
 pub struct ClientConfigOpt {
+    #[allow(missing_docs)]
     pub ssh_config_path: Option<String>,
+    #[allow(missing_docs)]
     pub program: Option<String>,
+    #[allow(missing_docs)]
     pub arguments: Option<Vec<String>>,
+    #[allow(missing_docs)]
     pub username_host_placeholder: Option<String>,
 }
 
@@ -236,8 +245,11 @@ impl Default for DaemonConfig {
 /// where everything is optional.
 #[derive(Serialize, Deserialize)]
 pub struct DaemonConfigOpt {
+    #[allow(missing_docs)]
     pub height: Option<i32>,
+    #[allow(missing_docs)]
     pub aspect_ratio_adjustement: Option<f64>,
+    #[allow(missing_docs)]
     pub console_color: Option<u16>,
 }
 

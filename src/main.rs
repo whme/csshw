@@ -1,5 +1,8 @@
+//! Cluter SSH for windows
+
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
+#![warn(missing_docs)]
 
 use clap::{ArgAction, Parser, Subcommand};
 use csshw::client::main as client_main;
