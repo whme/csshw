@@ -18,7 +18,7 @@ impl Serialize for KEY_EVENT_RECORD_0 {
 
 impl Serialize for KEY_EVENT_RECORD {
     /// Returns the [KEY_EVENT_RECORD] as [ByteBuf] in the following layout:
-    /// ```
+    /// ```ignore
     /// [bool KeyDown, u16 ReapetCount, u16 VirtualKeyCode, u16 VirtualScanCode, u16 UnicodeChar, u32 ControlKeyState]
     /// ```
     fn serialize(&self) -> ByteBuf {

@@ -27,7 +27,7 @@ impl Deserialize for KEY_EVENT_RECORD {
     ///
     /// Tries to read various datatypes in the following order:
     ///
-    /// ```
+    /// ```text
     /// [bool KeyDown, u16 ReapetCount, u16 VirtualKeyCode, u16 VirtualScanCode, u16 UnicodeChar, u32 ControlKeyState]
     /// ```
     ///
