@@ -3,3 +3,6 @@ cargo fmt
 cargo clippy --all-targets --all-features -- -D warnings
 cargo build
 cargo doc --bins --lib --no-deps
+# GitHub pages is looking for index.html in the root dir, so let's redirect it
+echo "<meta http-equiv=\"refresh\" content=\"0; url=csshw/index.html\">" > target/doc/index.html
+cp -r target/doc/* ./docs/
