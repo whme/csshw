@@ -2,6 +2,7 @@
 cargo fmt
 cargo clippy --all-targets --all-features -- -D warnings
 cargo build
+rm -r ./target/doc/
 cargo doc --bins --lib --no-deps
 cargo test
 # GitHub pages is looking for index.html in the root dir, so let's redirect it
