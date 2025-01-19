@@ -353,21 +353,24 @@ impl Daemon<'_> {
             if !key_event.bKeyDown.as_bool() {
                 return;
             }
-            match VIRTUAL_KEY(key_event.wVirtualKeyCode) {
-                VK_R => {
+            match (
+                VIRTUAL_KEY(key_event.wVirtualKeyCode),
+                key_event.dwControlKeyState,
+            ) {
+                (VK_R, 0) => {
                     self.rearrange_client_windows(
                         &client_console_window_handles.lock().unwrap(),
                         workspace_area,
                     );
                     self.arrange_daemon_console(workspace_area);
                 }
-                VK_E => {
+                (VK_E, 0) => {
                     // TODO: Select windows
                 }
-                VK_T => {
+                (VK_T, 0) => {
                     // TODO: trigger input on selected windows
                 }
-                VK_C => {
+                (VK_C, 0) => {
                     clear_screen();
                     // TODO: make ESC abort
                     println!("Hostname(s): (leave empty to abort)");
@@ -414,7 +417,7 @@ impl Daemon<'_> {
                     let _ = unsafe { SetForegroundWindow(GetConsoleWindow()) };
                     self.quit_control_mode();
                 }
-                VK_H => {
+                (VK_H, 0) => {
                     let mut active_hostnames: Vec<String> = vec![];
                     for handle in client_console_window_handles.lock().unwrap().values() {
                         if unsafe { IsWindow(Some(handle.hwnd)).as_bool() } {
