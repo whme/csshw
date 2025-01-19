@@ -164,6 +164,9 @@ impl Daemon<'_> {
 
         toggle_processed_input_mode(); // Disable processed input mode
 
+        // Initialize the COM library so we can use UI automation
+        unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).unwrap() };
+
         let workspace_area =
             workspace::get_workspace_area(workspace::Scaling::Logical, self.config.height);
 
@@ -185,7 +188,9 @@ impl Daemon<'_> {
         ));
 
         // Now that all clients started, focus the daemon console again.
-        let _ = unsafe { SetForegroundWindow(GetConsoleWindow()) };
+        let daemon_console = unsafe { GetConsoleWindow() };
+        let _ = unsafe { SetForegroundWindow(daemon_console) };
+        focus_window(daemon_console);
 
         self.print_instructions();
         self.run(&mut client_console_window_handles, &workspace_area)
@@ -414,7 +419,9 @@ impl Daemon<'_> {
                     );
                     self.arrange_daemon_console(workspace_area);
                     // Focus the daemon console again.
-                    let _ = unsafe { SetForegroundWindow(GetConsoleWindow()) };
+                    let daemon_window = unsafe { GetConsoleWindow() };
+                    let _ = unsafe { SetForegroundWindow(daemon_window) };
+                    focus_window(daemon_window);
                     self.quit_control_mode();
                 }
                 (VK_H, 0) => {
@@ -974,7 +981,6 @@ fn defer_windows(
     client_console_window_handles: &BTreeMap<usize, ClientWindow>,
     daemon_handle: &HWND,
 ) {
-    unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).unwrap() };
     for handle in client_console_window_handles
         .values()
         .chain([&ClientWindow {
@@ -997,11 +1003,15 @@ fn defer_windows(
             let _ = unsafe { ShowWindow(handle.hwnd, SW_RESTORE) };
         }
         // Then bring it to front using UI automation
-        let automation: IUIAutomation =
-            unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL) }.unwrap();
-        if let Ok(window) = unsafe { automation.ElementFromHandle(handle.hwnd) } {
-            unsafe { window.SetFocus() }.unwrap();
-        }
+        focus_window(handle.hwnd);
+    }
+}
+
+fn focus_window(handle: HWND) {
+    let automation: IUIAutomation =
+        unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL) }.unwrap();
+    if let Ok(window) = unsafe { automation.ElementFromHandle(handle) } {
+        unsafe { window.SetFocus() }.unwrap();
     }
 }
 
