@@ -6,5 +6,5 @@ rm -r ./target/doc/
 cargo doc --bins --lib --no-deps
 cargo test
 # GitHub pages is looking for index.html in the root dir, so let's redirect it
-echo "<meta http-equiv=\"refresh\" content=\"0; url=csshw/index.html\">" > target/doc/index.html
+echo "<meta http-equiv=\"refresh\" content=\"0; url=csshw_lib/index.html\">" > target/doc/index.html
 cp -r target/doc/* ./docs/

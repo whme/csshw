@@ -1,9 +1,9 @@
 (function() {
-    var implementors = Object.fromEntries([["csshw",[["impl FromArgMatches for <a class=\"enum\" href=\"csshw/enum.Commands.html\" title=\"enum csshw::Commands\">Commands</a>"],["impl FromArgMatches for <a class=\"struct\" href=\"csshw/struct.Args.html\" title=\"struct csshw::Args\">Args</a>"]]]]);
+    var implementors = Object.fromEntries([["csshw_lib",[["impl FromArgMatches for <a class=\"enum\" href=\"csshw_lib/cli/enum.Commands.html\" title=\"enum csshw_lib::cli::Commands\">Commands</a>"],["impl FromArgMatches for <a class=\"struct\" href=\"csshw_lib/cli/struct.Args.html\" title=\"struct csshw_lib::cli::Args\">Args</a>"]]]]);
     if (window.register_implementors) {
         window.register_implementors(implementors);
     } else {
         window.pending_implementors = implementors;
     }
 })()
-//{"start":57,"fragment_lengths":[253]}
+//{"start":57,"fragment_lengths":[291]}
