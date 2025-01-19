@@ -17,13 +17,15 @@ jobs:
     - name: Check format
       run: cargo fmt -- --check
     - name: Run linter
-      run: cargo clippy --all-targets --all-features -- -D warnings
+      run: cargo lint
     - name: Build
       run: cargo build --verbose
-    - name: Doc
-      run: cargo doc --bins --lib --no-deps
-    - name: Run tests
-      run: cargo test --verbose
+    - name: Build docs
+      run: cargo docs
+    - name: Run tests docs
+      run: cargo doc-tests
+    - name: Run tests all
+      run: cargo tests
     - name: Archive PDBs
       uses: actions/upload-artifact@v3
       with:

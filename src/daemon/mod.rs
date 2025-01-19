@@ -1050,3 +1050,7 @@ pub async fn main(
     daemon.launch().await;
     debug!("Actually exiting");
 }
+
+#[cfg(test)]
+#[path = "../tests/test_daemon.rs"]
+mod test_daemon;

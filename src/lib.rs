@@ -357,3 +357,7 @@ pub fn init_logger(name: &str) {
     .unwrap();
     log_panics::init();
 }
+
+#[cfg(test)]
+#[path = "./tests/test_lib.rs"]
+mod test_lib;
