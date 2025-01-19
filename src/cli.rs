@@ -169,3 +169,7 @@ pub async fn entrypoint() {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "./tests/test_cli.rs"]
+mod test_cli;

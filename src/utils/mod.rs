@@ -293,3 +293,7 @@ pub fn is_windows_10() -> bool {
     );
     return major <= 10 && build <= 22000;
 }
+
+#[cfg(test)]
+#[path = "../tests/test_utils.rs"]
+mod test_utils;

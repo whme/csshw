@@ -13,3 +13,7 @@ pub mod serialization;
 ///
 /// [1]: https://microsoft.github.io/windows-docs-rs/doc/windows/Win32/System/Console/union.INPUT_RECORD_0.html
 pub const SERIALIZED_INPUT_RECORD_0_LENGTH: usize = 18;
+
+#[cfg(test)]
+#[path = "../tests/test_serde.rs"]
+mod test_serde;

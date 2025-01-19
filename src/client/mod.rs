@@ -342,3 +342,7 @@ pub async fn main(host: String, username: Option<String>, config: &ClientConfig)
     }
     drop(child);
 }
+
+#[cfg(test)]
+#[path = "../tests/test_client.rs"]
+mod test_client;
