@@ -179,6 +179,7 @@ impl Daemon<'_> {
                 self.debug,
                 &workspace_area,
                 self.config.aspect_ratio_adjustement,
+                0,
             )
             .await,
         ));
@@ -377,6 +378,8 @@ impl Daemon<'_> {
                             // Empty input (only newline '\n')
                         }
                         Ok(_) => {
+                            let number_of_existing_client_console_window_handles =
+                                client_console_window_handles.lock().unwrap().len();
                             let new_clients = launch_clients(
                                 hostnames
                                     .split(' ')
@@ -386,10 +389,9 @@ impl Daemon<'_> {
                                 self.debug,
                                 workspace_area,
                                 self.config.aspect_ratio_adjustement,
+                                number_of_existing_client_console_window_handles,
                             )
                             .await;
-                            let number_of_existing_client_console_window_handles =
-                                client_console_window_handles.lock().unwrap().len();
                             for (index, client_window) in new_clients {
                                 client_console_window_handles.lock().unwrap().insert(
                                     number_of_existing_client_console_window_handles + index + 1,
@@ -575,16 +577,18 @@ fn toggle_processed_input_mode() {
 ///
 /// # Arguments
 ///
-/// * `hosts`                    - List of hosts
-/// * `username`                 - Optional username, if none is given
-///                                the client will use the SSH config to
-///                                determine a username.
-/// * `debug`                    - Toggles debug mode on the client.
-/// * `workspace_area`           - The available workspace area on the primary monitor
-///                                minus the space occupied by the daemon console window.
-///                                Used to arrange the client window.
+/// * `hosts`                   - List of hosts
+/// * `username`                - Optional username, if none is given
+///                               the client will use the SSH config to
+///                               determine a username.
+/// * `debug`                   - Toggles debug mode on the client.
+/// * `workspace_area`          - The available workspace area on the primary monitor
+///                               minus the space occupied by the daemon console window.
+///                               Used to arrange the client window.
 /// * `aspect_ratio_adjustment` - The `aspect_ratio_adjustment` daemon configuration.
-///                                Used to arrange the client window.
+///                               Used to arrange the client window.
+/// * `index_offset`            - Offset used to position the new windows correctly
+///                               from the start, avoiding flickering.
 ///
 /// # Returns
 ///
@@ -596,6 +600,7 @@ async fn launch_clients(
     debug: bool,
     workspace_area: &workspace::WorkspaceArea,
     aspect_ratio_adjustment: f64,
+    index_offset: usize,
 ) -> BTreeMap<usize, ClientWindow> {
     let result = Arc::new(Mutex::new(BTreeMap::new()));
     let len_hosts = hosts.len();
@@ -611,9 +616,9 @@ async fn launch_clients(
                 &host,
                 username_client,
                 debug,
-                index,
+                index + index_offset,
                 &workspace_area_client,
-                len_hosts,
+                len_hosts + index_offset,
                 aspect_ratio_adjustment,
             );
             result_arc.lock().unwrap().insert(
