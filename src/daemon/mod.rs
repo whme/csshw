@@ -524,7 +524,7 @@ impl Daemon<'_> {
             }
         }
         for (index, handle) in valid_handles.iter().enumerate() {
-            arrage_client_window(
+            arrange_client_window(
                 handle,
                 workspace_area,
                 index,
@@ -682,7 +682,7 @@ fn launch_client_console(
     let client_window_handle = get_concole_window_handle(
         spawn_console_process(&format!("{PKG_NAME}.exe"), client_args).dwProcessId,
     );
-    arrage_client_window(
+    arrange_client_window(
         &client_window_handle,
         workspace_area,
         index,
@@ -788,7 +788,7 @@ async fn named_pipe_server_routine(
 /// * `index`                    - The index of the client in the list of all clients.
 /// * `number_of_consoles`       - The total number of active client console windows.
 /// * `aspect_ratio_adjustment` - The `aspect_ratio_adjustment` daemon configuration.
-fn arrage_client_window(
+fn arrange_client_window(
     handle: &HWND,
     workspace_area: &workspace::WorkspaceArea,
     index: usize,
