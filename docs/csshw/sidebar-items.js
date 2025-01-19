@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["PKG_NAME"],"enum":["Commands"],"fn":["main","resolve_cluster_tags"],"struct":["Args"]};
+window.SIDEBAR_ITEMS = {"fn":["main"]};

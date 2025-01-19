@@ -1,4 +1,4 @@
-//! Shared code between daemon and client
+//! Cluster SSH tool for Windows inspired by csshX
 
 #![deny(clippy::implicit_return)]
 #![allow(clippy::needless_return)]
@@ -21,6 +21,7 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId};
 
+pub mod cli;
 pub mod client;
 pub mod daemon;
 pub mod serde;
