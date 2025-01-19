@@ -807,6 +807,14 @@ fn arrange_client_window(
         aspect_ratio_adjustment,
     );
     unsafe {
+        // Since windows update 10.0.19041.5072 it can happen that a client windows rendering is broken
+        // after a move+resize. Why is unclear, but resizing again does solve the issue.
+        // We first make the window 1 pixel in each dimension too small and imediately fix it.
+        // To reduce overhead we do not repaint the window the first time.
+        MoveWindow(*handle, x, y, width - 1, height - 1, false).unwrap_or_else(|err| {
+            error!("{}", err);
+            panic!("Failed to move window",)
+        });
         MoveWindow(*handle, x, y, width, height, true).unwrap_or_else(|err| {
             error!("{}", err);
             panic!("Failed to move window",)
