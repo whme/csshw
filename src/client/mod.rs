@@ -316,11 +316,11 @@ async fn run(child: &mut Child) {
 /// * `config`      - A reference to the `ClientConfig`.
 pub async fn main(host: String, username: Option<String>, config: &ClientConfig) {
     let username_host = get_username_and_host(username, &host, config);
-    let _username_host = username_host.clone();
+    let username_host_title = username_host.clone();
     tokio::spawn(async move {
         loop {
             // Set the console title (child might overwrite it, so we have to keep checking it)
-            let console_title = format!("{} - {}", PKG_NAME, _username_host);
+            let console_title = format!("{} - {}", PKG_NAME, username_host_title);
             if console_title != get_console_title() {
                 set_console_title(console_title.as_str());
             }

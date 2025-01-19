@@ -151,14 +151,14 @@ impl Default for ClientConfigOpt {
 impl From<ClientConfigOpt> for ClientConfig {
     /// Unwraps the existing configuration values or applies the default.
     fn from(val: ClientConfigOpt) -> Self {
-        let _default = ClientConfig::default();
+        let default = ClientConfig::default();
         return ClientConfig {
-            ssh_config_path: val.ssh_config_path.unwrap_or(_default.ssh_config_path),
-            program: val.program.unwrap_or(_default.program),
-            arguments: val.arguments.unwrap_or(_default.arguments),
+            ssh_config_path: val.ssh_config_path.unwrap_or(default.ssh_config_path),
+            program: val.program.unwrap_or(default.program),
+            arguments: val.arguments.unwrap_or(default.arguments),
             username_host_placeholder: val
                 .username_host_placeholder
-                .unwrap_or(_default.username_host_placeholder),
+                .unwrap_or(default.username_host_placeholder),
         };
     }
 }
@@ -262,13 +262,13 @@ impl Default for DaemonConfigOpt {
 impl From<DaemonConfigOpt> for DaemonConfig {
     /// Unwraps the existing configuration values or applies the default.
     fn from(val: DaemonConfigOpt) -> Self {
-        let _default = DaemonConfig::default();
+        let default = DaemonConfig::default();
         return DaemonConfig {
-            height: val.height.unwrap_or(_default.height),
+            height: val.height.unwrap_or(default.height),
             aspect_ratio_adjustement: val
                 .aspect_ratio_adjustement
-                .unwrap_or(_default.aspect_ratio_adjustement),
-            console_color: val.console_color.unwrap_or(_default.console_color),
+                .unwrap_or(default.aspect_ratio_adjustement),
+            console_color: val.console_color.unwrap_or(default.console_color),
         };
     }
 }

@@ -223,16 +223,16 @@ impl Daemon<'_> {
             broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(SENDER_CAPACITY);
 
         let mut servers = Arc::new(Mutex::new(self.launch_named_pipe_servers(&sender)));
-        let mut _server_clone: Arc<Mutex<Vec<JoinHandle<()>>>> = Arc::clone(&servers);
+        let server_clone: Arc<Mutex<Vec<JoinHandle<()>>>> = Arc::clone(&servers);
 
         // FIXME: somehow we can't detect if the client consoles are being
         // closed from the outside ...
         tokio::spawn(async move {
             loop {
-                _server_clone.lock().unwrap().retain(|server| {
+                server_clone.lock().unwrap().retain(|server| {
                     return !server.is_finished();
                 });
-                if _server_clone.lock().unwrap().is_empty() {
+                if server_clone.lock().unwrap().is_empty() {
                     // All clients have exited, exit the daemon as well
                     std::process::exit(0);
                 }
@@ -271,7 +271,7 @@ impl Daemon<'_> {
     ) -> Vec<JoinHandle<()>> {
         let mut servers: Vec<JoinHandle<()>> = Vec::new();
         for _ in &self.hosts {
-            self._launch_named_pipe_server(&mut servers, sender);
+            self.launch_named_pipe_server(&mut servers, sender);
         }
         return servers;
     }
@@ -285,7 +285,7 @@ impl Daemon<'_> {
     /// * `sender`  - The sender end of the broadcast channel through which
     ///               the main thread will send the input records that are to
     ///               be forwarded to the clients.
-    fn _launch_named_pipe_server(
+    fn launch_named_pipe_server(
         &self,
         servers: &mut Vec<JoinHandle<()>>,
         sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
@@ -395,10 +395,7 @@ impl Daemon<'_> {
                                     number_of_existing_client_console_window_handles + index + 1,
                                     client_window,
                                 );
-                                self._launch_named_pipe_server(
-                                    &mut servers.lock().unwrap(),
-                                    sender,
-                                );
+                                self.launch_named_pipe_server(&mut servers.lock().unwrap(), sender);
                             }
                         }
                         Err(error) => {
@@ -429,7 +426,7 @@ impl Daemon<'_> {
             }
             return;
         }
-        let _error_handler = |err| {
+        let error_handler = |err| {
             error!("{}", err);
             panic!(
                 "Failed to serialize input recored `{}`",
@@ -439,7 +436,7 @@ impl Daemon<'_> {
         match sender.send(
             input_record.serialize().as_mut_vec()[..]
                 .try_into()
-                .unwrap_or_else(_error_handler),
+                .unwrap_or_else(error_handler),
         ) {
             Ok(_) => {}
             Err(_) => {
@@ -606,16 +603,16 @@ async fn launch_clients(
     let mut handles = vec![];
     let _guard = WindowsSettingsDefaultTerminalApplicationGuard::new();
     for (index, host) in host_iter.enumerate() {
-        let _username = username.clone();
-        let _workspace = *workspace_area;
+        let username_client = username.clone();
+        let workspace_area_client = *workspace_area;
         let result_arc = Arc::clone(&result);
         let future = tokio::spawn(async move {
             let handle = launch_client_console(
                 &host,
-                _username,
+                username_client,
                 debug,
                 index,
-                &_workspace,
+                &workspace_area_client,
                 len_hosts,
                 aspect_ratio_adjustment,
             );
