@@ -1,6 +1,6 @@
 name: Deploy Docs
 
-on
+on:
   push:
     branches: ["main"]
 
