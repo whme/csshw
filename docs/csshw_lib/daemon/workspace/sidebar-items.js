@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Scaling"],"fn":["get_primary_monitor","get_scale_factor","get_workspace_area"],"struct":["WorkspaceArea"]};

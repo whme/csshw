@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["ReadWriteResult"],"fn":["get_username_and_host","launch_ssh_process","main","read_write_loop","run","write_console_input"]};

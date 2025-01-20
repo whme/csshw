@@ -1,9 +1,0 @@
-(function() {
-    var implementors = Object.fromEntries([["csshw_lib",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.84.0/core/fmt/trait.Debug.html\" title=\"trait core::fmt::Debug\">Debug</a> for <a class=\"enum\" href=\"csshw_lib/cli/enum.Commands.html\" title=\"enum csshw_lib::cli::Commands\">Commands</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.84.0/core/fmt/trait.Debug.html\" title=\"trait core::fmt::Debug\">Debug</a> for <a class=\"enum\" href=\"csshw_lib/daemon/enum.ControlModeState.html\" title=\"enum csshw_lib::daemon::ControlModeState\">ControlModeState</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.84.0/core/fmt/trait.Debug.html\" title=\"trait core::fmt::Debug\">Debug</a> for <a class=\"enum\" href=\"csshw_lib/daemon/workspace/enum.Scaling.html\" title=\"enum csshw_lib::daemon::workspace::Scaling\">Scaling</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.84.0/core/fmt/trait.Debug.html\" title=\"trait core::fmt::Debug\">Debug</a> for <a class=\"struct\" href=\"csshw_lib/cli/struct.Args.html\" title=\"struct csshw_lib::cli::Args\">Args</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.84.0/core/fmt/trait.Debug.html\" title=\"trait core::fmt::Debug\">Debug</a> for <a class=\"struct\" href=\"csshw_lib/daemon/workspace/struct.WorkspaceArea.html\" title=\"struct csshw_lib::daemon::workspace::WorkspaceArea\">WorkspaceArea</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.84.0/core/fmt/trait.Debug.html\" title=\"trait core::fmt::Debug\">Debug</a> for <a class=\"struct\" href=\"csshw_lib/utils/config/struct.Cluster.html\" title=\"struct csshw_lib::utils::config::Cluster\">Cluster</a>"]]]]);
-    if (window.register_implementors) {
-        window.register_implementors(implementors);
-    } else {
-        window.pending_implementors = implementors;
-    }
-})()
-//{"start":57,"fragment_lengths":[1669]}

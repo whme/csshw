@@ -1,1 +1,0 @@
-searchState.loadedDescShard("csshw", 0, "Cluster SSH tool for Windows inspired by csshX - Binary\nThe main entrypoint of the binary")

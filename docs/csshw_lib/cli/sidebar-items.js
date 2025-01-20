@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"constant":["PKG_NAME"],"enum":["Commands"],"fn":["entrypoint"],"struct":["Args"]};

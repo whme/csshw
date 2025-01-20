@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"constant":["MAX_WINDOW_TITLE_LENGTH","PIPE_NAME","PKG_NAME"]};
