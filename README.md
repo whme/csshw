@@ -3,7 +3,7 @@ _Cluster SSH tool for Windows inspired by [csshX](https://github.com/brockgr/css
 
 ![csshw demo](https://github.com/whme/csshw/blob/21d218db0d2c0366d413dad8379bdc9544f75bf8/demo/csshw.gif)[^1][^2]
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![CI](https://github.com/whme/csshw/actions/workflows/ci.yml/badge.svg)](https://github.com/whme/csshw/actions/workflows/ci.yml) [![Deploy Docs](https://github.com/whme/csshw/actions/workflows/deploy_docs.yml/badge.svg)](https://github.com/whme/csshw/actions/workflows/deploy_docs.yml)
 
 ## Pre-requisite
 - Any SSH client (Windows 10 and Windows 11 already include a built-in SSH server and client - [docs](https://learn.microsoft.com/en-us/windows/terminal/tutorials/ssh))
