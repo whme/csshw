@@ -2,6 +2,7 @@
     hosts: <a class="struct" href="https://doc.rust-lang.org/1.84.0/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="struct" href="https://doc.rust-lang.org/1.84.0/alloc/string/struct.String.html" title="struct alloc::string::String">String</a>&gt;,
     username: <a class="enum" href="https://doc.rust-lang.org/1.84.0/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;<a class="struct" href="https://doc.rust-lang.org/1.84.0/alloc/string/struct.String.html" title="struct alloc::string::String">String</a>&gt;,
     config: &amp;<a class="struct" href="../utils/config/struct.DaemonConfig.html" title="struct csshw_lib::utils::config::DaemonConfig">DaemonConfig</a>,
+    clusters: &amp;<a class="struct" href="https://doc.rust-lang.org/1.84.0/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="struct" href="../utils/config/struct.Cluster.html" title="struct csshw_lib::utils::config::Cluster">Cluster</a>&gt;,
     debug: <a class="primitive" href="https://doc.rust-lang.org/1.84.0/std/primitive.bool.html">bool</a>,
 )</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>The entrypoint for the <code>daemon</code> subcommand.</p>
 <p>Spawns 1 client process with its own window for each host
