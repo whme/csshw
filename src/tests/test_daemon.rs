@@ -1,11 +1,16 @@
 mod daemon_test {
-    use std::ffi::c_void;
+    use std::{ffi::c_void, io};
 
+    use tokio::{
+        net::windows::named_pipe::{ClientOptions, PipeMode, ServerOptions},
+        sync::broadcast,
+    };
     use windows::Win32::Foundation::HWND;
 
     use crate::{
-        daemon::{resolve_cluster_tags, HWNDWrapper},
-        utils::config::Cluster,
+        daemon::{named_pipe_server_routine, resolve_cluster_tags, HWNDWrapper},
+        serde::SERIALIZED_INPUT_RECORD_0_LENGTH,
+        utils::{config::Cluster, constants::PIPE_NAME},
     };
 
     #[test]
@@ -68,5 +73,118 @@ mod daemon_test {
             resolve_cluster_tags(hosts, &clusters),
             vec!["host1", "host2", "host3"]
         );
+    }
+
+    #[tokio::test]
+    async fn test_named_pipe_server_routine() -> Result<(), Box<dyn std::error::Error>> {
+        // Setup sender and receiver
+        let (sender, mut receiver) =
+            broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(18);
+        // and named pipe server and client
+        let named_pipe_server = ServerOptions::new()
+            .access_outbound(true)
+            .pipe_mode(PipeMode::Message)
+            .create(PIPE_NAME)?;
+        let named_pipe_client = ClientOptions::new().open(PIPE_NAME)?;
+        // Spawn named pipe server routine
+        let future = tokio::spawn(async move {
+            named_pipe_server_routine(named_pipe_server, &mut receiver).await;
+        });
+
+        let mut keep_alive_received = false;
+        let mut successful_iterations = 0;
+        // Verify the routine forwards the data through the pipe
+        loop {
+            // Send data to the routine
+            sender.send([2; 18])?;
+            // Wait for the pipe to be readable
+            named_pipe_client.readable().await?;
+            let mut buf = [0; 18];
+            // Try to read data, this may still fail with `WouldBlock`
+            // if the readiness event is a false positive.
+            match named_pipe_client.try_read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    assert_eq!(18, n);
+                    if buf[0] == 255 {
+                        // Thats a keep alive packet, make sure its complete.
+                        assert_eq!([255; 18], buf);
+                        keep_alive_received = true;
+                    } else {
+                        // Thats the actual data, make sure its complete.
+                        assert_eq!([2; 18], buf);
+                        successful_iterations += 1;
+                        if successful_iterations >= 5 {
+                            break;
+                        }
+                    }
+                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    continue;
+                }
+                Err(e) => {
+                    return Err(e.into());
+                }
+            }
+        }
+        assert!(keep_alive_received);
+        // Drop the client, closing the pipe.
+        drop(named_pipe_client);
+        // We expect the routine to exit gracefully.
+        future.await?;
+        return Ok(());
+    }
+
+    #[tokio::test]
+    async fn test_named_pipe_server_routine_sender_closes_unexpectidly(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // Setup sender and receiver
+        let (sender, mut receiver) =
+            broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(18);
+        // and named pipe server and client
+        let named_pipe_server = ServerOptions::new()
+            .access_outbound(true)
+            .pipe_mode(PipeMode::Message)
+            .create(PIPE_NAME)?;
+        let named_pipe_client = ClientOptions::new().open(PIPE_NAME)?;
+        // Spawn named pipe server routine
+        let future = tokio::spawn(async move {
+            named_pipe_server_routine(named_pipe_server, &mut receiver).await;
+        });
+        // Send data to the routine
+        sender.send([2; 18])?;
+        // Verify the routine forwards the data through the pipe
+        loop {
+            // Wait for the pipe to be readable
+            named_pipe_client.readable().await?;
+            let mut buf = [0; 18];
+            // Try to read data, this may still fail with `WouldBlock`
+            // if the readiness event is a false positive.
+            match named_pipe_client.try_read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    assert_eq!(18, n);
+                    if buf[0] == 255 {
+                        // Thats a keep alive packet, make sure its complete.
+                        assert_eq!([255; 18], buf);
+                    } else {
+                        // Thats the actual data, make sure its complete.
+                        assert_eq!([2; 18], buf);
+                        break;
+                    }
+                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    continue;
+                }
+                Err(e) => {
+                    return Err(e.into());
+                }
+            }
+        }
+        // Drop the sender end of the broadcast channel
+        drop(sender);
+        // This is unexpected, we should panic
+        assert!(future.await.unwrap_err().is_panic());
+        return Ok(());
     }
 }
