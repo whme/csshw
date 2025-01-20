@@ -2,7 +2,6 @@
 cargo fmt
 cargo lint
 cargo build
-rm -r ./target/doc/
 cargo docs
 cargo doc-tests
 cargo tests
