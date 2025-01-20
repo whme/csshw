@@ -8,6 +8,7 @@ on:
       - completed
 
 jobs:
+  if: ${{ github.event.workflow_run.conclusion == 'success' }}
   build:
     runs-on: windows-latest
     steps:
@@ -26,7 +27,7 @@ jobs:
         retention-days: 1
         path: target/doc/
 
-
+  if: ${{ github.event.workflow_run.conclusion == 'success' }}
   deploy:
     needs: build
     permissions:
