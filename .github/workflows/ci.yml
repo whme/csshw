@@ -1,4 +1,4 @@
-name: Rust
+name: CI
 
 on:
   push:
@@ -26,11 +26,3 @@ jobs:
       run: cargo doc-tests
     - name: Run tests all
       run: cargo tests
-    - name: Archive PDBs
-      uses: actions/upload-artifact@v3
-      with:
-        name: artifacts
-        retention-days: 30
-        path: |
-          target\debug\*.exe
-          target\debug\*.pdb
