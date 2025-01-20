@@ -81,6 +81,7 @@ unsafe impl Send for ClientWindow {}
 ///
 /// As we cannot implement foreign traits for foreign structs
 /// we introduce this wrapper to implement [Send] for [HWND].
+#[derive(Debug, Eq)]
 struct HWNDWrapper {
     hwdn: HWND,
 }

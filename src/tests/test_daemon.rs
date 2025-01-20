@@ -1,5 +1,32 @@
 mod daemon_test {
-    use crate::{daemon::resolve_cluster_tags, utils::config::Cluster};
+    use std::ffi::c_void;
+
+    use windows::Win32::Foundation::HWND;
+
+    use crate::{
+        daemon::{resolve_cluster_tags, HWNDWrapper},
+        utils::config::Cluster,
+    };
+
+    #[test]
+    fn test_hwnd_wrapper_equality() {
+        assert_eq!(
+            HWNDWrapper {
+                hwdn: HWND(1 as *mut c_void)
+            },
+            HWNDWrapper {
+                hwdn: HWND(1 as *mut c_void)
+            }
+        );
+        assert_ne!(
+            HWNDWrapper {
+                hwdn: HWND(1 as *mut c_void)
+            },
+            HWNDWrapper {
+                hwdn: HWND(2 as *mut c_void)
+            }
+        );
+    }
 
     #[test]
     fn test_resolve_cluster_tags() {
