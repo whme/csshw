@@ -14,7 +14,7 @@ use std::{
 use std::{thread, time};
 
 use crate::get_concole_window_handle;
-use crate::utils::config::DaemonConfig;
+use crate::utils::config::{Cluster, DaemonConfig};
 use crate::utils::debug::StringRepr;
 use crate::utils::{clear_screen, set_console_color};
 use crate::{
@@ -143,6 +143,8 @@ struct Daemon<'a> {
     username: Option<String>,
     /// The `DaemonConfig` that controls how the daemon console window looks like.
     config: &'a DaemonConfig,
+    /// List of available cluster tags
+    clusters: &'a Vec<Cluster>,
     /// The current control mode state.
     control_mode_state: ControlModeState,
     /// If debug mode is enabled on the daemon it will also be enabled on all
@@ -378,7 +380,7 @@ impl Daemon<'_> {
                 (VK_C, 0) => {
                     clear_screen();
                     // TODO: make ESC abort
-                    println!("Hostname(s): (leave empty to abort)");
+                    println!("Hostname(s) or cluster tag(s): (leave empty to abort)");
                     toggle_processed_input_mode(); // As it was disabled before, this enables it again
                     let mut hostnames = String::new();
                     match io::stdin().read_line(&mut hostnames) {
@@ -389,10 +391,13 @@ impl Daemon<'_> {
                             let number_of_existing_client_console_window_handles =
                                 client_console_window_handles.lock().unwrap().len();
                             let new_clients = launch_clients(
-                                hostnames
-                                    .split(' ')
-                                    .map(|x| return x.trim().to_owned())
-                                    .collect(),
+                                resolve_cluster_tags(
+                                    hostnames.split(' ').map(|x| return x.trim()).collect(),
+                                    self.clusters,
+                                )
+                                .into_iter()
+                                .map(|x| return x.to_owned())
+                                .collect(),
                                 &self.username,
                                 self.debug,
                                 workspace_area,
@@ -580,6 +585,41 @@ fn toggle_processed_input_mode() {
     unsafe {
         SetConsoleMode(handle, CONSOLE_MODE(mode.0 ^ ENABLE_PROCESSED_INPUT.0)).unwrap();
     }
+}
+
+/// Resolve cluster tags into hostnames
+///
+/// Iterates over the list of hosts to find and resolve cluster tags.
+/// Nested cluster tags are supported but recursivness is not checked for.
+///
+/// # Arguments
+///
+/// * `hosts`       - List of hosts including hostnames and or cluster tags
+/// * `clusters`    - List of available cluster tags
+///
+/// # Returns
+///
+/// A list of hostnames
+pub fn resolve_cluster_tags<'a>(hosts: Vec<&'a str>, clusters: &'a Vec<Cluster>) -> Vec<&'a str> {
+    let mut resolved_hosts: Vec<&str> = Vec::new();
+    let mut is_cluster_tag: bool;
+    for host in hosts {
+        is_cluster_tag = false;
+        for cluster in clusters {
+            if host == cluster.name {
+                is_cluster_tag = true;
+                resolved_hosts.extend(resolve_cluster_tags(
+                    cluster.hosts.iter().map(|host| return &**host).collect(),
+                    clusters,
+                ));
+                break;
+            }
+        }
+        if !is_cluster_tag {
+            resolved_hosts.push(host);
+        }
+    }
+    return resolved_hosts;
 }
 
 /// Launches a client console for each given host and waits for
@@ -1038,12 +1078,14 @@ pub async fn main(
     hosts: Vec<String>,
     username: Option<String>,
     config: &DaemonConfig,
+    clusters: &Vec<Cluster>,
     debug: bool,
 ) {
     let daemon: Daemon = Daemon {
         hosts,
         username,
         config,
+        clusters,
         control_mode_state: ControlModeState::Inactive,
         debug,
     };

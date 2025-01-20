@@ -1,8 +1,8 @@
 //! CLI interface
 
 use crate::client::main as client_main;
-use crate::daemon::main as daemon_main;
-use crate::utils::config::{Cluster, Config, ConfigOpt};
+use crate::daemon::{main as daemon_main, resolve_cluster_tags};
+use crate::utils::config::{Config, ConfigOpt};
 use crate::{
     get_concole_window_handle, init_logger, spawn_console_process,
     WindowsSettingsDefaultTerminalApplicationGuard,
@@ -24,7 +24,7 @@ struct Args {
     /// Optional username used to connect to the hosts
     #[clap(short, long)]
     username: Option<String>,
-    /// Hosts to connect to
+    /// Hosts and/or cluster tag(s) to connect to
     #[clap(required = false)]
     hosts: Vec<String>,
     /// Enable extensive logging
@@ -60,41 +60,6 @@ enum Commands {
         /// Host(s) to connect to
         hosts: Vec<String>,
     },
-}
-
-/// Resolve cluster tags into hostnames
-///
-/// Iterates over the list of hosts to find and resolve cluster tags.
-/// Nested cluster tags are supported but recursivness is not checked for.
-///
-/// # Arguments
-///
-/// * `hosts`       - List of hosts including hostnames and or cluster tags
-/// * `clusters`    - List of available cluster tags
-///
-/// # Returns
-///
-/// A list of hostnames
-fn resolve_cluster_tags<'a>(hosts: Vec<&'a str>, clusters: &'a Vec<Cluster>) -> Vec<&'a str> {
-    let mut resolved_hosts: Vec<&str> = Vec::new();
-    let mut is_cluster_tag: bool;
-    for host in hosts {
-        is_cluster_tag = false;
-        for cluster in clusters {
-            if host == cluster.name {
-                is_cluster_tag = true;
-                resolved_hosts.extend(resolve_cluster_tags(
-                    cluster.hosts.iter().map(|host| return &**host).collect(),
-                    clusters,
-                ));
-                break;
-            }
-        }
-        if !is_cluster_tag {
-            resolved_hosts.push(host);
-        }
-    }
-    return resolved_hosts;
 }
 
 /// The main entrypoint
@@ -140,6 +105,7 @@ pub async fn entrypoint() {
                 hosts.to_owned(),
                 username.clone(),
                 &config.daemon,
+                &config.clusters,
                 args.debug,
             )
             .await;
