@@ -8,8 +8,8 @@ on:
       - completed
 
 jobs:
-  build:
   if: ${{ github.event.workflow_run.conclusion == 'success' }}
+  build:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v3
@@ -28,7 +28,6 @@ jobs:
         path: target/doc/
 
   deploy:
-  if: ${{ github.event.workflow_run.conclusion == 'success' }}
     needs: build
     permissions:
       id-token: write
