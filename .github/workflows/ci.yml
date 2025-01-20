@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Check format
+      run: cargo fmt -- --check
+    - name: Run linter
+      run: cargo lint
+    - name: Build
+      run: cargo build --verbose
+    - name: Build docs
+      run: cargo docs
+    - name: Run tests docs
+      run: cargo doc-tests
+    - name: Run tests all
+      run: cargo tests
+    - name: Finalize docs
+      shell: bash
+      run: |
+        # GitHub pages is looking for index.html in the root dir, so let's redirect it
+        echo "<meta http-equiv=\"refresh\" content=\"0; url=csshw_lib/index.html\">" > target/doc/index.html
+    - name: Upload docs
+      id: deployment
+      uses: actions/upload-pages-artifact@v3
+      with:
+        retention-days: 1
+        path: target/doc/
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
