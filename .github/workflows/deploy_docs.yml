@@ -8,8 +8,8 @@ on:
       - completed
 
 jobs:
-  if: ${{ github.event.workflow_run.conclusion == 'success' }}
   build:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v3
@@ -35,6 +35,7 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to GitHub Pages
