@@ -6,13 +6,14 @@ on
 
 jobs:
   build:
+    runs-on: windows-latest
     - name: Build docs
-    run: cargo docs
+      run: cargo docs
     - name: Finalize docs
-    shell: bash
-    run: |
-      # GitHub pages is looking for index.html in the root dir, so let's redirect it
-      echo "<meta http-equiv=\"refresh\" content=\"0; url=csshw_lib/index.html\">" > target/doc/index.html
+      shell: bash
+      run: |
+        # GitHub pages is looking for index.html in the root dir, so let's redirect it
+        echo "<meta http-equiv=\"refresh\" content=\"0; url=csshw_lib/index.html\">" > target/doc/index.html
     - name: Upload docs
       id: deployment
       uses: actions/upload-pages-artifact@v3
