@@ -23,10 +23,11 @@
 #![warn(missing_docs)]
 #![doc(html_no_source)]
 
-use csshw_lib::cli;
+use clap::Parser as _;
+use csshw_lib::cli::{self, Args};
 
 /// The main entrypoint of the binary
 #[tokio::main]
 async fn main() {
-    cli::entrypoint().await;
+    cli::entrypoint(Args::parse()).await;
 }
