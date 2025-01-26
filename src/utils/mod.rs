@@ -295,5 +295,5 @@ pub fn is_windows_10() -> bool {
 }
 
 #[cfg(test)]
-#[path = "../tests/test_utils.rs"]
+#[path = "../tests/utils/test_utils.rs"]
 mod test_utils;

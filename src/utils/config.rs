@@ -283,3 +283,7 @@ impl From<DaemonConfig> for DaemonConfigOpt {
         };
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/utils/test_config.rs"]
+mod test_config;
