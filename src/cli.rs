@@ -16,7 +16,7 @@ const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 /// The main CLI arguments
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
-struct Args {
+pub struct Args {
     /// Optional subcommand
     /// Usually not specified by the user
     #[clap(subcommand)]
@@ -33,7 +33,7 @@ struct Args {
 }
 
 /// The ``command`` CLI subcommand
-#[derive(Debug, Subcommand)]
+#[derive(Debug, Subcommand, PartialEq)]
 enum Commands {
     /// Subcommand that will launch a single client window
     ///
@@ -68,7 +68,7 @@ enum Commands {
 /// loads an existing config or writes the default config to disk, and
 /// calls the respective subcommand.
 /// If no subcommand is given we launch the daemon subcommand in a new window.
-pub async fn entrypoint() {
+pub async fn entrypoint(args: Args) {
     match std::env::current_exe() {
         Ok(path) => match path.parent() {
             None => {
@@ -83,8 +83,6 @@ pub async fn entrypoint() {
             eprintln!("Failed to get executable directory");
         }
     }
-
-    let args = Args::parse();
 
     let config_path = format!("{PKG_NAME}-config.toml");
     let config_on_disk: ConfigOpt = confy::load_path(&config_path).unwrap();
