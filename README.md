@@ -1,7 +1,7 @@
 # csshW
 _Cluster SSH tool for Windows inspired by [csshX](https://github.com/brockgr/csshx)_
 
-![csshw demo](https://github.com/whme/csshw/blob/21d218db0d2c0366d413dad8379bdc9544f75bf8/demo/csshw.gif)[^1][^2][^3]
+![csshw demo](https://raw.githubusercontent.com/whme/csshw/refs/heads/main/demo/csshw.gif)[^1][^2][^3]
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![CI](https://github.com/whme/csshw/actions/workflows/ci.yml/badge.svg)](https://github.com/whme/csshw/actions/workflows/ci.yml) [![Deploy Docs](https://github.com/whme/csshw/actions/workflows/deploy_docs.yml/badge.svg)](https://github.com/whme/csshw/actions/workflows/deploy_docs.yml)
 
