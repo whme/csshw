@@ -126,4 +126,4 @@ csshW uses pre-commit githooks to enforce good code style.<br>
 Install them via ``git config --local core.hooksPath .githooks/``.
 
 [^1]: The searchbar used to launch csshw in the demo clip is [keypirinha](https://keypirinha.com/).
-[^2]: The tool to show key presses in the demo clip is [carnac the magnificent](http://carnackeys.com/).
+[^2]: The tool to show key presses in the demo clip is [carnac the magnificent](https://github.com/Code52/carnac).
