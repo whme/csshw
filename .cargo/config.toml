@@ -5,6 +5,7 @@ docs = "doc --bins --lib --no-deps"
 # https://github.com/rust-lang/cargo/issues/6669
 doc-tests  = "test --doc"
 tests = "test --all-targets"
+release = "build -r"
 
 [build]
 rustdocflags = ["--document-private-items"]
