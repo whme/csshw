@@ -86,29 +86,6 @@ pub trait Entrypoint {
     fn main(&mut self, config_path: &str, config: &Config, args: Args);
 }
 
-impl<T: Entrypoint + std::marker::Send> Entrypoint for &'_ mut T {
-    async fn client_main(&mut self, host: String, username: Option<String>, config: &ClientConfig) {
-        (**self).client_main(host, username, config).await;
-    }
-
-    async fn daemon_main(
-        &mut self,
-        hosts: Vec<String>,
-        username: Option<String>,
-        config: &DaemonConfig,
-        clusters: &[Cluster],
-        debug: bool,
-    ) {
-        (**self)
-            .daemon_main(hosts, username, config, clusters, debug)
-            .await;
-    }
-
-    fn main(&mut self, config_path: &str, config: &Config, args: Args) {
-        (**self).main(config_path, config, args);
-    }
-}
-
 impl Entrypoint for MainEntrypoint {
     async fn client_main(&mut self, host: String, username: Option<String>, config: &ClientConfig) {
         client_main(host, username, config).await;
