@@ -2,12 +2,15 @@
 
 use crate::client::main as client_main;
 use crate::daemon::{main as daemon_main, resolve_cluster_tags};
-use crate::utils::config::{Config, ConfigOpt};
+use crate::utils::config::{ClientConfig, Cluster, Config, ConfigOpt, DaemonConfig};
 use crate::{
     get_concole_window_handle, init_logger, spawn_console_process,
     WindowsSettingsDefaultTerminalApplicationGuard,
 };
 use clap::{ArgAction, Parser, Subcommand};
+
+#[cfg(test)]
+use mockall::{automock, predicate::*};
 
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -22,10 +25,10 @@ pub struct Args {
     #[clap(subcommand)]
     command: Option<Commands>,
     /// Optional username used to connect to the hosts
-    #[clap(short, long)]
+    #[clap(long, short = 'u')]
     username: Option<String>,
     /// Hosts and/or cluster tag(s) to connect to
-    #[clap(required = false)]
+    #[clap(required = false, global = true)]
     hosts: Vec<String>,
     /// Enable extensive logging
     #[clap(short, long, action=ArgAction::SetTrue)]
@@ -40,9 +43,6 @@ enum Commands {
     /// connecting to the given host with the given username.
     /// It will also try to read input from a daemon via the named pipe.
     Client {
-        /// Username used to connect to the host
-        #[clap(long, short = 'u')]
-        username: Option<String>,
         /// Host to connect to
         host: String,
     },
@@ -53,13 +53,103 @@ enum Commands {
     /// For each client a named pipe will be created and any keystrokes
     /// the daemon window receives are forwarded via the pipes to all the clients.
     /// Also handles control mode.
-    Daemon {
-        /// Username used to connect to the hosts
-        #[clap(long, short = 'u')]
+    Daemon {},
+}
+
+/// Main Entrypoint struct
+///
+/// Used to implement the entrypoint functions of the different
+/// subcommands
+pub struct MainEntrypoint;
+
+/// Trait defining the entrypoint functions of the different
+/// subcommands
+#[cfg_attr(test, automock)]
+pub trait Entrypoint {
+    /// Entrypoint for the client subcommand
+    fn client_main(
+        &mut self,
+        host: String,
         username: Option<String>,
-        /// Host(s) to connect to
+        config: &ClientConfig,
+    ) -> impl std::future::Future<Output = ()> + Send;
+    /// Entrypoint for the daemon subcommand
+    fn daemon_main(
+        &mut self,
         hosts: Vec<String>,
-    },
+        username: Option<String>,
+        config: &DaemonConfig,
+        clusters: &[Cluster],
+        debug: bool,
+    ) -> impl std::future::Future<Output = ()> + Send;
+    /// Entrypoint for the main command
+    fn main(&mut self, config_path: &str, config: &Config, args: Args);
+}
+
+impl<T: Entrypoint + std::marker::Send> Entrypoint for &'_ mut T {
+    async fn client_main(&mut self, host: String, username: Option<String>, config: &ClientConfig) {
+        (**self).client_main(host, username, config).await;
+    }
+
+    async fn daemon_main(
+        &mut self,
+        hosts: Vec<String>,
+        username: Option<String>,
+        config: &DaemonConfig,
+        clusters: &[Cluster],
+        debug: bool,
+    ) {
+        (**self)
+            .daemon_main(hosts, username, config, clusters, debug)
+            .await;
+    }
+
+    fn main(&mut self, config_path: &str, config: &Config, args: Args) {
+        (**self).main(config_path, config, args);
+    }
+}
+
+impl Entrypoint for MainEntrypoint {
+    async fn client_main(&mut self, host: String, username: Option<String>, config: &ClientConfig) {
+        client_main(host, username, config).await;
+    }
+
+    async fn daemon_main(
+        &mut self,
+        hosts: Vec<String>,
+        username: Option<String>,
+        config: &DaemonConfig,
+        clusters: &[Cluster],
+        debug: bool,
+    ) {
+        daemon_main(hosts, username, config, clusters, debug).await;
+    }
+
+    fn main(&mut self, config_path: &str, config: &Config, args: Args) {
+        confy::store_path(config_path, config).unwrap();
+
+        let mut daemon_args: Vec<&str> = Vec::new();
+        if args.debug {
+            daemon_args.push("-d");
+        }
+        if let Some(username) = args.username.as_ref() {
+            daemon_args.push("-u");
+            daemon_args.push(username);
+        }
+        daemon_args.push("daemon");
+        // Order is important here. If the hosts are passed before the daemon subcommand
+        // it will not be recognizes as such and just be passed along as one of the hosts.
+        daemon_args.extend(resolve_cluster_tags(
+            args.hosts.iter().map(|host| return &**host).collect(),
+            &config.clusters,
+        ));
+        let _guard = WindowsSettingsDefaultTerminalApplicationGuard::new();
+        // We must wait for the window to actually launch before dropping the _guard as we might otherwise
+        // reset the configuration before the window was launched
+        let _ = get_concole_window_handle(
+            spawn_console_process(&format!("{PKG_NAME}.exe"), daemon_args).dwProcessId,
+        );
+    }
 }
 
 /// The main entrypoint
@@ -68,7 +158,7 @@ enum Commands {
 /// loads an existing config or writes the default config to disk, and
 /// calls the respective subcommand.
 /// If no subcommand is given we launch the daemon subcommand in a new window.
-pub async fn entrypoint(args: Args) {
+pub async fn main<T: Entrypoint>(args: Args, mut entrypoint: T) {
     match std::env::current_exe() {
         Ok(path) => match path.parent() {
             None => {
@@ -89,47 +179,30 @@ pub async fn entrypoint(args: Args) {
     let config: Config = config_on_disk.into();
 
     match &args.command {
-        Some(Commands::Client { host, username }) => {
+        Some(Commands::Client { host }) => {
             if args.debug {
                 init_logger(&format!("csshw_client_{host}"));
             }
-            client_main(host.to_owned(), username.to_owned(), &config.client).await;
+            entrypoint
+                .client_main(host.to_owned(), args.username.to_owned(), &config.client)
+                .await;
         }
-        Some(Commands::Daemon { username, hosts }) => {
+        Some(Commands::Daemon {}) => {
             if args.debug {
                 init_logger("csshw_daemon");
             }
-            daemon_main(
-                hosts.to_owned(),
-                username.clone(),
-                &config.daemon,
-                &config.clusters,
-                args.debug,
-            )
-            .await;
+            entrypoint
+                .daemon_main(
+                    args.hosts.to_owned(),
+                    args.username.clone(),
+                    &config.daemon,
+                    &config.clusters,
+                    args.debug,
+                )
+                .await;
         }
         None => {
-            confy::store_path(&config_path, &config).unwrap();
-
-            let mut daemon_args: Vec<&str> = Vec::new();
-            if args.debug {
-                daemon_args.push("-d");
-            }
-            daemon_args.push("daemon");
-            if let Some(username) = args.username.as_ref() {
-                daemon_args.push("-u");
-                daemon_args.push(username);
-            }
-            daemon_args.extend(resolve_cluster_tags(
-                args.hosts.iter().map(|host| return &**host).collect(),
-                &config.clusters,
-            ));
-            let _guard = WindowsSettingsDefaultTerminalApplicationGuard::new();
-            // We must wait for the window to actually launch before dropping the _guard as we might otherwise
-            // reset the configuration before the window was launched
-            let _ = get_concole_window_handle(
-                spawn_console_process(&format!("{PKG_NAME}.exe"), daemon_args).dwProcessId,
-            );
+            entrypoint.main(&config_path, &config, args);
         }
     }
 }

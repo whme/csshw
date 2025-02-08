@@ -145,7 +145,7 @@ struct Daemon<'a> {
     /// The `DaemonConfig` that controls how the daemon console window looks like.
     config: &'a DaemonConfig,
     /// List of available cluster tags
-    clusters: &'a Vec<Cluster>,
+    clusters: &'a [Cluster],
     /// The current control mode state.
     control_mode_state: ControlModeState,
     /// If debug mode is enabled on the daemon it will also be enabled on all
@@ -601,7 +601,7 @@ fn toggle_processed_input_mode() {
 /// # Returns
 ///
 /// A list of hostnames
-pub fn resolve_cluster_tags<'a>(hosts: Vec<&'a str>, clusters: &'a Vec<Cluster>) -> Vec<&'a str> {
+pub fn resolve_cluster_tags<'a>(hosts: Vec<&'a str>, clusters: &'a [Cluster]) -> Vec<&'a str> {
     let mut resolved_hosts: Vec<&str> = Vec::new();
     let mut is_cluster_tag: bool;
     for host in hosts {
@@ -725,12 +725,12 @@ fn launch_client_console(
     if debug {
         client_args.push("-d");
     }
-    client_args.push("client");
     let actual_username: String;
     if username.is_some() {
         actual_username = username.unwrap();
         client_args.extend(vec!["-u", &actual_username]);
     }
+    client_args.push("client");
     client_args.extend(vec!["--", host]);
     let client_window_handle = get_concole_window_handle(
         spawn_console_process(&format!("{PKG_NAME}.exe"), client_args).dwProcessId,
@@ -1079,7 +1079,7 @@ pub async fn main(
     hosts: Vec<String>,
     username: Option<String>,
     config: &DaemonConfig,
-    clusters: &Vec<Cluster>,
+    clusters: &[Cluster],
     debug: bool,
 ) {
     let daemon: Daemon = Daemon {

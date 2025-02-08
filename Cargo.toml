@@ -55,6 +55,9 @@ features = [
     "Win32_UI_Input_KeyboardAndMouse",
 ]
 
+[dev-dependencies]
+mockall = "0.13.1"
+
 [build-dependencies]
 embed-resource = "3.0.1"
 
