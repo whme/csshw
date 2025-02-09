@@ -11,6 +11,7 @@ use clap::{ArgAction, Parser, Subcommand};
 
 #[cfg(test)]
 use mockall::{automock, predicate::*};
+use windows::Win32::UI::HiDpi::{SetProcessDpiAwareness, PROCESS_PER_MONITOR_DPI_AWARE};
 
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -136,6 +137,12 @@ impl Entrypoint for MainEntrypoint {
 /// calls the respective subcommand.
 /// If no subcommand is given we launch the daemon subcommand in a new window.
 pub async fn main<T: Entrypoint>(args: Args, mut entrypoint: T) {
+    // Set DPI awareness programatically. Using the manifest is the recommended way
+    // but conhost.exe does not do any manifest loading.
+    // https://github.com/microsoft/terminal/issues/18464#issuecomment-2623392013
+    if let Err(err) = unsafe { SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE) } {
+        eprintln!("Failed to set DPI awareness programatically: {:?}", err);
+    }
     match std::env::current_exe() {
         Ok(path) => match path.parent() {
             None => {
