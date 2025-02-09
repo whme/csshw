@@ -9,13 +9,15 @@ use std::{mem, ptr, thread, time};
 use windows::core::HSTRING;
 use windows::Win32::Foundation::{COLORREF, HANDLE, HWND, RECT};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
-use windows::Win32::System::Console::KEY_EVENT as KEY_EVENT_U32;
 use windows::Win32::System::Console::{
     FillConsoleOutputAttribute, GetConsoleScreenBufferInfo, GetConsoleWindow, GetStdHandle,
-    ReadConsoleInputW, ScrollConsoleScreenBufferW, SetConsoleCursorPosition,
-    SetConsoleTextAttribute, CHAR_INFO, CONSOLE_CHARACTER_ATTRIBUTES, CONSOLE_SCREEN_BUFFER_INFO,
-    COORD, INPUT_RECORD, INPUT_RECORD_0, SMALL_RECT, STD_HANDLE, STD_INPUT_HANDLE,
+    ReadConsoleInputW, SetConsoleTextAttribute, CONSOLE_CHARACTER_ATTRIBUTES,
+    CONSOLE_SCREEN_BUFFER_INFO, COORD, INPUT_RECORD, INPUT_RECORD_0, STD_HANDLE, STD_INPUT_HANDLE,
     STD_OUTPUT_HANDLE,
+};
+use windows::Win32::System::Console::{
+    ScrollConsoleScreenBufferW, SetConsoleCursorPosition, CHAR_INFO, KEY_EVENT as KEY_EVENT_U32,
+    SMALL_RECT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, GetWindowTextW, MoveWindow, SetWindowTextW,
