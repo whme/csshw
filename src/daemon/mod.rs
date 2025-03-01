@@ -145,7 +145,7 @@ struct Daemon<'a> {
     /// The `DaemonConfig` that controls how the daemon console window looks like.
     config: &'a DaemonConfig,
     /// List of available cluster tags
-    clusters: &'a Vec<Cluster>,
+    clusters: &'a [Cluster],
     /// The current control mode state.
     control_mode_state: ControlModeState,
     /// If debug mode is enabled on the daemon it will also be enabled on all
@@ -170,8 +170,7 @@ impl Daemon<'_> {
         // Initialize the COM library so we can use UI automation
         unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).unwrap() };
 
-        let workspace_area =
-            workspace::get_workspace_area(workspace::Scaling::Logical, self.config.height);
+        let workspace_area = workspace::get_workspace_area(self.config.height);
 
         self.arrange_daemon_console(&workspace_area);
 
@@ -561,7 +560,7 @@ impl Daemon<'_> {
         let (x, y, width, height) = get_console_rect(
             0,
             workspace_area.height,
-            workspace_area.width,
+            workspace_area.width - (workspace_area.x_fixed_frame + workspace_area.x_size_frame),
             self.config.height,
             workspace_area,
         );
@@ -601,7 +600,7 @@ fn toggle_processed_input_mode() {
 /// # Returns
 ///
 /// A list of hostnames
-pub fn resolve_cluster_tags<'a>(hosts: Vec<&'a str>, clusters: &'a Vec<Cluster>) -> Vec<&'a str> {
+pub fn resolve_cluster_tags<'a>(hosts: Vec<&'a str>, clusters: &'a [Cluster]) -> Vec<&'a str> {
     let mut resolved_hosts: Vec<&str> = Vec::new();
     let mut is_cluster_tag: bool;
     for host in hosts {
@@ -725,12 +724,12 @@ fn launch_client_console(
     if debug {
         client_args.push("-d");
     }
-    client_args.push("client");
     let actual_username: String;
     if username.is_some() {
         actual_username = username.unwrap();
         client_args.extend(vec!["-u", &actual_username]);
     }
+    client_args.push("client");
     client_args.extend(vec!["--", host]);
     let client_window_handle = get_concole_window_handle(
         spawn_console_process(&format!("{PKG_NAME}.exe"), client_args).dwProcessId,
@@ -894,7 +893,11 @@ fn determine_client_spatial_attributes(
     workspace_area: &workspace::WorkspaceArea,
     aspect_ratio_adjustment: f64,
 ) -> (i32, i32, i32, i32) {
-    let aspect_ratio = workspace_area.width as f64 / workspace_area.height as f64;
+    let aspect_ratio = (workspace_area.width
+        + (workspace_area.x_fixed_frame + workspace_area.x_size_frame) * 2)
+        as f64
+        / (workspace_area.height + (workspace_area.y_fixed_frame + workspace_area.y_size_frame) * 2)
+            as f64;
 
     let grid_columns = max(
         ((number_of_consoles as f64).sqrt() * (aspect_ratio + aspect_ratio_adjustment)) as i32,
@@ -912,15 +915,25 @@ fn determine_client_spatial_attributes(
     let last_row_console_count = number_of_consoles % grid_columns;
 
     let console_width = if is_last_row && last_row_console_count != 0 {
-        workspace_area.width / last_row_console_count
+        (workspace_area.width / last_row_console_count)
+            + if last_row_console_count > 1 {
+                workspace_area.x_fixed_frame + workspace_area.x_size_frame
+            } else {
+                0
+            }
     } else {
-        workspace_area.width / grid_columns
+        (workspace_area.width / grid_columns)
+            + (workspace_area.x_fixed_frame + workspace_area.x_size_frame)
     };
 
-    let console_height = workspace_area.height / grid_rows;
+    let console_height = (workspace_area.height
+        + (workspace_area.y_fixed_frame + workspace_area.y_size_frame) * grid_row_index)
+        / grid_rows;
 
-    let x = grid_column_index * console_width;
-    let y = grid_row_index * console_height;
+    let x = grid_column_index * console_width
+        - ((workspace_area.x_fixed_frame + workspace_area.x_size_frame) * (grid_column_index + 1));
+    let y = grid_row_index * console_height
+        - ((workspace_area.y_fixed_frame + workspace_area.y_size_frame) * (grid_row_index - 1));
 
     return get_console_rect(x, y, console_width, console_height, workspace_area);
 }
@@ -952,10 +965,13 @@ fn get_console_rect(
     workspace_area: &workspace::WorkspaceArea,
 ) -> (i32, i32, i32, i32) {
     return (
-        workspace_area.x + x,
-        workspace_area.y + y,
-        width + workspace_area.x_fixed_frame + workspace_area.x_size_frame * 2,
-        height + workspace_area.y_size_frame * 2,
+        std::cmp::max(
+            workspace_area.x - (workspace_area.x_fixed_frame + workspace_area.x_size_frame),
+            workspace_area.x - (workspace_area.x_fixed_frame + workspace_area.x_size_frame) + x,
+        ),
+        workspace_area.y - (workspace_area.y_fixed_frame + workspace_area.y_size_frame) + y,
+        std::cmp::min(workspace_area.width, width),
+        height,
     );
 }
 
@@ -1079,7 +1095,7 @@ pub async fn main(
     hosts: Vec<String>,
     username: Option<String>,
     config: &DaemonConfig,
-    clusters: &Vec<Cluster>,
+    clusters: &[Cluster],
     debug: bool,
 ) {
     let daemon: Daemon = Daemon {
