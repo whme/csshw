@@ -29,6 +29,16 @@ pub struct Args {
     #[clap(long, short = 'u')]
     username: Option<String>,
     /// Hosts and/or cluster tag(s) to connect to
+    ///
+    /// Hosts or cluster tags might use brace expansion,
+    /// but need to be properly quoted.
+    ///
+    /// E.g.: `csshw.exe "host{1..3}" hostA`
+    ///
+    /// Hosts can include a username which will take precedence over the
+    /// username given via the `-u` option and over any ssh config value.
+    ///
+    /// E.g.: `csshw.exe -u user3 user1@host1 userA@hostA host3`
     #[clap(required = false, global = true)]
     hosts: Vec<String>,
     /// Enable extensive logging
