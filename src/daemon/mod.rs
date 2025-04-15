@@ -725,17 +725,17 @@ fn launch_client_console(
     if debug {
         client_args.push("-d");
     }
-    let mut actual_host: String = host.to_owned();
+    let mut actual_host = host;
     let mut actual_username = username;
     if let Some(split_result) = host.split_once("@") {
         actual_username = Some(split_result.0.to_owned());
-        actual_host = split_result.1.to_owned();
+        actual_host = split_result.1;
     }
     if let Some(actual_username) = actual_username.as_deref() {
         client_args.extend(vec!["-u", actual_username]);
     }
     client_args.push("client");
-    client_args.extend(vec!["--", &actual_host]);
+    client_args.extend(vec!["--", actual_host]);
     let client_window_handle = get_concole_window_handle(
         spawn_console_process(&format!("{PKG_NAME}.exe"), client_args).dwProcessId,
     );
