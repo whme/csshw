@@ -31,13 +31,29 @@ Commands:
   help    Print this message or the help of the given subcommand(s)
 
 Arguments:
-  [HOSTS]...  Hosts to connect to
+  [HOSTS]...
+          Hosts and/or cluster tag(s) to connect to
+
+          Hosts or cluster tags might use brace expansion, but need to be properly quoted.
+
+          E.g.: `csshw.exe "host{1..3}" hostA`
+
+          Hosts can include a username which will take precedence over the username given via the `-u` option and over any ssh config value.
+
+          E.g.: `csshw.exe -u user3 user1@host1 userA@hostA host3`
 
 Options:
-  -u, --username <USERNAME>  Optional username used to connect to the hosts
-  -d, --debug                Enable extensive logging
-  -h, --help                 Print help
-  -V, --version              Print version
+  -u, --username <USERNAME>
+          Optional username used to connect to the hosts
+
+  -d, --debug
+          Enable extensive logging
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
 ```
 Example:
 `csshw.exe -u root hosta.dev hostb.dev hostc.dev`
