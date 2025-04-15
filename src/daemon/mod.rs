@@ -27,6 +27,7 @@ use crate::{
     },
     WindowsSettingsDefaultTerminalApplicationGuard,
 };
+use bracoxide::explode;
 use log::{debug, error, warn};
 use tokio::sync::broadcast::error::TryRecvError;
 use tokio::{
@@ -1099,7 +1100,7 @@ pub async fn main(
     debug: bool,
 ) {
     let daemon: Daemon = Daemon {
-        hosts,
+        hosts: explode(&hosts.join(" ")).unwrap_or(hosts),
         username,
         config,
         clusters,
