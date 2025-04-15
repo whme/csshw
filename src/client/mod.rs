@@ -1,7 +1,7 @@
 //! Client implementation
 
 #![deny(clippy::implicit_return)]
-#![allow(clippy::needless_return)]
+#![allow(clippy::needless_return, clippy::doc_overindented_list_items)]
 #![warn(missing_docs)]
 
 use log::{error, info, warn};
