@@ -1,7 +1,7 @@
 //! Cluster SSH tool for Windows inspired by csshX
 
 #![deny(clippy::implicit_return)]
-#![allow(clippy::needless_return)]
+#![allow(clippy::needless_return, clippy::doc_overindented_list_items)]
 #![warn(missing_docs)]
 #![doc(html_no_source)]
 
@@ -137,13 +137,12 @@ impl Drop for WindowsSettingsDefaultTerminalApplicationGuard {
 ///
 /// The registry key where the default terminal application system settings are stored.
 fn get_reg_key() -> Option<RegKey> {
-    return match Hive::CurrentUser.open(
-        DEFAULT_TERMINAL_APP_REGISTRY_PATH,
-        Security::Read | Security::Write,
-    ) {
-        Ok(val) => Some(val),
-        Err(_) => None,
-    };
+    return Hive::CurrentUser
+        .open(
+            DEFAULT_TERMINAL_APP_REGISTRY_PATH,
+            Security::Read | Security::Write,
+        )
+        .ok();
 }
 
 /// Write `DelegationConsole` and `DelegationTerminal` registry values to the given [RegKey].

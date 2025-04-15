@@ -1,7 +1,7 @@
 //! Serialization/Deserialization implemention for windows INPUT_RECORD_0.
 
 #![deny(clippy::implicit_return)]
-#![allow(clippy::needless_return)]
+#![allow(clippy::needless_return, clippy::doc_overindented_list_items)]
 #![warn(missing_docs)]
 
 #[allow(missing_docs)]

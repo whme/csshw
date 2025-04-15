@@ -1,7 +1,7 @@
 //! Utilities shared by daemon and client.
 
 #![deny(clippy::implicit_return)]
-#![allow(clippy::needless_return)]
+#![allow(clippy::needless_return, clippy::doc_overindented_list_items)]
 
 use log::error;
 use std::{mem, ptr, thread, time};
