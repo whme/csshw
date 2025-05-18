@@ -1,5 +1,5 @@
 <h1 align="center">csshW</h3>
-<p align="center"><i>Cluster SSH tool for Windows inspired by <a href="https://github.com/brockgr/csshx">csshX</a><i/></p>
+<p align="center"><i>Cluster SSH tool for Windows inspired by <a href="https://github.com/brockgr/csshx">csshX</a></i></p>
 <p align="center">
   <a href="./LICENSE.txt"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
   <a href="https://github.com/whme/csshw/releases"><img src="https://img.shields.io/github/v/release/whme/csshw.svg"></a>
