@@ -2,7 +2,8 @@
 <p align="center"><i>Cluster SSH tool for Windows inspired by <a href="https://github.com/brockgr/csshx">csshX</a></i></p>
 <p align="center">
   <a href="./LICENSE.txt"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
-  <a href="https://github.com/whme/csshw/releases"><img src="https://img.shields.io/github/v/release/whme/csshw.svg"></a>
+  <a href="https://github.com/whme/csshw/releases/latest"><img src="https://img.shields.io/github/v/release/whme/csshw.svg"></a>
+  <a href="https://github.com/whme/csshw/releases"><img src="https://img.shields.io/github/downloads/whme/csshw/total"></a><br>
   <a href="https://github.com/whme/csshw/actions/workflows/ci.yml"><img src="https://github.com/whme/csshw/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/whme/csshw/actions/workflows/deploy_docs.yml"><img src="https://github.com/whme/csshw/actions/workflows/deploy_docs.yml/badge.svg"></a>
 </p>
