@@ -45,7 +45,7 @@ pub fn print_console_rect() {
     loop {
         let mut window_rect = RECT::default();
         unsafe { GetWindowRect(GetConsoleWindow(), ptr::addr_of_mut!(window_rect)).unwrap() };
-        println!("{:?}", window_rect);
+        println!("{window_rect:?}");
         thread::sleep(time::Duration::from_millis(100));
     }
 }
@@ -202,7 +202,7 @@ pub fn get_window_title(handle: &HWND) -> String {
 fn get_std_handle(nstdhandle: STD_HANDLE) -> HANDLE {
     return unsafe {
         GetStdHandle(nstdhandle)
-            .unwrap_or_else(|_| panic!("Failed to retrieve standard handle: {:?}", nstdhandle))
+            .unwrap_or_else(|_| panic!("Failed to retrieve standard handle: {nstdhandle:?}"))
     };
 }
 

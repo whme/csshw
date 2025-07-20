@@ -17,18 +17,18 @@ mod daemon_test {
     fn test_hwnd_wrapper_equality() {
         assert_eq!(
             HWNDWrapper {
-                hwdn: HWND(1 as *mut c_void)
+                hwdn: HWND(std::ptr::dangling_mut::<c_void>())
             },
             HWNDWrapper {
-                hwdn: HWND(1 as *mut c_void)
+                hwdn: HWND(std::ptr::dangling_mut::<c_void>())
             }
         );
         assert_ne!(
             HWNDWrapper {
-                hwdn: HWND(1 as *mut c_void)
+                hwdn: HWND(std::ptr::dangling_mut::<c_void>())
             },
             HWNDWrapper {
-                hwdn: HWND(2 as *mut c_void)
+                hwdn: HWND(unsafe { std::ptr::dangling_mut::<c_void>().add(1) })
             }
         );
     }

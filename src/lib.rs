@@ -199,7 +199,7 @@ fn get_registry_value(regkey: &RegKey, value_name: &str) -> Option<String> {
         Ok(value) => match value {
             Data::String(value) => Some(value.to_string_lossy()),
             _ => {
-                panic!("Expected string data for {} registry value", value_name)
+                panic!("Expected string data for {value_name} registry value")
             }
         },
         Err(value::Error::NotFound(_, _)) => Some(CLSID_DEFAULT.to_owned()),
