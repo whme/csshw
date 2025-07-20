@@ -14,7 +14,7 @@ const DEFAULT_USERNAME_HOST_PLACEHOLDER: &str = "{{USERNAME_AT_HOST}}";
 ///
 /// Includes subcommand specific configurations for `client` and `daemon` subcommands
 /// as well es the cluster tags.
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, PartialEq, Debug)]
 pub struct Config {
     /// List of cluster tags.
     ///
@@ -64,7 +64,7 @@ impl From<Config> for ConfigOpt {
 }
 
 /// Representation of a cluster tag.
-#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
 pub struct Cluster {
     /// Name of the cluster tag, used to identify it.
     pub name: String,
@@ -73,7 +73,7 @@ pub struct Cluster {
 }
 
 /// Representation of the `client` subcommand configurations.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct ClientConfig {
     /// Full path to the SSH config.
     ///
@@ -176,7 +176,7 @@ impl From<ClientConfig> for ClientConfigOpt {
 }
 
 /// Representation of the `daemon` subcommand configurations.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct DaemonConfig {
     /// Height in pixel of the daemon console window.
     ///
@@ -283,3 +283,7 @@ impl From<DaemonConfig> for DaemonConfigOpt {
         };
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/utils/test_config.rs"]
+mod test_config;
