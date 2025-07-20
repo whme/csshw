@@ -11,8 +11,12 @@ jobs:
   build:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: windows-latest
+    env:
+      RUST_VERSION: 1.88.0
     steps:
     - uses: actions/checkout@v3
+    - name: Configure correct rust version
+      run: rustup update $RUST_VERSION && rustup default $RUST_VERSION
     - name: Build docs
       run: cargo docs
     - name: Finalize docs
