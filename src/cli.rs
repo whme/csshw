@@ -151,7 +151,7 @@ pub async fn main<T: Entrypoint>(args: Args, mut entrypoint: T) {
     // but conhost.exe does not do any manifest loading.
     // https://github.com/microsoft/terminal/issues/18464#issuecomment-2623392013
     if let Err(err) = unsafe { SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE) } {
-        eprintln!("Failed to set DPI awareness programatically: {:?}", err);
+        eprintln!("Failed to set DPI awareness programatically: {err:?}");
     }
     match std::env::current_exe() {
         Ok(path) => match path.parent() {

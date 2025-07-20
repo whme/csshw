@@ -114,7 +114,7 @@ fn get_username_and_host(username: Option<String>, host: &str, config: &ClientCo
         host_specific_params.user.unwrap_or_default()
     };
 
-    return format!("{}@{}", username, host);
+    return format!("{username}@{host}");
 }
 
 /// Launch the SSH process.
@@ -320,7 +320,7 @@ pub async fn main(host: String, username: Option<String>, config: &ClientConfig)
     tokio::spawn(async move {
         loop {
             // Set the console title (child might overwrite it, so we have to keep checking it)
-            let console_title = format!("{} - {}", PKG_NAME, username_host_title);
+            let console_title = format!("{PKG_NAME} - {username_host_title}");
             if console_title != get_console_title() {
                 set_console_title(console_title.as_str());
             }

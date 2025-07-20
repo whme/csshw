@@ -162,7 +162,7 @@ impl Daemon<'_> {
     /// Once all client windows have successfully started the daemon console window
     /// is moved to the foreground and receives focus.
     async fn launch(mut self) {
-        set_console_title(format!("{} daemon", PKG_NAME).as_str());
+        set_console_title(format!("{PKG_NAME} daemon").as_str());
         set_console_color(CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color));
         set_console_border_color(COLORREF(0x000000FF));
 
