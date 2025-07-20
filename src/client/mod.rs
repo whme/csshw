@@ -131,15 +131,16 @@ fn get_username_and_host(username: Option<String>, host: &str, config: &ClientCo
 ///
 /// The handle to created [Child] process.
 async fn launch_ssh_process(username_host: &str, config: &ClientConfig) -> Child {
-    let arguments = config.arguments.clone().into_iter().map(|arg| {
-        return arg.replace(config.username_host_placeholder.as_str(), username_host);
-    });
+    let arguments = replace_argument_placeholders(
+        &config.arguments,
+        &config.username_host_placeholder,
+        username_host,
+    );
     let child = Command::new(&config.program)
         .args(arguments.clone())
         .spawn()
         .unwrap_or_else(|err| {
-            let args: String =
-                itertools::Itertools::intersperse(arguments, " ".to_owned()).collect();
+            let args: String = arguments.join(" ");
             error!("{}", err);
             panic!(
                 "Failed to launch process `{}` with arguments `{}`",
@@ -187,8 +188,7 @@ async fn read_write_loop(
             let iter = internal_buffer.chunks_exact(SERIALIZED_INPUT_RECORD_0_LENGTH);
             let mut key_event_records: Vec<KEY_EVENT_RECORD> = Vec::new();
             for serialzied_input_record in iter.clone() {
-                if serialzied_input_record == [u8::MAX; SERIALIZED_INPUT_RECORD_0_LENGTH] {
-                    // Just a keep alive packet from the daemon, ignore it
+                if is_keep_alive_packet(serialzied_input_record) {
                     continue;
                 };
                 let input_record =
@@ -209,6 +209,57 @@ async fn read_write_loop(
             return ReadWriteResult::Err;
         }
     }
+}
+
+/// Checks if a key event represents the Alt+Shift+C combination.
+///
+/// # Arguments
+///
+/// * `key_event` - The key event record to check.
+///
+/// # Returns
+///
+/// `true` if the key event represents Alt+Shift+C, `false` otherwise.
+fn is_alt_shift_c_combination(key_event: &KEY_EVENT_RECORD) -> bool {
+    return (key_event.dwControlKeyState & LEFT_ALT_PRESSED >= 1
+        || key_event.dwControlKeyState & RIGHT_ALT_PRESSED == 1)
+        && key_event.dwControlKeyState & SHIFT_PRESSED >= 1
+        && key_event.wVirtualKeyCode == VK_C.0;
+}
+
+/// Checks if a byte sequence represents a keep-alive packet.
+///
+/// # Arguments
+///
+/// * `packet` - The byte sequence to check.
+///
+/// # Returns
+///
+/// `true` if the packet is a keep-alive packet, `false` otherwise.
+fn is_keep_alive_packet(packet: &[u8]) -> bool {
+    return packet == [u8::MAX; SERIALIZED_INPUT_RECORD_0_LENGTH];
+}
+
+/// Replaces placeholders in SSH command arguments.
+///
+/// # Arguments
+///
+/// * `arguments` - The argument templates.
+/// * `placeholder` - The placeholder string to replace.
+/// * `replacement` - The value to replace the placeholder with.
+///
+/// # Returns
+///
+/// A vector of arguments with placeholders replaced.
+fn replace_argument_placeholders(
+    arguments: &[String],
+    placeholder: &str,
+    replacement: &str,
+) -> Vec<String> {
+    return arguments
+        .iter()
+        .map(|arg| return arg.replace(placeholder, replacement))
+        .collect();
 }
 
 /// The main run loop of the client.
@@ -253,11 +304,7 @@ async fn run(child: &mut Child) {
                 internal_buffer = remainder;
                 if child_error {
                     for key_event in key_event_records.into_iter() {
-                        if (key_event.dwControlKeyState & LEFT_ALT_PRESSED >= 1
-                            || key_event.dwControlKeyState & RIGHT_ALT_PRESSED == 1)
-                            && key_event.dwControlKeyState & SHIFT_PRESSED >= 1
-                            && key_event.wVirtualKeyCode == VK_C.0
-                        {
+                        if is_alt_shift_c_combination(&key_event) {
                             return;
                         }
                     }
