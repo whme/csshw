@@ -12,8 +12,12 @@ env:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      RUST_VERSION: 1.88.0
     steps:
     - uses: actions/checkout@v3
+    - name: Configure correct rust version
+      run: rustup update $RUST_VERSION && rustup default $RUST_VERSION
     - name: Check format
       run: cargo fmt -- --check
     - name: Run linter
