@@ -12,7 +12,7 @@ use std::{mem, ptr};
 use std::os::windows::ffi::OsStrExt;
 
 use log::warn;
-use registry::{value, Data, Hive, RegKey, Security};
+use registry::{value, Data, Hive, Security};
 use simplelog::{format_description, ConfigBuilder, LevelFilter, WriteLogger};
 use windows::core::{HSTRING, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{BOOL, FALSE, HWND, LPARAM, TRUE};
@@ -20,6 +20,9 @@ use windows::Win32::System::Threading::{
     CreateProcessW, CREATE_NEW_CONSOLE, PROCESS_INFORMATION, STARTUPINFOW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId};
+
+#[cfg(test)]
+use mockall::automock;
 
 pub mod cli;
 pub mod client;
@@ -53,161 +56,413 @@ const DELEGATION_CONSOLE: &str = "DelegationConsole";
 /// <https://github.com/microsoft/terminal/blob/v1.22.3232.0/src/propslib/DelegationConfig.cpp#L30>
 const DELEGATION_TERMINAL: &str = "DelegationTerminal";
 
+/// Trait for registry operations to enable mocking in tests
+#[cfg_attr(test, automock)]
+pub trait Registry {
+    /// Get a string value from the registry
+    fn get_registry_string_value(&self, path: &str, name: &str) -> Option<String>;
+    /// Set a string value in the registry
+    fn set_registry_string_value(&self, path: &str, name: &str, value: &str) -> bool;
+}
+
+/// Trait for Windows API operations to enable mocking in tests
+#[cfg_attr(test, automock)]
+pub trait WindowsApi {
+    /// Create a new process
+    fn create_process_with_args(
+        &self,
+        application: &str,
+        args: Vec<String>,
+    ) -> Option<PROCESS_INFORMATION>;
+    /// Get window handle for process ID
+    fn get_window_handle_for_process(&self, process_id: u32) -> Option<usize>;
+    /// Low-level process creation API call
+    fn create_process_raw(
+        &self,
+        application: &str,
+        command_line: PWSTR,
+        startup_info: &mut STARTUPINFOW,
+        process_info: &mut PROCESS_INFORMATION,
+    ) -> windows::core::Result<()>;
+    /// Low-level window enumeration for a specific process
+    fn enumerate_windows_for_process(&self, process_id: u32) -> Option<usize>;
+}
+
+/// Trait for file system operations to enable mocking in tests
+#[cfg_attr(test, automock)]
+pub trait FileSystem {
+    /// Create a directory
+    fn create_directory(&self, path: &str) -> bool;
+    /// Create a log file
+    fn create_log_file(&self, filename: &str) -> bool;
+}
+
+/// Default implementation of Registry trait that performs actual Windows registry API calls
+pub struct DefaultRegistry;
+
+impl Registry for DefaultRegistry {
+    fn get_registry_string_value(&self, path: &str, name: &str) -> Option<String> {
+        let key = Hive::CurrentUser
+            .open(path, Security::Read | Security::Write)
+            .ok()?;
+        match key.value(name) {
+            Ok(Data::String(value)) => return Some(value.to_string_lossy()),
+            Ok(_) => panic!("Expected string data for {name} registry value"),
+            Err(value::Error::NotFound(_, _)) => return Some(CLSID_DEFAULT.to_owned()),
+            Err(err) => {
+                warn!("Failed to read {} value from registry: {}", name, err);
+                return None;
+            }
+        }
+    }
+
+    fn set_registry_string_value(&self, path: &str, name: &str, value: &str) -> bool {
+        if let Ok(key) = Hive::CurrentUser.open(path, Security::Read | Security::Write) {
+            match key.set_value::<String>(
+                name.to_owned(),
+                &Data::String(value.to_owned().try_into().unwrap()),
+            ) {
+                Ok(()) => return true,
+                Err(_) => {
+                    warn!("Failed to set registry value {} to {}", name, value);
+                    return false;
+                }
+            }
+        } else {
+            return false;
+        }
+    }
+}
+
+/// Data structure for window search callback
+struct WindowSearchData {
+    /// The process ID we're searching for
+    target_process_id: u32,
+    /// Mutable reference to store the found window handle
+    found_handle: *mut Option<HWND>,
+}
+
+/// Callback function for finding windows by process ID with proper handle capture
+unsafe extern "system" fn find_window_callback_with_capture(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let search_data = &mut *(lparam.0 as *mut WindowSearchData);
+    let mut window_process_id: u32 = 0;
+    GetWindowThreadProcessId(hwnd, Some(&mut window_process_id));
+
+    if search_data.target_process_id == window_process_id {
+        // Store the found window handle
+        *search_data.found_handle = Some(hwnd);
+        return FALSE; // Stop enumeration
+    }
+    return TRUE; // Continue enumeration
+}
+
+/// Default implementation of WindowsApi trait that performs actual Windows API calls
+pub struct DefaultWindowsApi;
+
+impl WindowsApi for DefaultWindowsApi {
+    fn create_process_with_args(
+        &self,
+        application: &str,
+        args: Vec<String>,
+    ) -> Option<PROCESS_INFORMATION> {
+        let command_line = build_command_line(application, &args);
+        return create_process_windows_api(application, &command_line);
+    }
+
+    fn get_window_handle_for_process(&self, process_id: u32) -> Option<usize> {
+        return find_window_for_process_windows_api(process_id);
+    }
+
+    fn create_process_raw(
+        &self,
+        application: &str,
+        command_line: PWSTR,
+        startup_info: &mut STARTUPINFOW,
+        process_info: &mut PROCESS_INFORMATION,
+    ) -> windows::core::Result<()> {
+        return unsafe {
+            CreateProcessW(
+                &HSTRING::from(application),
+                Some(command_line),
+                Some(ptr::null_mut()),
+                Some(ptr::null_mut()),
+                false,
+                CREATE_NEW_CONSOLE,
+                Some(ptr::null_mut()),
+                PCWSTR::null(),
+                ptr::addr_of_mut!(*startup_info),
+                ptr::addr_of_mut!(*process_info),
+            )
+        };
+    }
+
+    fn enumerate_windows_for_process(&self, process_id: u32) -> Option<usize> {
+        let mut found_handle: Option<HWND> = None;
+        let mut search_data = WindowSearchData {
+            target_process_id: process_id,
+            found_handle: &mut found_handle,
+        };
+
+        let result = unsafe {
+            EnumWindows(
+                Some(find_window_callback_with_capture),
+                LPARAM(&mut search_data as *mut WindowSearchData as isize),
+            )
+        };
+
+        if result.is_ok() || found_handle.is_some() {
+            return found_handle.map(|hwnd| return hwnd.0 as usize);
+        }
+        return None;
+    }
+}
+
+/// Build command line string for Windows process creation
+///
+/// # Arguments
+///
+/// * `application` - Application name including file extension
+/// * `args` - List of arguments to the application
+///
+/// # Returns
+///
+/// UTF-16 encoded command line with proper quoting
+pub fn build_command_line(application: &str, args: &[String]) -> Vec<u16> {
+    let mut cmd: Vec<u16> = Vec::new();
+    cmd.push(b'"' as u16);
+    cmd.extend(OsString::from(application).encode_wide());
+    cmd.push(b'"' as u16);
+
+    for arg in args {
+        cmd.push(' ' as u16);
+        cmd.push(b'"' as u16);
+        cmd.extend(OsString::from(arg).encode_wide());
+        cmd.push(b'"' as u16);
+    }
+    cmd.push(0); // add null terminator
+
+    return cmd;
+}
+
+/// Create process with command line using the provided API (testable version)
+///
+/// # Arguments
+///
+/// * `api` - Windows API operations implementation
+/// * `application` - Application name including file extension
+/// * `command_line` - UTF-16 encoded command line
+///
+/// # Returns
+///
+/// [PROCESS_INFORMATION] of the spawned process or None if failed
+pub fn create_process_with_command_line_api<W: WindowsApi>(
+    api: &W,
+    application: &str,
+    command_line: &[u16],
+) -> Option<PROCESS_INFORMATION> {
+    let mut startupinfo = STARTUPINFOW {
+        cb: mem::size_of::<STARTUPINFOW>() as u32,
+        ..Default::default()
+    };
+    let mut process_information = PROCESS_INFORMATION::default();
+    let mut cmd_line = command_line.to_vec();
+    let command_line_ptr = PWSTR(cmd_line.as_mut_ptr());
+
+    match api.create_process_raw(
+        application,
+        command_line_ptr,
+        &mut startupinfo,
+        &mut process_information,
+    ) {
+        Ok(()) => return Some(process_information),
+        Err(_) => return None,
+    }
+}
+
+/// Create process using Windows API (legacy function for backward compatibility)
+///
+/// # Arguments
+///
+/// * `application` - Application name including file extension
+/// * `command_line` - UTF-16 encoded command line
+///
+/// # Returns
+///
+/// [PROCESS_INFORMATION] of the spawned process or None if failed
+pub fn create_process_windows_api(
+    application: &str,
+    command_line: &[u16],
+) -> Option<PROCESS_INFORMATION> {
+    return create_process_with_command_line_api(&DefaultWindowsApi, application, command_line);
+}
+
+/// Find window with retry logic using the provided API (testable version)
+///
+/// # Arguments
+///
+/// * `api` - Windows API operations implementation
+/// * `process_id` - ID of the process for which to retrieve the window handle
+/// * `max_attempts` - Maximum number of attempts to find the window
+///
+/// # Returns
+///
+/// Window handle as usize or None if not found
+pub fn find_window_with_retry_api<W: WindowsApi>(
+    api: &W,
+    process_id: u32,
+    max_attempts: u32,
+) -> Option<usize> {
+    let mut attempts = 0;
+
+    while attempts < max_attempts {
+        if let Some(handle) = api.enumerate_windows_for_process(process_id) {
+            return Some(handle);
+        }
+        attempts += 1;
+    }
+
+    return None;
+}
+
+/// Find window for process using Windows API (legacy function for backward compatibility)
+///
+/// # Arguments
+///
+/// * `process_id` - ID of the process for which to retrieve the window handle
+///
+/// # Returns
+///
+/// Window handle as usize or None if not found
+pub fn find_window_for_process_windows_api(process_id: u32) -> Option<usize> {
+    const MAX_ATTEMPTS: u32 = 100;
+    return find_window_with_retry_api(&DefaultWindowsApi, process_id, MAX_ATTEMPTS);
+}
+
+/// Default implementation of FileSystem trait that performs actual file system operations
+pub struct ProductionFileSystem;
+
+impl FileSystem for ProductionFileSystem {
+    fn create_directory(&self, path: &str) -> bool {
+        return create_dir(path).is_ok() || std::path::Path::new(path).exists();
+    }
+
+    fn create_log_file(&self, filename: &str) -> bool {
+        return File::create(filename).is_ok();
+    }
+}
+
 /// Guard storing previous/old `DelegationConsole` and `DelegationTerminal` registry values.
 ///
 /// Configures `conhost.exe` as the default terminal application
 /// and reverts to the original configuration when being dropped.
-#[derive(Default)]
-pub struct WindowsSettingsDefaultTerminalApplicationGuard {
+pub struct WindowsSettingsDefaultTerminalApplicationGuard<R: Registry> {
     /// Old `DelegationConsole` registry value
     old_windows_terminal_console: Option<String>,
     /// Old `DelegationTerminal` registry value
     old_windows_terminal_terminal: Option<String>,
+    /// Registry operations trait
+    registry: R,
 }
 
-impl WindowsSettingsDefaultTerminalApplicationGuard {
-    /// Read the existing default terminal application setting from the registry
-    /// before overwriting it with the value for `conhost.exe`.
+impl<R: Registry> WindowsSettingsDefaultTerminalApplicationGuard<R> {
+    /// Create a new guard with the given registry operations
     ///
-    /// If `DelegationConsole` or `DelegationTerminal` registry values are missing
-    /// they will be created with the default value.
-    /// They are missing by default if the setting was never changed.
-    pub fn new() -> Self {
-        let regkey = match get_reg_key() {
-            Some(val) => val,
-            None => {
-                warn!(
-                    "Failed to read registry key {}, \
-                    cannot make sure conhost.exe is the configured default terminal application",
-                    DEFAULT_TERMINAL_APP_REGISTRY_PATH,
-                );
-                return WindowsSettingsDefaultTerminalApplicationGuard::default();
-            }
-        };
-        let old_windows_terminal_console = match get_registry_value(&regkey, DELEGATION_CONSOLE) {
-            Some(val) => val,
-            _ => return WindowsSettingsDefaultTerminalApplicationGuard::default(),
-        };
-        let old_windows_terminal_terminal = match get_registry_value(&regkey, DELEGATION_TERMINAL) {
-            Some(val) => val,
-            _ => return WindowsSettingsDefaultTerminalApplicationGuard::default(),
+    /// # Arguments
+    ///
+    /// * `registry` - Registry operations implementation
+    ///
+    /// # Returns
+    ///
+    /// A new guard that will restore registry values on drop
+    pub fn new_with_registry(registry: R) -> Self {
+        let mut guard = WindowsSettingsDefaultTerminalApplicationGuard {
+            old_windows_terminal_console: None,
+            old_windows_terminal_terminal: None,
+            registry,
         };
 
-        // No need to change the default terminal application if it is already set to conhost.exe
-        if old_windows_terminal_console == old_windows_terminal_terminal
-            && old_windows_terminal_console == CLSID_CONHOST
-        {
-            return WindowsSettingsDefaultTerminalApplicationGuard::default();
+        if let (Some(console_val), Some(terminal_val)) = (
+            guard
+                .registry
+                .get_registry_string_value(DEFAULT_TERMINAL_APP_REGISTRY_PATH, DELEGATION_CONSOLE),
+            guard
+                .registry
+                .get_registry_string_value(DEFAULT_TERMINAL_APP_REGISTRY_PATH, DELEGATION_TERMINAL),
+        ) {
+            // No need to change if already set to conhost
+            if console_val == CLSID_CONHOST && terminal_val == CLSID_CONHOST {
+                return guard;
+            }
+
+            // Store old values and set new ones
+            guard.old_windows_terminal_console = Some(console_val);
+            guard.old_windows_terminal_terminal = Some(terminal_val);
+
+            guard.registry.set_registry_string_value(
+                DEFAULT_TERMINAL_APP_REGISTRY_PATH,
+                DELEGATION_CONSOLE,
+                CLSID_CONHOST,
+            );
+            guard.registry.set_registry_string_value(
+                DEFAULT_TERMINAL_APP_REGISTRY_PATH,
+                DELEGATION_TERMINAL,
+                CLSID_CONHOST,
+            );
+        } else {
+            warn!(
+                "Failed to read registry key {}, \
+                cannot make sure conhost.exe is the configured default terminal application",
+                DEFAULT_TERMINAL_APP_REGISTRY_PATH,
+            );
         }
 
-        write_registry_values(&regkey, CLSID_CONHOST.to_owned(), CLSID_CONHOST.to_owned());
-
-        return WindowsSettingsDefaultTerminalApplicationGuard {
-            old_windows_terminal_console: Some(old_windows_terminal_console),
-            old_windows_terminal_terminal: Some(old_windows_terminal_terminal),
-        };
+        return guard;
     }
 }
 
-impl Drop for WindowsSettingsDefaultTerminalApplicationGuard {
+impl WindowsSettingsDefaultTerminalApplicationGuard<DefaultRegistry> {
+    /// Create a new guard with production registry operations
+    pub fn new() -> Self {
+        return Self::new_with_registry(DefaultRegistry);
+    }
+}
+
+impl<R: Registry> Default for WindowsSettingsDefaultTerminalApplicationGuard<R>
+where
+    R: Default,
+{
+    fn default() -> Self {
+        return Self::new_with_registry(R::default());
+    }
+}
+
+impl Default for DefaultRegistry {
+    fn default() -> Self {
+        return DefaultRegistry;
+    }
+}
+
+impl<R: Registry> Drop for WindowsSettingsDefaultTerminalApplicationGuard<R> {
     /// Restore the original default terminal application setting to the registry.
     ///
-    /// If `self.old_windows_terminal_console` or `self.old_windows_terminal_terminal`
-    /// attributes are [None] nothing is done.
+    /// If old values weren't stored, nothing is done.
     fn drop(&mut self) {
-        if let (Some(old_windows_terminal_console), Some(old_windows_terminal_terminal)) = (
+        if let (Some(old_console), Some(old_terminal)) = (
             &self.old_windows_terminal_console,
             &self.old_windows_terminal_terminal,
         ) {
-            // We can safely unwrap the registry_key here, as we can only reach this code path if we
-            // managed to read the registry initially
-            write_registry_values(
-                &get_reg_key().unwrap(),
-                old_windows_terminal_console.to_owned(),
-                old_windows_terminal_terminal.to_owned(),
+            self.registry.set_registry_string_value(
+                DEFAULT_TERMINAL_APP_REGISTRY_PATH,
+                DELEGATION_CONSOLE,
+                old_console,
+            );
+            self.registry.set_registry_string_value(
+                DEFAULT_TERMINAL_APP_REGISTRY_PATH,
+                DELEGATION_TERMINAL,
+                old_terminal,
             );
         }
     }
-}
-
-/// Retrieve the [RegKey] under which the default terminal application system settings
-/// are stored.
-///
-/// # Returns
-///
-/// The registry key where the default terminal application system settings are stored.
-fn get_reg_key() -> Option<RegKey> {
-    return Hive::CurrentUser
-        .open(
-            DEFAULT_TERMINAL_APP_REGISTRY_PATH,
-            Security::Read | Security::Write,
-        )
-        .ok();
-}
-
-/// Write `DelegationConsole` and `DelegationTerminal` registry values to the given [RegKey].
-///
-/// # Arguments
-///
-/// * `regkey`                      - The registry key where the default terminal application system settings are stored.
-/// * `delegation_console_value`    - The CLSID for `DelegationConsole`.
-/// * `delegation_terminal_value`   - The CLSID for `DelegationTerminal`.
-fn write_registry_values(
-    regkey: &RegKey,
-    delegation_console_value: String,
-    delegation_terminal_value: String,
-) {
-    let _: Result<(), value::Error> = regkey
-        .set_value::<String>(
-            DELEGATION_CONSOLE.to_owned(),
-            &Data::String(delegation_console_value.clone().try_into().unwrap()),
-        )
-        .or_else(|_| {
-            warn!(
-                "Failed to change the default console application for registry key {} to {:?}",
-                DELEGATION_CONSOLE, delegation_console_value
-            );
-            return Ok(());
-        });
-    let _: Result<(), value::Error> = regkey
-        .set_value::<String>(
-            DELEGATION_TERMINAL.to_owned(),
-            &Data::String(delegation_terminal_value.clone().try_into().unwrap()),
-        )
-        .or_else(|_| {
-            warn!(
-                "Failed to change the default console application for registry key {} to {:?}",
-                DELEGATION_TERMINAL, delegation_terminal_value
-            );
-            return Ok(());
-        });
-}
-
-/// Try to retrieve the registry value for the given value_name from the given regkey.
-///
-/// # Arguments
-///
-/// * `regkey`      - [RegKey] from which to retrieve a value
-/// * `value_name`  - The name of the registry value to retrieve
-///
-/// # Returns
-///
-/// The value from registry or `CLSID_DEFAULT`` if no value is found for the given value_name.
-/// Returns [None] if we failed to retrieve the value.
-fn get_registry_value(regkey: &RegKey, value_name: &str) -> Option<String> {
-    return match regkey.value(value_name) {
-        Ok(value) => match value {
-            Data::String(value) => Some(value.to_string_lossy()),
-            _ => {
-                panic!("Expected string data for {value_name} registry value")
-            }
-        },
-        Err(value::Error::NotFound(_, _)) => Some(CLSID_DEFAULT.to_owned()),
-        Err(err) => {
-            warn!("Failed to read {} value from registry: {}", value_name, err);
-            None
-        }
-    };
 }
 
 /// Launch the given console application with the given arguments as a new detached process with its own console window.
@@ -227,43 +482,28 @@ fn get_registry_value(regkey: &RegKey, value_name: &str) -> Option<String> {
 ///
 /// [PROCESS_INFORMATION] of the spawned process.
 pub fn spawn_console_process(application: &str, args: Vec<&str>) -> PROCESS_INFORMATION {
-    let mut cmd: Vec<u16> = Vec::new();
-    cmd.push(b'"' as u16);
-    cmd.extend(OsString::from(application).encode_wide());
-    cmd.push(b'"' as u16);
-
-    for arg in args {
-        cmd.push(' ' as u16);
-        cmd.push(b'"' as u16);
-        cmd.extend(OsString::from(arg).encode_wide());
-        cmd.push(b'"' as u16);
-    }
-    cmd.push(0); // add null terminator
-
-    let mut startupinfo = STARTUPINFOW {
-        cb: mem::size_of::<STARTUPINFOW>() as u32,
-        ..Default::default()
-    };
-    // Sadly we can't use the startupinfo to position the console window right away
-    // as x and y coordinates must be u32 and we might have negative values
-    let mut process_information = PROCESS_INFORMATION::default();
-    let command_line = PWSTR(cmd.as_mut_ptr());
-    unsafe {
-        CreateProcessW(
-            &HSTRING::from(application),
-            Some(command_line),
-            Some(ptr::null_mut()),
-            Some(ptr::null_mut()),
-            false,
-            CREATE_NEW_CONSOLE,
-            Some(ptr::null_mut()),
-            PCWSTR::null(),
-            ptr::addr_of_mut!(startupinfo),
-            ptr::addr_of_mut!(process_information),
-        )
+    return spawn_console_process_with_api(&DefaultWindowsApi, application, &args)
         .expect("Failed to create process");
-    }
-    return process_information;
+}
+
+/// Launch the given console application with the given arguments using the provided API.
+///
+/// # Arguments
+///
+/// * `api` - Windows API operations implementation
+/// * `application` - Application name including file extension
+/// * `args` - List of arguments to the application
+///
+/// # Returns
+///
+/// [PROCESS_INFORMATION] of the spawned process or None if failed
+pub fn spawn_console_process_with_api<W: WindowsApi>(
+    api: &W,
+    application: &str,
+    args: &[&str],
+) -> Option<PROCESS_INFORMATION> {
+    let string_args: Vec<String> = args.iter().map(|s| return s.to_string()).collect();
+    return api.create_process_with_args(application, string_args);
 }
 
 /// Return the Window Handle [HWND] for the foreground window associated with the given `process_id`.
@@ -278,58 +518,24 @@ pub fn spawn_console_process(application: &str, args: Vec<&str>) -> PROCESS_INFO
 ///
 /// The Window Handle [HWND] for the window associated with the given `process_id`.
 pub fn get_concole_window_handle(process_id: u32) -> HWND {
-    let mut client_window_handle: Option<HWND> = None;
-    loop {
-        enumerate_windows(|handle| {
-            let mut window_process_id: u32 = 0;
-            unsafe { GetWindowThreadProcessId(handle, Some(&mut window_process_id)) };
-            if process_id == window_process_id {
-                client_window_handle = Some(handle);
-            }
-            return true;
-        });
-        if client_window_handle.is_some() {
-            break;
-        }
-    }
-    return client_window_handle.unwrap();
+    return get_console_window_handle_with_api(&DefaultWindowsApi, process_id)
+        .expect("Failed to find window for process");
 }
 
-/// Enumerate all top-level windows on the screen and call the given `callback` for each.
+/// Get console window handle using the provided API.
 ///
 /// # Arguments
 ///
-/// * `callback` - Function to be called for each top-level window with the windows [HWND].
-///                Function must return [TRUE] to continue enumeration.
-fn enumerate_windows<F>(mut callback: F)
-where
-    F: FnMut(HWND) -> bool,
-{
-    let mut trait_obj: &mut dyn FnMut(HWND) -> bool = &mut callback;
-    let closure_pointer_pointer: *mut c_void = unsafe { mem::transmute(&mut trait_obj) };
-
-    let lparam = LPARAM(closure_pointer_pointer as isize);
-    unsafe { EnumWindows(Some(enumerate_callback), lparam).unwrap() };
-}
-
-/// Callback function used in `enumerate_windows` to pass a Rust closure to windows C code.
+/// * `api` - Windows API operations implementation
+/// * `process_id` - ID of the process for which to retrieve the window handle
 ///
-/// This function must comply with the
-/// [EnumWindowsProc][<https://learn.microsoft.com/en-us/previous-versions/windows/desktop/legacy/ms633498(v=vs.85)>]
-/// function signature.
+/// # Returns
 ///
-/// # Arguments
-///
-/// * `hwnd`    - A [HWND] to a top-level window.
-/// * `lparam`  - A pointer to the Rust closure that will be called with the [HWND].
-unsafe extern "system" fn enumerate_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
-    let closure: &mut &mut dyn FnMut(HWND) -> bool = &mut *(lparam.0 as *mut c_void
-        as *mut &mut dyn std::ops::FnMut(windows::Win32::Foundation::HWND) -> bool);
-    if closure(hwnd) {
-        return TRUE;
-    } else {
-        return FALSE;
-    }
+/// The Window Handle [HWND] for the window associated with the given `process_id`
+pub fn get_console_window_handle_with_api<W: WindowsApi>(api: &W, process_id: u32) -> Option<HWND> {
+    return api
+        .get_window_handle_for_process(process_id)
+        .map(|handle| return HWND(handle as *mut c_void));
 }
 
 /// Initialize the logger.
@@ -342,19 +548,37 @@ unsafe extern "system" fn enumerate_callback(hwnd: HWND, lparam: LPARAM) -> BOOL
 ///
 /// * `name` - Will be part of the log filename.
 pub fn init_logger(name: &str) {
+    init_logger_with_fs(&ProductionFileSystem, name);
+}
+
+/// Initialize the logger with the provided file system operations.
+///
+/// # Arguments
+///
+/// * `fs` - File system operations implementation
+/// * `name` - Will be part of the log filename
+pub fn init_logger_with_fs<F: FileSystem>(fs: &F, name: &str) {
     let utc_now = chrono::offset::Utc::now()
         .format("%Y-%m-%d_%H-%M-%S.%f")
         .to_string();
-    let _ = create_dir("logs"); // directory already exists is fine too
-    WriteLogger::init(
-        LevelFilter::Debug,
-        ConfigBuilder::new()
-            .set_time_format_custom(format_description!("[hour]:[minute]:[second].[subsecond]"))
-            .build(),
-        File::create(format!("logs/{utc_now}_{name}.log")).unwrap(),
-    )
-    .unwrap();
-    log_panics::init();
+
+    fs.create_directory("logs");
+
+    let filename = format!("logs/{utc_now}_{name}.log");
+    if fs.create_log_file(&filename) {
+        if let Ok(file) = File::create(&filename) {
+            let _ = WriteLogger::init(
+                LevelFilter::Debug,
+                ConfigBuilder::new()
+                    .set_time_format_custom(format_description!(
+                        "[hour]:[minute]:[second].[subsecond]"
+                    ))
+                    .build(),
+                file,
+            );
+            log_panics::init();
+        }
+    }
 }
 
 #[cfg(test)]
