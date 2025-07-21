@@ -15,7 +15,7 @@ jobs:
     env:
       RUST_VERSION: 1.88.0
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Configure correct rust version
       run: rustup update $RUST_VERSION && rustup default $RUST_VERSION
     - name: Check format
