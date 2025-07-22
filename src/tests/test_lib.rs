@@ -9,8 +9,7 @@ use mockall::predicate::*;
 use windows::Win32::System::Threading::PROCESS_INFORMATION;
 
 use crate::{
-    create_process_with_command_line_api, find_window_with_retry_api,
-    get_console_window_handle_with_api, init_logger_with_fs, spawn_console_process_with_api,
+    create_process_with_command_line_api, init_logger_with_fs, spawn_console_process_with_api,
     MockFileSystem, MockRegistry, MockWindowsApi, WindowsSettingsDefaultTerminalApplicationGuard,
     CLSID_CONHOST, DEFAULT_TERMINAL_APP_REGISTRY_PATH, DELEGATION_CONSOLE, DELEGATION_TERMINAL,
 };
@@ -341,119 +340,6 @@ mod create_process_api_test {
     }
 }
 
-/// Test module for find_window_with_retry_api functionality.
-mod find_window_retry_test {
-    use super::*;
-
-    /// Tests find_window_with_retry_api with successful window finding on first attempt.
-    /// Validates that retry logic works correctly when window is found immediately.
-    #[test]
-    fn test_find_window_with_retry_api_success_first_attempt() {
-        let mut mock_api = MockWindowsApi::new();
-        let process_id = 1234u32;
-        let expected_handle = 0xABCDEF00usize;
-        let max_attempts = 5u32;
-
-        mock_api
-            .expect_enumerate_windows_for_process()
-            .with(eq(process_id))
-            .times(1)
-            .returning(move |_| return Some(expected_handle));
-
-        let result = find_window_with_retry_api(&mock_api, process_id, max_attempts);
-
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), expected_handle);
-    }
-
-    /// Tests find_window_with_retry_api with window found after multiple attempts.
-    /// Validates that retry logic continues until success.
-    #[test]
-    fn test_find_window_with_retry_api_success_after_retries() {
-        let mut mock_api = MockWindowsApi::new();
-        let process_id = 5678u32;
-        let expected_handle = 0x12345678usize;
-        let max_attempts = 5u32;
-
-        // Fail 3 times, then succeed
-        mock_api
-            .expect_enumerate_windows_for_process()
-            .with(eq(process_id))
-            .times(3)
-            .returning(|_| return None);
-
-        mock_api
-            .expect_enumerate_windows_for_process()
-            .with(eq(process_id))
-            .times(1)
-            .returning(move |_| return Some(expected_handle));
-
-        let result = find_window_with_retry_api(&mock_api, process_id, max_attempts);
-
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), expected_handle);
-    }
-
-    /// Tests find_window_with_retry_api when max attempts is reached.
-    /// Validates that retry logic stops after max_attempts and returns None.
-    #[test]
-    fn test_find_window_with_retry_api_max_attempts_reached() {
-        let mut mock_api = MockWindowsApi::new();
-        let process_id = 9999u32;
-        let max_attempts = 3u32;
-
-        mock_api
-            .expect_enumerate_windows_for_process()
-            .with(eq(process_id))
-            .times(3)
-            .returning(|_| return None);
-
-        let result = find_window_with_retry_api(&mock_api, process_id, max_attempts);
-
-        assert!(result.is_none());
-    }
-
-    /// Tests find_window_with_retry_api with zero max attempts.
-    /// Validates edge case handling when no attempts are allowed.
-    #[test]
-    fn test_find_window_with_retry_api_zero_attempts() {
-        let mut mock_api = MockWindowsApi::new();
-        let process_id = 1111u32;
-        let max_attempts = 0u32;
-
-        // Should not call the API at all
-        mock_api
-            .expect_enumerate_windows_for_process()
-            .with(eq(process_id))
-            .times(0);
-
-        let result = find_window_with_retry_api(&mock_api, process_id, max_attempts);
-
-        assert!(result.is_none());
-    }
-
-    /// Tests find_window_with_retry_api with single attempt.
-    /// Validates behavior when only one attempt is allowed.
-    #[test]
-    fn test_find_window_with_retry_api_single_attempt() {
-        let mut mock_api = MockWindowsApi::new();
-        let process_id = 2222u32;
-        let expected_handle = 0xFEDCBA98usize;
-        let max_attempts = 1u32;
-
-        mock_api
-            .expect_enumerate_windows_for_process()
-            .with(eq(process_id))
-            .times(1)
-            .returning(move |_| return Some(expected_handle));
-
-        let result = find_window_with_retry_api(&mock_api, process_id, max_attempts);
-
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), expected_handle);
-    }
-}
-
 /// Test module for command line building functionality.
 mod command_line_test {
     use crate::build_command_line;
@@ -621,81 +507,6 @@ mod spawn_process_test {
         let process_info = result.unwrap();
         assert_eq!(process_info.dwProcessId, 5000);
         assert_eq!(process_info.dwThreadId, 6000);
-    }
-}
-
-/// Test module for window handle retrieval functionality.
-mod window_handle_test {
-    use super::*;
-
-    /// Tests get_console_window_handle with successful window finding.
-    /// Validates proper API call and return value handling.
-    #[test]
-    fn test_get_console_window_handle_found() {
-        let mut mock_api = MockWindowsApi::new();
-        let test_process_id = 1234u32;
-        let expected_handle = 0x12345678usize;
-
-        mock_api
-            .expect_get_window_handle_for_process()
-            .with(eq(test_process_id))
-            .times(1)
-            .returning(move |_| return Some(expected_handle));
-
-        let result = get_console_window_handle_with_api(&mock_api, test_process_id);
-
-        assert!(result.is_some());
-        let hwnd = result.unwrap();
-        assert_eq!(hwnd.0 as usize, expected_handle);
-    }
-
-    /// Tests get_console_window_handle when window is not found.
-    /// Validates proper handling when no window exists for the process ID.
-    #[test]
-    fn test_get_console_window_handle_not_found() {
-        let mut mock_api = MockWindowsApi::new();
-        let test_process_id = 9999u32;
-
-        mock_api
-            .expect_get_window_handle_for_process()
-            .with(eq(test_process_id))
-            .times(1)
-            .returning(|_| return None);
-
-        let result = get_console_window_handle_with_api(&mock_api, test_process_id);
-
-        assert!(result.is_none());
-    }
-
-    /// Tests get_console_window_handle with multiple process IDs.
-    /// Validates that different process IDs are handled correctly.
-    #[test]
-    fn test_get_console_window_handle_multiple_processes() {
-        let mut mock_api = MockWindowsApi::new();
-        let process_id_1 = 1111u32;
-        let process_id_2 = 2222u32;
-        let handle_1 = 0x1111usize;
-        let handle_2 = 0x2222usize;
-
-        mock_api
-            .expect_get_window_handle_for_process()
-            .with(eq(process_id_1))
-            .times(1)
-            .returning(move |_| return Some(handle_1));
-
-        mock_api
-            .expect_get_window_handle_for_process()
-            .with(eq(process_id_2))
-            .times(1)
-            .returning(move |_| return Some(handle_2));
-
-        let result_1 = get_console_window_handle_with_api(&mock_api, process_id_1);
-        let result_2 = get_console_window_handle_with_api(&mock_api, process_id_2);
-
-        assert!(result_1.is_some());
-        assert!(result_2.is_some());
-        assert_eq!(result_1.unwrap().0 as usize, handle_1);
-        assert_eq!(result_2.unwrap().0 as usize, handle_2);
     }
 }
 
