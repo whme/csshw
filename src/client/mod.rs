@@ -15,7 +15,7 @@ use crate::utils::config::ClientConfig;
 use crate::utils::named_pipe::WindowsNamedPipeClient;
 use crate::utils::{get_console_input_buffer, get_console_title, set_console_title};
 use ssh2_config::{ParseRule, SshConfig};
-use tokio::process::{Child, Command};
+use std::process::{Child, Command};
 use windows::Win32::Foundation::GetLastError;
 use windows::Win32::System::Console::{
     GenerateConsoleCtrlEvent, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT,
@@ -127,7 +127,7 @@ fn get_username_and_host(username: Option<String>, host: &str, config: &ClientCo
 /// # Returns
 ///
 /// The handle to created [Child] process.
-async fn launch_ssh_process(username_host: &str, config: &ClientConfig) -> Child {
+fn launch_ssh_process(username_host: &str, config: &ClientConfig) -> Child {
     let arguments = replace_argument_placeholders(
         &config.arguments,
         &config.username_host_placeholder,
@@ -337,7 +337,7 @@ fn run(child: &mut Child) {
 
 /// The entrypoint for the `client` subcommand.
 ///
-/// Spawns a tokio background thread to ensure the console window title is not replaced
+/// Spawns a background thread to ensure the console window title is not replaced
 /// by the name of the child process once its launched.
 /// Starts the SSH process as child process.
 /// Executes the main run loop.
@@ -349,21 +349,21 @@ fn run(child: &mut Child) {
 ///                   Will try to resolve the correct username from the ssh config
 ///                   if none is given.
 /// * `config`      - A reference to the `ClientConfig`.
-pub async fn main(host: String, username: Option<String>, config: &ClientConfig) {
+pub fn main(host: String, username: Option<String>, config: &ClientConfig) {
     let username_host = get_username_and_host(username, &host, config);
     let username_host_title = username_host.clone();
-    tokio::spawn(async move {
+    std::thread::spawn(move || {
         loop {
             // Set the console title (child might overwrite it, so we have to keep checking it)
             let console_title = format!("{PKG_NAME} - {username_host_title}");
             if console_title != get_console_title() {
                 set_console_title(console_title.as_str());
             }
-            tokio::time::sleep(Duration::from_millis(5)).await;
+            std::thread::sleep(Duration::from_millis(5));
         }
     });
 
-    let mut child = launch_ssh_process(&username_host, config).await;
+    let mut child = launch_ssh_process(&username_host, config);
 
     run(&mut child);
 

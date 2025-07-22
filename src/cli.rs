@@ -78,12 +78,7 @@ pub struct MainEntrypoint;
 #[cfg_attr(test, automock)]
 pub trait Entrypoint {
     /// Entrypoint for the client subcommand
-    fn client_main(
-        &mut self,
-        host: String,
-        username: Option<String>,
-        config: &ClientConfig,
-    ) -> impl std::future::Future<Output = ()> + Send;
+    fn client_main(&mut self, host: String, username: Option<String>, config: &ClientConfig);
     /// Entrypoint for the daemon subcommand
     fn daemon_main(
         &mut self,
@@ -98,8 +93,8 @@ pub trait Entrypoint {
 }
 
 impl Entrypoint for MainEntrypoint {
-    async fn client_main(&mut self, host: String, username: Option<String>, config: &ClientConfig) {
-        client_main(host, username, config).await;
+    fn client_main(&mut self, host: String, username: Option<String>, config: &ClientConfig) {
+        client_main(host, username, config);
     }
 
     async fn daemon_main(
@@ -177,9 +172,7 @@ pub async fn main<T: Entrypoint>(args: Args, mut entrypoint: T) {
             if args.debug {
                 init_logger(&format!("csshw_client_{host}"));
             }
-            entrypoint
-                .client_main(host.to_owned(), args.username.to_owned(), &config.client)
-                .await;
+            entrypoint.client_main(host.to_owned(), args.username.to_owned(), &config.client);
         }
         Some(Commands::Daemon {}) => {
             if args.debug {

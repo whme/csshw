@@ -153,7 +153,6 @@ mod cli_main_test {
             .returning(|host, username, _| {
                 assert_eq!(host, "host1");
                 assert_eq!(username, Some("username".to_string()));
-                return Box::pin(async {});
             });
         let args = Args {
             command: Some(Commands::Client {
