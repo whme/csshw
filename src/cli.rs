@@ -4,7 +4,7 @@ use crate::client::main as client_main;
 use crate::daemon::{main as daemon_main, resolve_cluster_tags};
 use crate::utils::config::{ClientConfig, Cluster, Config, ConfigOpt, DaemonConfig};
 use crate::{
-    get_concole_window_handle, init_logger, spawn_console_process,
+    get_console_window_handle, init_logger, spawn_console_process,
     WindowsSettingsDefaultTerminalApplicationGuard,
 };
 use clap::{ArgAction, Parser, Subcommand};
@@ -134,7 +134,7 @@ impl Entrypoint for MainEntrypoint {
         let _guard = WindowsSettingsDefaultTerminalApplicationGuard::new();
         // We must wait for the window to actually launch before dropping the _guard as we might otherwise
         // reset the configuration before the window was launched
-        let _ = get_concole_window_handle(
+        let _ = get_console_window_handle(
             spawn_console_process(&format!("{PKG_NAME}.exe"), daemon_args).dwProcessId,
         );
     }

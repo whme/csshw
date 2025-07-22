@@ -13,7 +13,7 @@ use std::{
 };
 use std::{thread, time};
 
-use crate::get_concole_window_handle;
+use crate::get_console_window_handle;
 use crate::utils::config::{Cluster, DaemonConfig};
 use crate::utils::debug::StringRepr;
 use crate::utils::{clear_screen, set_console_color};
@@ -736,7 +736,7 @@ fn launch_client_console(
     }
     client_args.push("client");
     client_args.extend(vec!["--", actual_host]);
-    let client_window_handle = get_concole_window_handle(
+    let client_window_handle = get_console_window_handle(
         spawn_console_process(&format!("{PKG_NAME}.exe"), client_args).dwProcessId,
     );
     arrange_client_window(

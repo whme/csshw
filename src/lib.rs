@@ -5,8 +5,8 @@
 #![warn(missing_docs)]
 #![doc(html_no_source)]
 
+use std::ffi::OsString;
 use std::fs::{create_dir, File};
-use std::{ffi::c_void, ffi::OsString};
 use std::{mem, ptr};
 
 use std::os::windows::ffi::OsStrExt;
@@ -65,38 +65,6 @@ pub trait Registry {
     fn set_registry_string_value(&self, path: &str, name: &str, value: &str) -> bool;
 }
 
-/// Trait for Windows API operations to enable mocking in tests
-#[cfg_attr(test, automock)]
-pub trait WindowsApi {
-    /// Create a new process
-    fn create_process_with_args(
-        &self,
-        application: &str,
-        args: Vec<String>,
-    ) -> Option<PROCESS_INFORMATION>;
-    /// Get window handle for process ID
-    fn get_window_handle_for_process(&self, process_id: u32) -> Option<usize>;
-    /// Low-level process creation API call
-    fn create_process_raw(
-        &self,
-        application: &str,
-        command_line: PWSTR,
-        startup_info: &mut STARTUPINFOW,
-        process_info: &mut PROCESS_INFORMATION,
-    ) -> windows::core::Result<()>;
-    /// Low-level window enumeration for a specific process
-    fn enumerate_windows_for_process(&self, process_id: u32) -> Option<usize>;
-}
-
-/// Trait for file system operations to enable mocking in tests
-#[cfg_attr(test, automock)]
-pub trait FileSystem {
-    /// Create a directory
-    fn create_directory(&self, path: &str) -> bool;
-    /// Create a log file
-    fn create_log_file(&self, filename: &str) -> bool;
-}
-
 /// Default implementation of Registry trait that performs actual Windows registry API calls
 pub struct DefaultRegistry;
 
@@ -134,26 +102,33 @@ impl Registry for DefaultRegistry {
     }
 }
 
+/// Trait for Windows API operations to enable mocking in tests
+#[cfg_attr(test, automock)]
+pub trait WindowsApi {
+    /// Create a new process
+    fn create_process_with_args(
+        &self,
+        application: &str,
+        args: Vec<String>,
+    ) -> Option<PROCESS_INFORMATION>;
+    /// Get window handle for process ID
+    fn get_window_handle_for_process(&self, process_id: u32) -> HWND;
+    /// Low-level process creation API call
+    fn create_process_raw(
+        &self,
+        application: &str,
+        command_line: PWSTR,
+        startup_info: &mut STARTUPINFOW,
+        process_info: &mut PROCESS_INFORMATION,
+    ) -> windows::core::Result<()>;
+}
+
 /// Data structure for window search callback
 struct WindowSearchData {
     /// The process ID we're searching for
     target_process_id: u32,
     /// Mutable reference to store the found window handle
     found_handle: *mut Option<HWND>,
-}
-
-/// Callback function for finding windows by process ID with proper handle capture
-unsafe extern "system" fn find_window_callback_with_capture(hwnd: HWND, lparam: LPARAM) -> BOOL {
-    let search_data = &mut *(lparam.0 as *mut WindowSearchData);
-    let mut window_process_id: u32 = 0;
-    GetWindowThreadProcessId(hwnd, Some(&mut window_process_id));
-
-    if search_data.target_process_id == window_process_id {
-        // Store the found window handle
-        *search_data.found_handle = Some(hwnd);
-        return FALSE; // Stop enumeration
-    }
-    return TRUE; // Continue enumeration
 }
 
 /// Default implementation of WindowsApi trait that performs actual Windows API calls
@@ -167,10 +142,6 @@ impl WindowsApi for DefaultWindowsApi {
     ) -> Option<PROCESS_INFORMATION> {
         let command_line = build_command_line(application, &args);
         return create_process_windows_api(application, &command_line);
-    }
-
-    fn get_window_handle_for_process(&self, process_id: u32) -> Option<usize> {
-        return find_window_for_process_windows_api(process_id);
     }
 
     fn create_process_raw(
@@ -196,25 +167,54 @@ impl WindowsApi for DefaultWindowsApi {
         };
     }
 
-    fn enumerate_windows_for_process(&self, process_id: u32) -> Option<usize> {
-        let mut found_handle: Option<HWND> = None;
+    fn get_window_handle_for_process(&self, process_id: u32) -> HWND {
+        let mut found_handle = None;
         let mut search_data = WindowSearchData {
             target_process_id: process_id,
             found_handle: &mut found_handle,
         };
 
-        let result = unsafe {
-            EnumWindows(
-                Some(find_window_callback_with_capture),
-                LPARAM(&mut search_data as *mut WindowSearchData as isize),
-            )
-        };
-
-        if result.is_ok() || found_handle.is_some() {
-            return found_handle.map(|hwnd| return hwnd.0 as usize);
+        loop {
+            let _ = unsafe {
+                EnumWindows(
+                    Some(find_window_callback_with_capture),
+                    LPARAM(&mut search_data as *mut WindowSearchData as isize),
+                )
+            };
+            if let Some(handle) = found_handle {
+                return handle;
+            }
         }
-        return None;
     }
+}
+
+/// Callback function for finding windows by process ID with proper handle capture
+unsafe extern "system" fn find_window_callback_with_capture(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let search_data = &mut *(lparam.0 as *mut WindowSearchData);
+    let mut window_process_id: u32 = 0;
+    GetWindowThreadProcessId(hwnd, Some(&mut window_process_id));
+
+    if search_data.target_process_id == window_process_id {
+        // Store the found window handle
+        *search_data.found_handle = Some(hwnd);
+        return FALSE; // Stop enumeration
+    }
+    return TRUE; // Continue enumeration
+}
+
+/// Return the Window Handle [HWND] for the foreground window associated with the given `process_id`.
+///
+/// If multiple foreground windows are associated with the given `process_id` it is undefined which [HWND] gets returned.
+///
+/// # Arguments
+///
+/// * `process_id` - ID of the process for which to retrieve the window handle.
+///
+/// # Returns
+///
+/// The Window Handle [HWND] for the window associated with the given `process_id`.
+pub fn get_console_window_handle(process_id: u32) -> HWND {
+    return DefaultWindowsApi.get_window_handle_for_process(process_id);
 }
 
 /// Build command line string for Windows process creation
@@ -296,46 +296,13 @@ pub fn create_process_windows_api(
     return create_process_with_command_line_api(&DefaultWindowsApi, application, command_line);
 }
 
-/// Find window with retry logic using the provided API (testable version)
-///
-/// # Arguments
-///
-/// * `api` - Windows API operations implementation
-/// * `process_id` - ID of the process for which to retrieve the window handle
-/// * `max_attempts` - Maximum number of attempts to find the window
-///
-/// # Returns
-///
-/// Window handle as usize or None if not found
-pub fn find_window_with_retry_api<W: WindowsApi>(
-    api: &W,
-    process_id: u32,
-    max_attempts: u32,
-) -> Option<usize> {
-    let mut attempts = 0;
-
-    while attempts < max_attempts {
-        if let Some(handle) = api.enumerate_windows_for_process(process_id) {
-            return Some(handle);
-        }
-        attempts += 1;
-    }
-
-    return None;
-}
-
-/// Find window for process using Windows API (legacy function for backward compatibility)
-///
-/// # Arguments
-///
-/// * `process_id` - ID of the process for which to retrieve the window handle
-///
-/// # Returns
-///
-/// Window handle as usize or None if not found
-pub fn find_window_for_process_windows_api(process_id: u32) -> Option<usize> {
-    const MAX_ATTEMPTS: u32 = 100;
-    return find_window_with_retry_api(&DefaultWindowsApi, process_id, MAX_ATTEMPTS);
+/// Trait for file system operations to enable mocking in tests
+#[cfg_attr(test, automock)]
+pub trait FileSystem {
+    /// Create a directory
+    fn create_directory(&self, path: &str) -> bool;
+    /// Create a log file
+    fn create_log_file(&self, filename: &str) -> bool;
 }
 
 /// Default implementation of FileSystem trait that performs actual file system operations
@@ -504,38 +471,6 @@ pub fn spawn_console_process_with_api<W: WindowsApi>(
 ) -> Option<PROCESS_INFORMATION> {
     let string_args: Vec<String> = args.iter().map(|s| return s.to_string()).collect();
     return api.create_process_with_args(application, string_args);
-}
-
-/// Return the Window Handle [HWND] for the foreground window associated with the given `process_id`.
-///
-/// If multiple foreground windows are associated with the given `process_id` it is undefined which [HWND] gets returned.
-///
-/// # Arguments
-///
-/// * `process_id` - ID of the process for which to retrieve the window handle.
-///
-/// # Returns
-///
-/// The Window Handle [HWND] for the window associated with the given `process_id`.
-pub fn get_concole_window_handle(process_id: u32) -> HWND {
-    return get_console_window_handle_with_api(&DefaultWindowsApi, process_id)
-        .expect("Failed to find window for process");
-}
-
-/// Get console window handle using the provided API.
-///
-/// # Arguments
-///
-/// * `api` - Windows API operations implementation
-/// * `process_id` - ID of the process for which to retrieve the window handle
-///
-/// # Returns
-///
-/// The Window Handle [HWND] for the window associated with the given `process_id`
-pub fn get_console_window_handle_with_api<W: WindowsApi>(api: &W, process_id: u32) -> Option<HWND> {
-    return api
-        .get_window_handle_for_process(process_id)
-        .map(|handle| return HWND(handle as *mut c_void));
 }
 
 /// Initialize the logger.
