@@ -6,17 +6,16 @@
 
 use log::{error, info, warn};
 use std::fs::File;
-use std::io::{self, BufReader};
+use std::io::BufReader;
 use std::path::Path;
 use std::time::Duration;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::utils::config::ClientConfig;
+use crate::utils::named_pipe::WindowsNamedPipeClient;
 use crate::utils::{get_console_input_buffer, get_console_title, set_console_title};
 use ssh2_config::{ParseRule, SshConfig};
-use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::process::{Child, Command};
-use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
 use windows::Win32::Foundation::GetLastError;
 use windows::Win32::System::Console::{
     GenerateConsoleCtrlEvent, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT,
@@ -48,10 +47,8 @@ enum ReadWriteResult {
         /// to close the console window after the client process encountered an unexpected error.
         key_event_records: Vec<KEY_EVENT_RECORD>,
     },
-    /// Trying to read from the pipe would require us to wait for data.
-    WouldBlock,
-    /// Something went wrong.
-    Err,
+    /// Unexpected error, might be recoverable.
+    Error,
     /// The pipe was closed.
     Disconnect,
 }
@@ -170,19 +167,13 @@ async fn launch_ssh_process(username_host: &str, config: &ClientConfig) -> Child
 /// to the console input buffer or not.
 ///
 /// [1]: https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipes
-async fn read_write_loop(
-    named_pipe_client: &NamedPipeClient,
+fn read_write_loop(
+    named_pipe_client: &WindowsNamedPipeClient,
     internal_buffer: &mut Vec<u8>,
 ) -> ReadWriteResult {
     let mut buf: [u8; SERIALIZED_INPUT_RECORD_0_LENGTH * 10] =
         [0; SERIALIZED_INPUT_RECORD_0_LENGTH * 10];
-    match named_pipe_client.try_read(&mut buf) {
-        Ok(0) => {
-            // Seems to only happen if the pipe is closed/server disconnects
-            // indicating that the daemon has been closed.
-            // Exit the client too in that case.
-            return ReadWriteResult::Disconnect;
-        }
+    match named_pipe_client.read(&mut buf) {
         Ok(n) => {
             internal_buffer.extend(&mut buf[0..n].iter());
             let iter = internal_buffer.chunks_exact(SERIALIZED_INPUT_RECORD_0_LENGTH);
@@ -201,12 +192,18 @@ async fn read_write_loop(
                 key_event_records,
             };
         }
-        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-            return ReadWriteResult::WouldBlock;
-        }
         Err(e) => {
-            error!("{}", e);
-            return ReadWriteResult::Err;
+            match e.kind() {
+                std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::UnexpectedEof => {
+                    // Pipe was closed by daemon
+                    return ReadWriteResult::Disconnect;
+                }
+                _ => {
+                    // Other errors might be temporary, log and continue
+                    error!("Named pipe read error (continuing): {}", e);
+                    return ReadWriteResult::Error;
+                }
+            }
         }
     }
 }
@@ -272,11 +269,11 @@ fn replace_argument_placeholders(
 /// # Arguments
 ///
 /// * `child` - Handle to the running SSH process.
-async fn run(child: &mut Child) {
+fn run(child: &mut Child) {
     // Many clients trying to open the pipe at the same time can cause
     // a file not found error, so keep trying until we managed to open it
-    let named_pipe_client: NamedPipeClient = loop {
-        match ClientOptions::new().open(PIPE_NAME) {
+    let named_pipe_client: WindowsNamedPipeClient = loop {
+        match WindowsNamedPipeClient::connect(PIPE_NAME) {
             Ok(named_pipe_client) => {
                 break named_pipe_client;
             }
@@ -288,15 +285,7 @@ async fn run(child: &mut Child) {
     let mut child_error = false;
     let mut internal_buffer: Vec<u8> = Vec::new();
     loop {
-        named_pipe_client
-            .ready(Interest::READABLE)
-            .await
-            .unwrap_or_else(|err| {
-                error!("{}", err);
-                panic!("Named client pipe is not ready to be read",)
-            });
-
-        match read_write_loop(&named_pipe_client, &mut internal_buffer).await {
+        match read_write_loop(&named_pipe_client, &mut internal_buffer) {
             ReadWriteResult::Success {
                 remainder,
                 key_event_records,
@@ -310,9 +299,8 @@ async fn run(child: &mut Child) {
                     }
                 }
             }
-            ReadWriteResult::WouldBlock | ReadWriteResult::Err => {
-                // Sleep some time to avoid hogging 100% CPU usage.
-                tokio::time::sleep(Duration::from_nanos(5)).await;
+            ReadWriteResult::Error => {
+                // Might be recoverable, we'll try again next iteration.
             }
             ReadWriteResult::Disconnect => {
                 warn!("Encountered disconnect when trying to read from named pipe");
@@ -377,7 +365,7 @@ pub async fn main(host: String, username: Option<String>, config: &ClientConfig)
 
     let mut child = launch_ssh_process(&username_host, config).await;
 
-    run(&mut child).await;
+    run(&mut child);
 
     // Make sure the client and all its subprocesses
     // are aware they need to shutdown.

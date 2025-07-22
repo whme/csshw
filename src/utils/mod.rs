@@ -193,6 +193,7 @@ static DEFAULT_WINDOWS_API: DefaultWindowsApi = DefaultWindowsApi;
 pub mod config;
 pub mod constants;
 pub mod debug;
+pub mod named_pipe;
 
 /// u16 representation of a [KEY_EVENT][1].
 ///
