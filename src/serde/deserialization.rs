@@ -1,56 +1,51 @@
-use windows::Win32::System::Console::{INPUT_RECORD_0, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0};
+use windows::Win32::{
+    Foundation::BOOL,
+    System::Console::{INPUT_RECORD_0, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0},
+};
 
-/// Deserialize a struct from a u8 slice.
-pub trait Deserialize {
-    /// Constructs and returns a struct from the the given u8 slice.
-    ///
-    /// Panics if reconstruction fails.
-    fn deserialize(slice: &mut [u8]) -> Self;
+/// Deserialize a [KEY_EVENT_RECORD_0] from a u8 slice using custom binary format.
+///
+/// Tries to read a u16 from the given slice in little-endian format.
+///
+/// Panics if reconstruction fails.
+pub fn deserialize_key_event_record_0(slice: &[u8]) -> KEY_EVENT_RECORD_0 {
+    return KEY_EVENT_RECORD_0 {
+        UnicodeChar: u16::from_le_bytes([slice[0], slice[1]]),
+    };
 }
 
-impl Deserialize for KEY_EVENT_RECORD_0 {
-    /// Constructs and returns a [KEY_EVENT_RECORD_0] struct from the given u8 slice.
-    ///
-    /// Tries to read a u16 from the given slice.
-    ///
-    /// Panics if reconstruction fails.
-    fn deserialize(slice: &mut [u8]) -> KEY_EVENT_RECORD_0 {
-        return KEY_EVENT_RECORD_0 {
-            UnicodeChar: rmp::decode::read_u16(&mut &(slice[..])).unwrap(),
-        };
-    }
+/// Deserialize a [KEY_EVENT_RECORD] from a u8 slice using custom binary format.
+/// The slice is expected to be 13 bytes long.
+///
+/// Layout: [1 byte KeyDown][2 bytes RepeatCount][2 bytes VirtualKeyCode]
+///         [2 bytes VirtualScanCode][2 bytes UnicodeChar][4 bytes ControlKeyState]
+///
+/// Panics if reconstruction fails.
+pub fn deserialize_key_event_record(slice: &[u8]) -> KEY_EVENT_RECORD {
+    return KEY_EVENT_RECORD {
+        // KeyDown (1 byte)
+        bKeyDown: BOOL::from(slice[0] != 0),
+        // RepeatCount (2 bytes LE)
+        wRepeatCount: u16::from_le_bytes([slice[1], slice[2]]),
+        // VirtualKeyCode (2 bytes LE)
+        wVirtualKeyCode: u16::from_le_bytes([slice[3], slice[4]]),
+        // VirtualScanCode (2 bytes LE)
+        wVirtualScanCode: u16::from_le_bytes([slice[5], slice[6]]),
+        // UnicodeChar (2 bytes LE)
+        uChar: KEY_EVENT_RECORD_0 {
+            UnicodeChar: u16::from_le_bytes([slice[7], slice[8]]),
+        },
+        // ControlKeyState (4 bytes LE)
+        dwControlKeyState: u32::from_le_bytes([slice[9], slice[10], slice[11], slice[12]]),
+    };
 }
 
-impl Deserialize for KEY_EVENT_RECORD {
-    /// Constructs and returns a [KEY_EVENT_RECORD] struct from the given u8 slice.
-    /// The slice is expected to be [`crate::serde::SERIALIZED_INPUT_RECORD_0_LENGTH`] long.
-    ///
-    /// Tries to read various datatypes in the following order:
-    ///
-    /// ```text
-    /// [bool KeyDown, u16 ReapetCount, u16 VirtualKeyCode, u16 VirtualScanCode, u16 UnicodeChar, u32 ControlKeyState]
-    /// ```
-    ///
-    /// Panics if reconstruction fails.
-    fn deserialize(slice: &mut [u8]) -> KEY_EVENT_RECORD {
-        return KEY_EVENT_RECORD {
-            bKeyDown: rmp::decode::read_bool(&mut &(slice[0..1])).unwrap().into(),
-            wRepeatCount: rmp::decode::read_u16(&mut &(slice[1..4])).unwrap(),
-            wVirtualKeyCode: rmp::decode::read_u16(&mut &(slice[4..7])).unwrap(),
-            wVirtualScanCode: rmp::decode::read_u16(&mut &(slice[7..10])).unwrap(),
-            uChar: KEY_EVENT_RECORD_0::deserialize(&mut slice[10..13]),
-            dwControlKeyState: rmp::decode::read_u32(&mut &(slice[13..18])).unwrap(),
-        };
-    }
-}
-
-impl Deserialize for INPUT_RECORD_0 {
-    /// Constructs and returns a [INPUT_RECORD_0].`KeyEvent` struct from the given u8 slice.
-    ///
-    /// Panics if reconstruction fails.
-    fn deserialize(slice: &mut [u8]) -> INPUT_RECORD_0 {
-        return INPUT_RECORD_0 {
-            KeyEvent: KEY_EVENT_RECORD::deserialize(slice),
-        };
-    }
+/// Deserialize an [INPUT_RECORD_0].`KeyEvent` from a u8 slice using custom binary format.
+///
+/// Panics if reconstruction fails.
+pub fn deserialize_input_record_0(slice: &[u8]) -> INPUT_RECORD_0 {
+    let key_event = deserialize_key_event_record(slice);
+    return INPUT_RECORD_0 {
+        KeyEvent: key_event,
+    };
 }

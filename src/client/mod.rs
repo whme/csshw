@@ -24,7 +24,7 @@ use windows::Win32::System::Console::{
 };
 
 use crate::{
-    serde::{deserialization::Deserialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
+    serde::{deserialization::deserialize_input_record_0, SERIALIZED_INPUT_RECORD_0_LENGTH},
     utils::constants::{PIPE_NAME, PKG_NAME},
 };
 
@@ -191,8 +191,7 @@ async fn read_write_loop(
                 if is_keep_alive_packet(serialzied_input_record) {
                     continue;
                 };
-                let input_record =
-                    INPUT_RECORD_0::deserialize(&mut serialzied_input_record.to_owned());
+                let input_record = deserialize_input_record_0(serialzied_input_record);
                 write_console_input(input_record);
                 key_event_records.push(unsafe { input_record.KeyEvent });
             }

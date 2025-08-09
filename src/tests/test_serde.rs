@@ -1,8 +1,9 @@
-use rmp::encode::ByteBuf;
 use windows::Win32::{
     Foundation::BOOL,
     System::Console::{INPUT_RECORD_0, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0},
 };
+
+use crate::serde::SERIALIZED_INPUT_RECORD_0_LENGTH;
 
 const EXPECTED_KEY_EVENT_RECORD_0: KEY_EVENT_RECORD_0 = KEY_EVENT_RECORD_0 { UnicodeChar: 61u16 };
 const EXPECTED_KEY_EVENT_RECORD: KEY_EVENT_RECORD = KEY_EVENT_RECORD {
@@ -17,71 +18,54 @@ const EXPECTED_INPUT_RECORD_0: INPUT_RECORD_0 = INPUT_RECORD_0 {
     KeyEvent: EXPECTED_KEY_EVENT_RECORD,
 };
 
-const EXPECTED_KEY_EVENT_RECORD_0_SEQUENCE: [u8; 3] = [
-    // `rmp::encode::write_u16` always writes a 3-byte sequence with the first byte being the marker.
-    205, // The UnicodeChar we encode is a u16 so we have 2u8 here.
-    0, 61,
+const EXPECTED_KEY_EVENT_RECORD_0_SEQUENCE: [u8; 2] = [
+    // UnicodeChar as u16 LE (2 bytes)
+    61, 0,
 ];
-const EXPECTED_KEY_EVENT_RECORD_SEQUENCE: [u8; 18] = [
-    // bKeyDown
-    195,
-    // wRepeatCount
-    205,
-    0,
-    61,
-    // wVirtualKeyCode
-    205,
-    0,
-    61,
-    // wVirtualScanCode
-    205,
-    0,
-    61,
-    // uChar
-    EXPECTED_KEY_EVENT_RECORD_0_SEQUENCE[0],
-    EXPECTED_KEY_EVENT_RECORD_0_SEQUENCE[1],
-    EXPECTED_KEY_EVENT_RECORD_0_SEQUENCE[2],
-    // dwControlKeyState
-    206,
-    0,
-    0,
-    0,
-    61,
+const EXPECTED_KEY_EVENT_RECORD_SEQUENCE: [u8; SERIALIZED_INPUT_RECORD_0_LENGTH] = [
+    // bKeyDown (1 byte)
+    1, // wRepeatCount (2 bytes LE)
+    61, 0, // wVirtualKeyCode (2 bytes LE)
+    61, 0, // wVirtualScanCode (2 bytes LE)
+    61, 0, // uChar (2 bytes LE)
+    61, 0, // dwControlKeyState (4 bytes LE)
+    61, 0, 0, 0,
 ];
-const EXPECTED_INPUT_RECORD_0_SEQUENCE: [u8; 18] = EXPECTED_KEY_EVENT_RECORD_SEQUENCE;
+const EXPECTED_INPUT_RECORD_0_SEQUENCE: [u8; SERIALIZED_INPUT_RECORD_0_LENGTH] =
+    EXPECTED_KEY_EVENT_RECORD_SEQUENCE;
 
 mod serialization_test {
     use super::*;
-    use crate::serde::serialization::Serialize as _;
+    use crate::serde::serialization::*;
 
     #[test]
     fn test_serialize_key_event_record_0() {
         assert_eq!(
-            EXPECTED_KEY_EVENT_RECORD_0.serialize(),
-            ByteBuf::from_vec(EXPECTED_KEY_EVENT_RECORD_0_SEQUENCE.to_vec())
+            serialize_key_event_record_0(&EXPECTED_KEY_EVENT_RECORD_0),
+            EXPECTED_KEY_EVENT_RECORD_0_SEQUENCE.to_vec()
         )
     }
 
     #[test]
     fn test_serialize_key_event_record() {
         assert_eq!(
-            EXPECTED_KEY_EVENT_RECORD.serialize(),
-            ByteBuf::from_vec(EXPECTED_KEY_EVENT_RECORD_SEQUENCE.to_vec())
+            serialize_key_event_record(&EXPECTED_KEY_EVENT_RECORD),
+            EXPECTED_KEY_EVENT_RECORD_SEQUENCE.to_vec()
         )
     }
 
     #[test]
     fn test_serialize_input_record_0() {
         assert_eq!(
-            EXPECTED_INPUT_RECORD_0.serialize(),
-            ByteBuf::from_vec(EXPECTED_KEY_EVENT_RECORD_SEQUENCE.to_vec())
+            serialize_input_record_0(&EXPECTED_INPUT_RECORD_0),
+            EXPECTED_KEY_EVENT_RECORD_SEQUENCE.to_vec()
         )
     }
 }
 
 mod deserialization_test {
     use super::*;
-    use crate::serde::deserialization::Deserialize as _;
+    use crate::serde::deserialization::*;
 
     trait Equality<T = Self> {
         fn equals(&self, other: T) -> bool;
@@ -113,7 +97,7 @@ mod deserialization_test {
     #[test]
     fn test_deserialize_key_event_record_0() {
         assert!(
-            KEY_EVENT_RECORD_0::deserialize(&mut EXPECTED_KEY_EVENT_RECORD_0_SEQUENCE.clone())
+            deserialize_key_event_record_0(&EXPECTED_KEY_EVENT_RECORD_0_SEQUENCE)
                 .equals(EXPECTED_KEY_EVENT_RECORD_0)
         );
     }
@@ -121,7 +105,7 @@ mod deserialization_test {
     #[test]
     fn test_deserialize_key_event_record() {
         assert!(
-            KEY_EVENT_RECORD::deserialize(&mut EXPECTED_KEY_EVENT_RECORD_SEQUENCE.clone())
+            deserialize_key_event_record(&EXPECTED_KEY_EVENT_RECORD_SEQUENCE)
                 .equals(EXPECTED_KEY_EVENT_RECORD)
         )
     }
@@ -129,7 +113,7 @@ mod deserialization_test {
     #[test]
     fn test_deserialize_input_record_0() {
         assert!(
-            INPUT_RECORD_0::deserialize(&mut EXPECTED_INPUT_RECORD_0_SEQUENCE.clone())
+            deserialize_input_record_0(&EXPECTED_INPUT_RECORD_0_SEQUENCE)
                 .equals(EXPECTED_INPUT_RECORD_0),
         )
     }

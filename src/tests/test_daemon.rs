@@ -78,8 +78,9 @@ mod daemon_test {
     #[tokio::test]
     async fn test_named_pipe_server_routine() -> Result<(), Box<dyn std::error::Error>> {
         // Setup sender and receiver
-        let (sender, mut receiver) =
-            broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(18);
+        let (sender, mut receiver) = broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(
+            SERIALIZED_INPUT_RECORD_0_LENGTH,
+        );
         // and named pipe server and client
         let named_pipe_server = ServerOptions::new()
             .access_outbound(true)
@@ -96,23 +97,23 @@ mod daemon_test {
         // Verify the routine forwards the data through the pipe
         loop {
             // Send data to the routine
-            sender.send([2; 18])?;
+            sender.send([2; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
             // Wait for the pipe to be readable
             named_pipe_client.readable().await?;
-            let mut buf = [0; 18];
+            let mut buf = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
             // Try to read data, this may still fail with `WouldBlock`
             // if the readiness event is a false positive.
             match named_pipe_client.try_read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    assert_eq!(18, n);
+                    assert_eq!(SERIALIZED_INPUT_RECORD_0_LENGTH, n);
                     if buf[0] == 255 {
                         // Thats a keep alive packet, make sure its complete.
-                        assert_eq!([255; 18], buf);
+                        assert_eq!([255; SERIALIZED_INPUT_RECORD_0_LENGTH], buf);
                         keep_alive_received = true;
                     } else {
                         // Thats the actual data, make sure its complete.
-                        assert_eq!([2; 18], buf);
+                        assert_eq!([2; SERIALIZED_INPUT_RECORD_0_LENGTH], buf);
                         successful_iterations += 1;
                         if successful_iterations >= 5 {
                             break;
@@ -139,8 +140,9 @@ mod daemon_test {
     async fn test_named_pipe_server_routine_sender_closes_unexpectidly(
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Setup sender and receiver
-        let (sender, mut receiver) =
-            broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(18);
+        let (sender, mut receiver) = broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(
+            SERIALIZED_INPUT_RECORD_0_LENGTH,
+        );
         // and named pipe server and client
         let named_pipe_server = ServerOptions::new()
             .access_outbound(true)
@@ -152,24 +154,24 @@ mod daemon_test {
             named_pipe_server_routine(named_pipe_server, &mut receiver).await;
         });
         // Send data to the routine
-        sender.send([2; 18])?;
+        sender.send([2; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
         // Verify the routine forwards the data through the pipe
         loop {
             // Wait for the pipe to be readable
             named_pipe_client.readable().await?;
-            let mut buf = [0; 18];
+            let mut buf = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
             // Try to read data, this may still fail with `WouldBlock`
             // if the readiness event is a false positive.
             match named_pipe_client.try_read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    assert_eq!(18, n);
+                    assert_eq!(SERIALIZED_INPUT_RECORD_0_LENGTH, n);
                     if buf[0] == 255 {
                         // Thats a keep alive packet, make sure its complete.
-                        assert_eq!([255; 18], buf);
+                        assert_eq!([255; SERIALIZED_INPUT_RECORD_0_LENGTH], buf);
                     } else {
                         // Thats the actual data, make sure its complete.
-                        assert_eq!([2; 18], buf);
+                        assert_eq!([2; SERIALIZED_INPUT_RECORD_0_LENGTH], buf);
                         break;
                     }
                 }
