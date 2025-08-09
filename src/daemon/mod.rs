@@ -51,9 +51,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SW_RESTORE, SW_SHOWMINIMIZED, WINDOWPLACEMENT,
 };
 use windows::Win32::{
-    Foundation::{COLORREF, HWND},
-    System::Console::{
-        GetConsoleMode, GetConsoleWindow, SetConsoleMode, CONSOLE_MODE, ENABLE_PROCESSED_INPUT,
+    Foundation::{COLORREF, HANDLE, HWND, STILL_ACTIVE},
+    System::{
+        Console::{
+            GetConsoleMode, GetConsoleWindow, SetConsoleMode, CONSOLE_MODE, ENABLE_PROCESSED_INPUT,
+        },
+        Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_INFORMATION},
     },
 };
 
@@ -66,17 +69,18 @@ mod workspace;
 /// to the named pipe servers connected to each client in parallel.
 const SENDER_CAPACITY: usize = 1024 * 1024;
 
-/// Representation of a client window, holding a copy of the hostname the client
-/// is connected to and a window handle to the clients console window.
+/// Representation of a client
 #[derive(Clone)]
-struct ClientWindow {
+struct Client {
     /// Hostname the client is connect to (or supposed to connect to).
     hostname: String,
     /// Window handle to the clients console window.
-    hwnd: HWND,
+    window_handle: HWND,
+    /// Process handle to the client process.
+    process_handle: HANDLE,
 }
 
-unsafe impl Send for ClientWindow {}
+unsafe impl Send for Client {}
 
 /// Hacky wrapper around a window handle.
 ///
@@ -178,7 +182,7 @@ impl Daemon<'_> {
         // Looks like on windows 10 re-arranging the console resets the console output buffer
         set_console_color(CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color));
 
-        let mut client_console_window_handles = Arc::new(Mutex::new(
+        let mut clients = Arc::new(Mutex::new(
             launch_clients(
                 self.hosts.to_vec(),
                 &self.username,
@@ -196,8 +200,7 @@ impl Daemon<'_> {
         focus_window(daemon_console);
 
         self.print_instructions();
-        self.run(&mut client_console_window_handles, &workspace_area)
-            .await;
+        self.run(&mut clients, &workspace_area).await;
     }
 
     /// The main run loop of the `daemon` subcommand.
@@ -216,7 +219,7 @@ impl Daemon<'_> {
     ///
     /// # Arguments
     ///
-    /// * `client_console_window_handles`   - A thread safe mapping from the number
+    /// * `clients`                         - A thread safe mapping from the number
     ///                                       a client console window was launched at
     ///                                       in relation to the other client windows
     ///                                       and the clients console window handle.
@@ -225,23 +228,24 @@ impl Daemon<'_> {
     ///                                       by the daemon console window.
     async fn run(
         &mut self,
-        client_console_window_handles: &mut Arc<Mutex<BTreeMap<usize, ClientWindow>>>,
+        clients: &mut Arc<Mutex<Vec<Client>>>,
         workspace_area: &workspace::WorkspaceArea,
     ) {
         let (sender, _) =
             broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(SENDER_CAPACITY);
 
         let mut servers = Arc::new(Mutex::new(self.launch_named_pipe_servers(&sender)));
-        let server_clone: Arc<Mutex<Vec<JoinHandle<()>>>> = Arc::clone(&servers);
 
-        // FIXME: somehow we can't detect if the client consoles are being
-        // closed from the outside ...
+        // Monitor client processes
+        let clients_clone = Arc::clone(clients);
         tokio::spawn(async move {
             loop {
-                server_clone.lock().unwrap().retain(|server| {
-                    return !server.is_finished();
+                clients_clone.lock().unwrap().retain(|client| {
+                    let mut exit_code: u32 = 0;
+                    let _ = unsafe { GetExitCodeProcess(client.process_handle, &mut exit_code) };
+                    return exit_code == STILL_ACTIVE.0 as u32;
                 });
-                if server_clone.lock().unwrap().is_empty() {
+                if clients_clone.lock().unwrap().is_empty() {
                     // All clients have exited, exit the daemon as well
                     std::process::exit(0);
                 }
@@ -249,13 +253,13 @@ impl Daemon<'_> {
             }
         });
 
-        ensure_client_z_order_in_sync_with_daemon(client_console_window_handles.to_owned());
+        ensure_client_z_order_in_sync_with_daemon(clients.to_owned());
 
         loop {
             self.handle_input_record(
                 &sender,
                 read_keyboard_input(),
-                client_console_window_handles,
+                clients,
                 workspace_area,
                 &mut servers,
             )
@@ -328,7 +332,7 @@ impl Daemon<'_> {
     ///                                       by the named pipe servers (`servers`).
     /// * `input_record`                    - The [INPUT_RECORD_0].`KeyEvent` read from the
     ///                                       console input buffer.
-    /// * `client_console_window_handles`   - A thread safe mapping from the number
+    /// * `clients`                         - A thread safe mapping from the number
     ///                                       a client console window was launched at
     ///                                       in relation to the other client windows
     ///                                       and the clients console window handle.
@@ -345,7 +349,7 @@ impl Daemon<'_> {
         &mut self,
         sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
         input_record: INPUT_RECORD_0,
-        client_console_window_handles: &mut Arc<Mutex<BTreeMap<usize, ClientWindow>>>,
+        clients: &mut Arc<Mutex<Vec<Client>>>,
         workspace_area: &workspace::WorkspaceArea,
         servers: &mut Arc<Mutex<Vec<JoinHandle<()>>>>,
     ) {
@@ -366,10 +370,7 @@ impl Daemon<'_> {
                 key_event.dwControlKeyState,
             ) {
                 (VK_R, 0) => {
-                    self.rearrange_client_windows(
-                        &client_console_window_handles.lock().unwrap(),
-                        workspace_area,
-                    );
+                    self.rearrange_client_windows(&clients.lock().unwrap(), workspace_area);
                     self.arrange_daemon_console(workspace_area);
                 }
                 (VK_E, 0) => {
@@ -389,8 +390,7 @@ impl Daemon<'_> {
                             // Empty input (only newline '\n')
                         }
                         Ok(_) => {
-                            let number_of_existing_client_console_window_handles =
-                                client_console_window_handles.lock().unwrap().len();
+                            let number_of_existing_clients = clients.lock().unwrap().len();
                             let new_clients = launch_clients(
                                 resolve_cluster_tags(
                                     hostnames.split(' ').map(|x| return x.trim()).collect(),
@@ -403,14 +403,11 @@ impl Daemon<'_> {
                                 self.debug,
                                 workspace_area,
                                 self.config.aspect_ratio_adjustement,
-                                number_of_existing_client_console_window_handles,
+                                number_of_existing_clients,
                             )
                             .await;
-                            for (index, client_window) in new_clients {
-                                client_console_window_handles.lock().unwrap().insert(
-                                    number_of_existing_client_console_window_handles + index + 1,
-                                    client_window,
-                                );
+                            for client in new_clients.into_iter() {
+                                clients.lock().unwrap().push(client);
                                 self.launch_named_pipe_server(&mut servers.lock().unwrap(), sender);
                             }
                         }
@@ -419,10 +416,7 @@ impl Daemon<'_> {
                         }
                     }
                     toggle_processed_input_mode(); // Re-disable processed input mode.
-                    self.rearrange_client_windows(
-                        &client_console_window_handles.lock().unwrap(),
-                        workspace_area,
-                    );
+                    self.rearrange_client_windows(&clients.lock().unwrap(), workspace_area);
                     self.arrange_daemon_console(workspace_area);
                     // Focus the daemon console again.
                     let daemon_window = unsafe { GetConsoleWindow() };
@@ -432,9 +426,9 @@ impl Daemon<'_> {
                 }
                 (VK_H, 0) => {
                     let mut active_hostnames: Vec<String> = vec![];
-                    for handle in client_console_window_handles.lock().unwrap().values() {
-                        if unsafe { IsWindow(Some(handle.hwnd)).as_bool() } {
-                            active_hostnames.push(handle.hostname.clone());
+                    for client in clients.lock().unwrap().iter() {
+                        if unsafe { IsWindow(Some(client.window_handle)).as_bool() } {
+                            active_hostnames.push(client.hostname.clone());
                         }
                     }
                     cli_clipboard::set_contents(active_hostnames.join(" ")).unwrap();
@@ -517,7 +511,7 @@ impl Daemon<'_> {
     ///
     /// # Arguments
     ///
-    /// * `client_console_window_handles`   - A thread safe mapping from the number
+    /// * `clients`                         - A thread safe mapping from the number
     ///                                       a client console window was launched at
     ///                                       in relation to the other client windows
     ///                                       and the clients console window handle.
@@ -529,21 +523,25 @@ impl Daemon<'_> {
     ///                                       by the daemon console window.
     fn rearrange_client_windows(
         &self,
-        client_console_window_handles: &BTreeMap<usize, ClientWindow>,
+        clients: &[Client],
         workspace_area: &workspace::WorkspaceArea,
     ) {
-        let mut valid_handles: Vec<HWND> = Vec::new();
-        for handle in client_console_window_handles.values() {
-            if unsafe { IsWindow(Some(handle.hwnd)).as_bool() } {
-                valid_handles.push(handle.hwnd);
+        let mut valid_clients = Vec::new();
+        for client in clients.iter() {
+            let mut exit_code: u32 = 0;
+            let _ = unsafe { GetExitCodeProcess(client.process_handle, &mut exit_code) };
+            if exit_code == STILL_ACTIVE.0 as u32
+                && unsafe { IsWindow(Some(client.window_handle)).as_bool() }
+            {
+                valid_clients.push(client);
             }
         }
-        for (index, handle) in valid_handles.iter().enumerate() {
+        for (index, client) in valid_clients.iter().enumerate() {
             arrange_client_window(
-                handle,
+                &client.window_handle,
                 workspace_area,
                 index,
-                valid_handles.len(),
+                valid_clients.len(),
                 self.config.aspect_ratio_adjustement,
             )
         }
@@ -652,9 +650,9 @@ async fn launch_clients(
     workspace_area: &workspace::WorkspaceArea,
     aspect_ratio_adjustment: f64,
     index_offset: usize,
-) -> BTreeMap<usize, ClientWindow> {
-    let result = Arc::new(Mutex::new(BTreeMap::new()));
+) -> Vec<Client> {
     let len_hosts = hosts.len();
+    let result = Arc::new(Mutex::new(BTreeMap::new()));
     let host_iter = IntoIterator::into_iter(hosts);
     let mut handles = vec![];
     let _guard = WindowsSettingsDefaultTerminalApplicationGuard::new();
@@ -663,7 +661,7 @@ async fn launch_clients(
         let workspace_area_client = *workspace_area;
         let result_arc = Arc::clone(&result);
         let future = tokio::spawn(async move {
-            let handle = launch_client_console(
+            let (window_handle, process_handle) = launch_client_console(
                 &host,
                 username_client,
                 debug,
@@ -674,9 +672,10 @@ async fn launch_clients(
             );
             result_arc.lock().unwrap().insert(
                 index,
-                ClientWindow {
+                Client {
                     hostname: host.to_string(),
-                    hwnd: handle,
+                    window_handle,
+                    process_handle,
                 },
             );
         });
@@ -685,7 +684,8 @@ async fn launch_clients(
     for handle in handles {
         handle.await.unwrap();
     }
-    return result.lock().unwrap().clone();
+
+    return result.lock().unwrap().values().cloned().collect();
 }
 
 /// Launchs a `client` console process with its own window with the given
@@ -709,7 +709,7 @@ async fn launch_clients(
 ///
 /// # Returns
 ///
-/// The window handle to the console window of the client process.
+/// A tuple containing the window handle and process handle of the client process.
 fn launch_client_console(
     host: &str,
     username: Option<String>,
@@ -718,7 +718,7 @@ fn launch_client_console(
     workspace_area: &workspace::WorkspaceArea,
     number_of_consoles: usize,
     aspect_ratio_adjustment: f64,
-) -> HWND {
+) -> (HWND, HANDLE) {
     // The first argument must be `--` to ensure all following arguments are treated
     // as positional arguments and not as options if they start with `-`.
     let mut client_args: Vec<&str> = Vec::new();
@@ -736,9 +736,19 @@ fn launch_client_console(
     }
     client_args.push("client");
     client_args.extend(vec!["--", actual_host]);
-    let client_window_handle = get_console_window_handle(
-        spawn_console_process(&format!("{PKG_NAME}.exe"), client_args).dwProcessId,
-    );
+    let process_info = spawn_console_process(&format!("{PKG_NAME}.exe"), client_args);
+    let client_window_handle = get_console_window_handle(process_info.dwProcessId);
+    let process_handle = unsafe {
+        OpenProcess(PROCESS_QUERY_INFORMATION, false, process_info.dwProcessId).unwrap_or_else(
+            |err| {
+                panic!(
+                    "Failed to open process handle for process {}: {}",
+                    process_info.dwProcessId, err
+                );
+            },
+        )
+    };
+
     arrange_client_window(
         &client_window_handle,
         workspace_area,
@@ -746,7 +756,7 @@ fn launch_client_console(
         number_of_consoles,
         aspect_ratio_adjustment,
     );
-    return client_window_handle;
+    return (client_window_handle, process_handle);
 }
 
 /// Wait for the named pipe server to connect, then forward serialized
@@ -986,7 +996,7 @@ fn get_console_rect(
 ///
 /// # Arguments
 ///
-/// * `client_console_window_handles` - A thread safe mapping from the number
+/// * `clients`                       - A thread safe mapping from the number
 ///                                     a client console window was launched at
 ///                                     in relation to the other client windows
 ///                                     and the clients console window handle.
@@ -994,9 +1004,7 @@ fn get_console_rect(
 ///                                     it to be modified by the main thread
 ///                                     while we periodically read from it in the
 ///                                     background thread.
-fn ensure_client_z_order_in_sync_with_daemon(
-    client_console_window_handles: Arc<Mutex<BTreeMap<usize, ClientWindow>>>,
-) {
+fn ensure_client_z_order_in_sync_with_daemon(clients: Arc<Mutex<Vec<Client>>>) {
     tokio::spawn(async move {
         let daemon_handle = get_console_window_wrapper();
         let mut previous_foreground_window = get_foreground_window_wrapper();
@@ -1007,19 +1015,12 @@ fn ensure_client_z_order_in_sync_with_daemon(
                 continue;
             }
             if foreground_window == daemon_handle
-                && !client_console_window_handles
-                    .lock()
-                    .unwrap()
-                    .values()
-                    .any(|client_handle| {
-                        return client_handle.hwnd == previous_foreground_window.hwdn
-                            || client_handle.hwnd == daemon_handle.hwdn;
-                    })
+                && !clients.lock().unwrap().iter().any(|client| {
+                    return client.window_handle == previous_foreground_window.hwdn
+                        || client.window_handle == daemon_handle.hwdn;
+                })
             {
-                defer_windows(
-                    &client_console_window_handles.lock().unwrap(),
-                    &daemon_handle.hwdn,
-                );
+                defer_windows(&clients.lock().unwrap(), &daemon_handle.hwdn);
             }
             previous_foreground_window = foreground_window;
         }
@@ -1034,38 +1035,33 @@ fn ensure_client_z_order_in_sync_with_daemon(
 ///
 /// # Arguments
 ///
-/// * `client_console_window_handles` - A thread safe mapping from the number
+/// * `clients`                       - A thread safe mapping from the number
 ///                                     a client console window was launched at
 ///                                     in relation to the other client windows
 ///                                     and the clients console window handle.
 /// * `daemon_handle`                 - Handle to the daemon console window.
-fn defer_windows(
-    client_console_window_handles: &BTreeMap<usize, ClientWindow>,
-    daemon_handle: &HWND,
-) {
-    for handle in client_console_window_handles
-        .values()
-        .chain([&ClientWindow {
-            hostname: "root".to_owned(),
-            hwnd: *daemon_handle,
-        }])
-    {
+fn defer_windows(clients: &[Client], daemon_handle: &HWND) {
+    for client in clients.iter().chain([&Client {
+        hostname: "root".to_owned(),
+        window_handle: *daemon_handle,
+        process_handle: HANDLE::default(),
+    }]) {
         // First restore if window is minimized
         let mut placement: WINDOWPLACEMENT = WINDOWPLACEMENT {
             length: mem::size_of::<WINDOWPLACEMENT>() as u32,
             ..Default::default()
         };
-        match unsafe { GetWindowPlacement(handle.hwnd, &mut placement) } {
+        match unsafe { GetWindowPlacement(client.window_handle, &mut placement) } {
             Ok(_) => {}
             Err(_) => {
                 continue;
             }
         }
         if placement.showCmd == SW_SHOWMINIMIZED.0.try_into().unwrap() {
-            let _ = unsafe { ShowWindow(handle.hwnd, SW_RESTORE) };
+            let _ = unsafe { ShowWindow(client.window_handle, SW_RESTORE) };
         }
         // Then bring it to front using UI automation
-        focus_window(handle.hwnd);
+        focus_window(client.window_handle);
     }
 }
 
