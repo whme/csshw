@@ -236,7 +236,7 @@ impl Daemon<'_> {
 
         // FIXME: somehow we can't detect if the client consoles are being
         // closed from the outside ...
-        tokio::spawn(async move {
+        std::thread::spawn(move || {
             loop {
                 server_clone.lock().unwrap().retain(|server| {
                     return !server.is_finished();
@@ -245,7 +245,7 @@ impl Daemon<'_> {
                     // All clients have exited, exit the daemon as well
                     std::process::exit(0);
                 }
-                tokio::time::sleep(Duration::from_millis(5)).await;
+                std::thread::sleep(Duration::from_millis(5));
             }
         });
 
