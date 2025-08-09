@@ -997,11 +997,11 @@ fn get_console_rect(
 fn ensure_client_z_order_in_sync_with_daemon(
     client_console_window_handles: Arc<Mutex<BTreeMap<usize, ClientWindow>>>,
 ) {
-    tokio::spawn(async move {
+    std::thread::spawn(move || {
         let daemon_handle = get_console_window_wrapper();
         let mut previous_foreground_window = get_foreground_window_wrapper();
         loop {
-            tokio::time::sleep(Duration::from_millis(1)).await;
+            std::thread::sleep(Duration::from_millis(1));
             let foreground_window = get_foreground_window_wrapper();
             if previous_foreground_window == foreground_window {
                 continue;
