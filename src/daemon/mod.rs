@@ -18,7 +18,7 @@ use crate::utils::config::{Cluster, DaemonConfig};
 use crate::utils::debug::StringRepr;
 use crate::utils::{clear_screen, set_console_color};
 use crate::{
-    serde::{serialization::Serialize, SERIALIZED_INPUT_RECORD_0_LENGTH},
+    serde::{serialization::serialize_input_record_0, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
     utils::{
         arrange_console,
@@ -446,7 +446,7 @@ impl Daemon<'_> {
             )
         };
         match sender.send(
-            input_record.serialize().as_mut_vec()[..]
+            serialize_input_record_0(&input_record)[..]
                 .try_into()
                 .unwrap_or_else(error_handler),
         ) {

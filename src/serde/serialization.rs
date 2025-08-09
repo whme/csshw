@@ -1,43 +1,45 @@
-use rmp::encode::ByteBuf;
 use windows::Win32::System::Console::{INPUT_RECORD_0, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0};
 
-/// Serialize a struct into a [ByteBuf].
-pub trait Serialize {
-    /// Returns a serialized self as [ByteBuf].
-    fn serialize(&self) -> ByteBuf;
+use crate::serde::SERIALIZED_INPUT_RECORD_0_LENGTH;
+
+/// Serialize a [KEY_EVENT_RECORD_0] into a `Vec<u8>` using custom binary format.
+///
+/// Returns the u16 `UnicodeChar` as `Vec<u8>`in little-endian format.
+pub fn serialize_key_event_record_0(record: &KEY_EVENT_RECORD_0) -> Vec<u8> {
+    return unsafe { record.UnicodeChar }.to_le_bytes().to_vec();
 }
 
-impl Serialize for KEY_EVENT_RECORD_0 {
-    /// Returns the u16 `UnicodeChar` in a [ByteBuf].
-    fn serialize(&self) -> ByteBuf {
-        let mut buf = ByteBuf::new();
-        rmp::encode::write_u16(&mut buf, unsafe { self.UnicodeChar }).unwrap();
-        return buf;
-    }
+/// Serialize a [KEY_EVENT_RECORD] into a `Vec<u8>`using custom binary format.
+///
+/// Layout: [1 byte KeyDown][2 bytes RepeatCount][2 bytes VirtualKeyCode]
+///         [2 bytes VirtualScanCode][2 bytes UnicodeChar][4 bytes ControlKeyState]
+pub fn serialize_key_event_record(record: &KEY_EVENT_RECORD) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(SERIALIZED_INPUT_RECORD_0_LENGTH);
+
+    // KeyDown as u8 (1 byte)
+    buf.push(if record.bKeyDown.as_bool() { 1u8 } else { 0u8 });
+
+    // RepeatCount as u16 LE (2 bytes)
+    buf.extend_from_slice(&record.wRepeatCount.to_le_bytes());
+
+    // VirtualKeyCode as u16 LE (2 bytes)
+    buf.extend_from_slice(&record.wVirtualKeyCode.to_le_bytes());
+
+    // VirtualScanCode as u16 LE (2 bytes)
+    buf.extend_from_slice(&record.wVirtualScanCode.to_le_bytes());
+
+    // UnicodeChar as u16 LE (2 bytes)
+    buf.extend_from_slice(&unsafe { record.uChar.UnicodeChar }.to_le_bytes());
+
+    // ControlKeyState as u32 LE (4 bytes)
+    buf.extend_from_slice(&record.dwControlKeyState.to_le_bytes());
+
+    return buf;
 }
 
-impl Serialize for KEY_EVENT_RECORD {
-    /// Returns the [KEY_EVENT_RECORD] as [ByteBuf] in the following layout:
-    /// ```ignore
-    /// [bool KeyDown, u16 ReapetCount, u16 VirtualKeyCode, u16 VirtualScanCode, u16 UnicodeChar, u32 ControlKeyState]
-    /// ```
-    fn serialize(&self) -> ByteBuf {
-        let mut buf = ByteBuf::new();
-        rmp::encode::write_bool(&mut buf, self.bKeyDown.as_bool()).unwrap();
-        rmp::encode::write_u16(&mut buf, self.wRepeatCount).unwrap();
-        rmp::encode::write_u16(&mut buf, self.wVirtualKeyCode).unwrap();
-        rmp::encode::write_u16(&mut buf, self.wVirtualScanCode).unwrap();
-        buf.as_mut_vec().append(self.uChar.serialize().as_mut_vec());
-        rmp::encode::write_u32(&mut buf, self.dwControlKeyState).unwrap();
-        return buf;
-    }
-}
-
-impl Serialize for INPUT_RECORD_0 {
-    /// Returns the [INPUT_RECORD_0].`KeyEvent` serialized as [ByteBuf].
-    ///
-    /// Panics if the [INPUT_RECORD_0] is not a `KeyEvent`.
-    fn serialize(&self) -> ByteBuf {
-        return unsafe { self.KeyEvent }.serialize();
-    }
+/// Serialize an [INPUT_RECORD_0].`KeyEvent` into a `Vec<u8>`using custom binary format.
+///
+/// Panics if the [INPUT_RECORD_0] is not a `KeyEvent`.
+pub fn serialize_input_record_0(record: &INPUT_RECORD_0) -> Vec<u8> {
+    return serialize_key_event_record(&unsafe { record.KeyEvent });
 }
