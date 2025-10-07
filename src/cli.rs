@@ -42,6 +42,11 @@ pub struct Args {
     /// username given via the `-u` option and over any ssh config value.
     ///
     /// E.g.: `csshw.exe -u user3 user1@host1 userA@hostA host3`
+    ///
+    /// Hosts can include a port number which will take precedence over the
+    /// port given via the `-p` option.
+    ///
+    /// E.g.: `csshw.exe -u root host1 host2:22 host3:2022`
     #[clap(required = false, global = true)]
     hosts: Vec<String>,
     /// Enable extensive logging
