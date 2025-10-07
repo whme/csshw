@@ -28,6 +28,9 @@ pub struct Args {
     /// Optional username used to connect to the hosts
     #[clap(long, short = 'u')]
     username: Option<String>,
+    /// Optional port used for all SSH connections
+    #[clap(long, short = 'p')]
+    port: Option<u16>,
     /// Hosts and/or cluster tag(s) to connect to
     ///
     /// Hosts or cluster tags might use brace expansion,
@@ -39,6 +42,11 @@ pub struct Args {
     /// username given via the `-u` option and over any ssh config value.
     ///
     /// E.g.: `csshw.exe -u user3 user1@host1 userA@hostA host3`
+    ///
+    /// Hosts can include a port number which will take precedence over the
+    /// port given via the `-p` option.
+    ///
+    /// E.g.: `csshw.exe -u root host1 host2:22 host3:2022`
     #[clap(required = false, global = true)]
     hosts: Vec<String>,
     /// Enable extensive logging
@@ -82,6 +90,7 @@ pub trait Entrypoint {
         &mut self,
         host: String,
         username: Option<String>,
+        port: Option<u16>,
         config: &ClientConfig,
     ) -> impl std::future::Future<Output = ()> + Send;
     /// Entrypoint for the daemon subcommand
@@ -89,6 +98,7 @@ pub trait Entrypoint {
         &mut self,
         hosts: Vec<String>,
         username: Option<String>,
+        port: Option<u16>,
         config: &DaemonConfig,
         clusters: &[Cluster],
         debug: bool,
@@ -98,39 +108,54 @@ pub trait Entrypoint {
 }
 
 impl Entrypoint for MainEntrypoint {
-    async fn client_main(&mut self, host: String, username: Option<String>, config: &ClientConfig) {
-        client_main(host, username, config).await;
+    async fn client_main(
+        &mut self,
+        host: String,
+        username: Option<String>,
+        port: Option<u16>,
+        config: &ClientConfig,
+    ) {
+        client_main(host, username, port, config).await;
     }
 
     async fn daemon_main(
         &mut self,
         hosts: Vec<String>,
         username: Option<String>,
+        port: Option<u16>,
         config: &DaemonConfig,
         clusters: &[Cluster],
         debug: bool,
     ) {
-        daemon_main(hosts, username, config, clusters, debug).await;
+        daemon_main(hosts, username, port, config, clusters, debug).await;
     }
 
     fn main(&mut self, config_path: &str, config: &Config, args: Args) {
         confy::store_path(config_path, config).unwrap();
 
-        let mut daemon_args: Vec<&str> = Vec::new();
+        let mut daemon_args: Vec<String> = Vec::new();
         if args.debug {
-            daemon_args.push("-d");
+            daemon_args.push("-d".to_string());
         }
-        if let Some(username) = args.username.as_ref() {
-            daemon_args.push("-u");
+        if let Some(username) = args.username {
+            daemon_args.push("-u".to_string());
             daemon_args.push(username);
         }
-        daemon_args.push("daemon");
+        if let Some(port) = args.port {
+            daemon_args.push("-p".to_string());
+            daemon_args.push(port.to_string());
+        }
+        daemon_args.push("daemon".to_string());
         // Order is important here. If the hosts are passed before the daemon subcommand
         // it will not be recognizes as such and just be passed along as one of the hosts.
-        daemon_args.extend(resolve_cluster_tags(
-            args.hosts.iter().map(|host| return &**host).collect(),
-            &config.clusters,
-        ));
+        daemon_args.extend(
+            resolve_cluster_tags(
+                args.hosts.iter().map(|host| return &**host).collect(),
+                &config.clusters,
+            )
+            .into_iter()
+            .map(|host| return host.to_string()),
+        );
         let _guard = WindowsSettingsDefaultTerminalApplicationGuard::new();
         // We must wait for the window to actually launch before dropping the _guard as we might otherwise
         // reset the configuration before the window was launched
@@ -178,7 +203,12 @@ pub async fn main<T: Entrypoint>(args: Args, mut entrypoint: T) {
                 init_logger(&format!("csshw_client_{host}"));
             }
             entrypoint
-                .client_main(host.to_owned(), args.username.to_owned(), &config.client)
+                .client_main(
+                    host.to_owned(),
+                    args.username.to_owned(),
+                    args.port,
+                    &config.client,
+                )
                 .await;
         }
         Some(Commands::Daemon {}) => {
@@ -189,6 +219,7 @@ pub async fn main<T: Entrypoint>(args: Args, mut entrypoint: T) {
                 .daemon_main(
                     args.hosts.to_owned(),
                     args.username.clone(),
+                    args.port,
                     &config.daemon,
                     &config.clusters,
                     args.debug,

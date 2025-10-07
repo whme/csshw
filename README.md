@@ -47,13 +47,16 @@ Arguments:
 
           E.g.: `csshw.exe -u user3 user1@host1 userA@hostA host3`
 
-          Hosts can include a port number.
+          Hosts can include a port number which will take precedence over the port given via the `-p` option.
 
           E.g.: `csshw.exe -u root host1 host2:22 host3:2022`
 
 Options:
   -u, --username <USERNAME>
           Optional username used to connect to the hosts
+
+  -p, --port <PORT>
+          Optional port used for all SSH connections
 
   -d, --debug
           Enable extensive logging

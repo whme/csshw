@@ -428,7 +428,11 @@ mod spawn_process_test {
                 });
             });
 
-        let result = spawn_console_process_with_api(&mock_api, "cmd.exe", &["/c", "echo", "test"]);
+        let result = spawn_console_process_with_api(
+            &mock_api,
+            "cmd.exe",
+            vec!["/c".to_string(), "echo".to_string(), "test".to_string()],
+        );
 
         assert!(result.is_some());
         let process_info = result.unwrap();
@@ -448,7 +452,8 @@ mod spawn_process_test {
             .times(1)
             .returning(|_, _| return None);
 
-        let result = spawn_console_process_with_api(&mock_api, "nonexistent.exe", &["arg1"]);
+        let result =
+            spawn_console_process_with_api(&mock_api, "nonexistent.exe", vec!["arg1".to_string()]);
 
         assert!(result.is_none());
     }
@@ -472,7 +477,7 @@ mod spawn_process_test {
                 });
             });
 
-        let result = spawn_console_process_with_api(&mock_api, "notepad.exe", &[]);
+        let result = spawn_console_process_with_api(&mock_api, "notepad.exe", vec![]);
 
         assert!(result.is_some());
         let process_info = result.unwrap();
@@ -486,11 +491,14 @@ mod spawn_process_test {
     fn test_spawn_console_process_complex_args() {
         let mut mock_api = MockWindowsApi::new();
 
-        let args = vec!["-o", "StrictHostKeyChecking=no", "user@host.com"];
-        let string_args: Vec<String> = args.iter().map(|s| return s.to_string()).collect();
+        let args = vec![
+            "-o".to_string(),
+            "StrictHostKeyChecking=no".to_string(),
+            "user@host.com".to_string(),
+        ];
         mock_api
             .expect_create_process_with_args()
-            .with(eq("ssh.exe"), eq(string_args))
+            .with(eq("ssh.exe"), eq(args.clone()))
             .times(1)
             .returning(|_, _| {
                 return Some(PROCESS_INFORMATION {
@@ -501,7 +509,7 @@ mod spawn_process_test {
                 });
             });
 
-        let result = spawn_console_process_with_api(&mock_api, "ssh.exe", &args);
+        let result = spawn_console_process_with_api(&mock_api, "ssh.exe", args);
 
         assert!(result.is_some());
         let process_info = result.unwrap();

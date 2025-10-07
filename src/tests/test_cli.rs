@@ -14,6 +14,7 @@ mod cli_args_test {
         let args = Args::parse_from(vec!["executable_name", "host1", "host2", "cluster1"]);
         assert_eq!(args.command, None);
         assert_eq!(args.username, None);
+        assert_eq!(args.port, None);
         assert_eq!(args.hosts, vec!["host1", "host2", "cluster1"]);
         assert!(!args.debug);
         // With username
@@ -27,6 +28,7 @@ mod cli_args_test {
         ]);
         assert_eq!(args.command, None);
         assert_eq!(args.username, Some("username".to_string()));
+        assert_eq!(args.port, None);
         assert_eq!(args.hosts, vec!["host1", "host2", "cluster1"]);
         assert!(!args.debug);
         // With username and debug
@@ -41,6 +43,38 @@ mod cli_args_test {
         ]);
         assert_eq!(args.command, None);
         assert_eq!(args.username, Some("username".to_string()));
+        assert_eq!(args.port, None);
+        assert_eq!(args.hosts, vec!["host1", "host2", "cluster1"]);
+        assert!(args.debug);
+        // With port
+        let args = Args::parse_from(vec![
+            "executable_name",
+            "-p",
+            "2222",
+            "host1",
+            "host2",
+            "cluster1",
+        ]);
+        assert_eq!(args.command, None);
+        assert_eq!(args.username, None);
+        assert_eq!(args.port, Some(2222));
+        assert_eq!(args.hosts, vec!["host1", "host2", "cluster1"]);
+        assert!(!args.debug);
+        // With username, port and debug
+        let args = Args::parse_from(vec![
+            "executable_name",
+            "-u",
+            "username",
+            "-p",
+            "8080",
+            "-d",
+            "host1",
+            "host2",
+            "cluster1",
+        ]);
+        assert_eq!(args.command, None);
+        assert_eq!(args.username, Some("username".to_string()));
+        assert_eq!(args.port, Some(8080));
         assert_eq!(args.hosts, vec!["host1", "host2", "cluster1"]);
         assert!(args.debug);
     }
@@ -111,6 +145,7 @@ mod cli_main_test {
         let args = Args {
             command: None,
             username: None,
+            port: None,
             hosts: vec!["host1".to_string(), "host2".to_string()],
             debug: false,
         };
@@ -130,15 +165,17 @@ mod cli_main_test {
         let mut mock = MockEntrypoint::new();
         mock.expect_daemon_main()
             .once()
-            .returning(|hosts, username, _, _, debug| {
+            .returning(|hosts, username, port, _, _, debug| {
                 assert_eq!(hosts, vec!["host1".to_string(), "host2".to_string()]);
                 assert_eq!(username, Some("username".to_string()));
+                assert_eq!(port, None);
                 assert!(!debug);
                 return Box::pin(async {});
             });
         let args = Args {
             command: Some(Commands::Daemon {}),
             username: Some("username".to_string()),
+            port: None,
             hosts: vec!["host1".to_string(), "host2".to_string()],
             debug: false,
         };
@@ -150,9 +187,10 @@ mod cli_main_test {
         let mut mock = MockEntrypoint::new();
         mock.expect_client_main()
             .once()
-            .returning(|host, username, _| {
+            .returning(|host, username, port, _| {
                 assert_eq!(host, "host1");
                 assert_eq!(username, Some("username".to_string()));
+                assert_eq!(port, None);
                 return Box::pin(async {});
             });
         let args = Args {
@@ -160,6 +198,7 @@ mod cli_main_test {
                 host: "host1".to_string(),
             }),
             username: Some("username".to_string()),
+            port: None,
             hosts: vec!["host1".to_string()],
             debug: false,
         };

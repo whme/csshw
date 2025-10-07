@@ -147,6 +147,8 @@ struct Daemon<'a> {
     /// If it is empty the clients will use the SSH config to find an approriate
     /// username.
     username: Option<String>,
+    /// Optional port used for all SSH connections.
+    port: Option<u16>,
     /// The `DaemonConfig` that controls how the daemon console window looks like.
     config: &'a DaemonConfig,
     /// List of available cluster tags
@@ -186,6 +188,7 @@ impl Daemon<'_> {
             launch_clients(
                 self.hosts.to_vec(),
                 &self.username,
+                self.port,
                 self.debug,
                 &workspace_area,
                 self.config.aspect_ratio_adjustement,
@@ -400,6 +403,7 @@ impl Daemon<'_> {
                                 .map(|x| return x.to_owned())
                                 .collect(),
                                 &self.username,
+                                self.port,
                                 self.debug,
                                 workspace_area,
                                 self.config.aspect_ratio_adjustement,
@@ -630,6 +634,7 @@ pub fn resolve_cluster_tags<'a>(hosts: Vec<&'a str>, clusters: &'a [Cluster]) ->
 /// * `username`                - Optional username, if none is given
 ///                               the client will use the SSH config to
 ///                               determine a username.
+/// * `port`                    - Optional port for SSH connections
 /// * `debug`                   - Toggles debug mode on the client.
 /// * `workspace_area`          - The available workspace area on the primary monitor
 ///                               minus the space occupied by the daemon console window.
@@ -646,6 +651,7 @@ pub fn resolve_cluster_tags<'a>(hosts: Vec<&'a str>, clusters: &'a [Cluster]) ->
 async fn launch_clients(
     hosts: Vec<String>,
     username: &Option<String>,
+    port: Option<u16>,
     debug: bool,
     workspace_area: &workspace::WorkspaceArea,
     aspect_ratio_adjustment: f64,
@@ -664,6 +670,7 @@ async fn launch_clients(
             let (window_handle, process_handle) = launch_client_console(
                 &host,
                 username_client,
+                port,
                 debug,
                 index + index_offset,
                 &workspace_area_client,
@@ -689,7 +696,7 @@ async fn launch_clients(
 }
 
 /// Launchs a `client` console process with its own window with the given
-/// CLI arguments/options: `host`, `username`, `debug`.
+/// CLI arguments/options: `host`, `username`, `port`, `debug`.
 ///
 /// Waits for the window to open, then re-arranges it based on
 /// the total number of clients, the size of the daemon console window and
@@ -699,6 +706,7 @@ async fn launch_clients(
 ///
 /// * `host`                    - Hostname the client should connect to
 /// * `username`                - Username the client should use
+/// * `port`                    - Optional port for SSH connections
 /// * `debug`                   - Toggle debug mode on the client
 /// * `index`                   - The index of the client in the list of all clients.
 ///                               Used to re-arrange the client window.
@@ -713,6 +721,7 @@ async fn launch_clients(
 fn launch_client_console(
     host: &str,
     username: Option<String>,
+    port: Option<u16>,
     debug: bool,
     index: usize,
     workspace_area: &workspace::WorkspaceArea,
@@ -721,9 +730,9 @@ fn launch_client_console(
 ) -> (HWND, HANDLE) {
     // The first argument must be `--` to ensure all following arguments are treated
     // as positional arguments and not as options if they start with `-`.
-    let mut client_args: Vec<&str> = Vec::new();
+    let mut client_args: Vec<String> = Vec::new();
     if debug {
-        client_args.push("-d");
+        client_args.push("-d".to_string());
     }
     let mut actual_host = host;
     let mut actual_username = username;
@@ -732,10 +741,14 @@ fn launch_client_console(
         actual_host = split_result.1;
     }
     if let Some(actual_username) = actual_username.as_deref() {
-        client_args.extend(vec!["-u", actual_username]);
+        client_args.extend(vec!["-u".to_string(), actual_username.to_string()]);
     }
-    client_args.push("client");
-    client_args.extend(vec!["--", actual_host]);
+    if let Some(port) = port {
+        client_args.extend(vec!["-p".to_string(), port.to_string()]);
+    }
+    client_args.push("client".to_string());
+    client_args.extend(vec!["--".to_string(), actual_host.to_string()]);
+
     let process_info = spawn_console_process(&format!("{PKG_NAME}.exe"), client_args);
     let client_window_handle = get_console_window_handle(process_info.dwProcessId);
     let process_handle = unsafe {
@@ -1090,11 +1103,13 @@ fn focus_window(handle: HWND) {
 /// * `username` - Username used to connect to the hosts.
 ///                If none, each client will use the SSH config to determine
 ///                a suitable username for their respective host.
+/// * `port`     - Optional port used for all SSH connections.
 /// * `config`   - The `DaemonConfig`.
 /// * `debug`    - Enables debug logging
 pub async fn main(
     hosts: Vec<String>,
     username: Option<String>,
+    port: Option<u16>,
     config: &DaemonConfig,
     clusters: &[Cluster],
     debug: bool,
@@ -1102,6 +1117,7 @@ pub async fn main(
     let daemon: Daemon = Daemon {
         hosts: explode(&hosts.join(" ")).unwrap_or(hosts),
         username,
+        port,
         config,
         clusters,
         control_mode_state: ControlModeState::Inactive,
