@@ -47,6 +47,10 @@ Arguments:
 
           E.g.: `csshw.exe -u user3 user1@host1 userA@hostA host3`
 
+          Hosts can include a port number.
+
+          E.g.: `csshw.exe -u root host1 host2:22 host3:2022`
+
 Options:
   -u, --username <USERNAME>
           Optional username used to connect to the hosts
