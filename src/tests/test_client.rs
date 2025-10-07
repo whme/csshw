@@ -10,8 +10,7 @@ use windows::Win32::System::Console::{
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::client::{
-    get_username_and_host, is_alt_shift_c_combination, is_keep_alive_packet,
-    replace_argument_placeholders,
+    build_ssh_arguments, is_alt_shift_c_combination, is_keep_alive_packet, resolve_username,
 };
 use crate::serde::SERIALIZED_INPUT_RECORD_0_LENGTH;
 use crate::utils::config::ClientConfig;
@@ -19,7 +18,6 @@ use crate::utils::config::ClientConfig;
 // Test constants - consistent dummy values used throughout tests
 const TEST_USERNAME: &str = "testuser";
 const TEST_HOSTNAME: &str = "example.com";
-const TEST_USERNAME_HOST: &str = "testuser@example.com";
 const TEST_PLACEHOLDER: &str = "{{USERNAME_AT_HOST}}";
 const TEST_SSH_PROGRAM: &str = "ssh";
 
@@ -88,61 +86,61 @@ fn create_test_key_event(
 }
 
 #[test]
-fn test_get_username_and_host_basic_scenarios() {
+fn test_resolve_username_basic_scenarios() {
     let config = create_test_client_config("/nonexistent/path".to_string());
 
     // Test with provided username
-    let result = get_username_and_host(Some(TEST_USERNAME.to_string()), TEST_HOSTNAME, &config);
-    assert_eq!(result, TEST_USERNAME_HOST);
+    let result = resolve_username(Some(TEST_USERNAME.to_string()), TEST_HOSTNAME, &config);
+    assert_eq!(result, TEST_USERNAME);
 
     // Test without username and no SSH config
-    let result = get_username_and_host(None, TEST_HOSTNAME, &config);
-    assert_eq!(result, format!("@{TEST_HOSTNAME}"));
+    let result = resolve_username(None, TEST_HOSTNAME, &config);
+    assert_eq!(result, "");
 
     // Test edge cases
-    let result = get_username_and_host(Some(TEST_USERNAME.to_string()), "", &config);
-    assert_eq!(result, format!("{TEST_USERNAME}@"));
+    let result = resolve_username(Some(TEST_USERNAME.to_string()), "", &config);
+    assert_eq!(result, TEST_USERNAME);
 
-    let result = get_username_and_host(None, "", &config);
-    assert_eq!(result, "@");
+    let result = resolve_username(None, "", &config);
+    assert_eq!(result, "");
 }
 
 #[test]
-fn test_get_username_and_host_ssh_config_integration() {
+fn test_resolve_username_ssh_config_integration() {
     // Test that provided username always overrides SSH config
     let ssh_config_content = format!("Host {TEST_HOSTNAME}\n    User configuser\n");
     let (_temp_dir, config_path) = create_temp_ssh_config(&ssh_config_content);
     let config = create_test_client_config(config_path);
 
-    let result = get_username_and_host(Some(TEST_USERNAME.to_string()), TEST_HOSTNAME, &config);
-    assert_eq!(result, TEST_USERNAME_HOST);
+    let result = resolve_username(Some(TEST_USERNAME.to_string()), TEST_HOSTNAME, &config);
+    assert_eq!(result, TEST_USERNAME);
 
     // Test SSH config parsing integration
-    let result = get_username_and_host(None, TEST_HOSTNAME, &config);
-    assert_eq!(result, format!("configuser@{TEST_HOSTNAME}"));
+    let result = resolve_username(None, TEST_HOSTNAME, &config);
+    assert_eq!(result, "configuser");
 
     // Test empty SSH config
     let (_temp_dir, empty_config_path) = create_temp_ssh_config("");
     let empty_config = create_test_client_config(empty_config_path);
-    let result = get_username_and_host(None, TEST_HOSTNAME, &empty_config);
-    assert_eq!(result, format!("@{TEST_HOSTNAME}"));
+    let result = resolve_username(None, TEST_HOSTNAME, &empty_config);
+    assert_eq!(result, "");
 }
 
 #[test]
-fn test_get_username_and_host_special_characters() {
+fn test_resolve_username_special_characters() {
     let config = create_test_client_config("/nonexistent/path".to_string());
 
     // Test various special characters that might appear in usernames/hostnames
     let test_cases = [
-        ("user.name", "sub.example.com", "user.name@sub.example.com"),
-        ("user-name", "host-name", "user-name@host-name"),
-        ("user_name", "host_name", "user_name@host_name"),
-        ("tëst", "exämple.com", "tëst@exämple.com"), // Unicode
-        (TEST_USERNAME, "host name", "testuser@host name"), // Whitespace
+        ("user.name", "sub.example.com", "user.name"),
+        ("user-name", "host-name", "user-name"),
+        ("user_name", "host_name", "user_name"),
+        ("tëst", "exämple.com", "tëst"),             // Unicode
+        (TEST_USERNAME, "host name", TEST_USERNAME), // Whitespace in hostname
     ];
 
     for (username, hostname, expected) in test_cases {
-        let result = get_username_and_host(Some(username.to_string()), hostname, &config);
+        let result = resolve_username(Some(username.to_string()), hostname, &config);
         assert_eq!(result, expected);
     }
 }
@@ -217,47 +215,207 @@ fn test_keep_alive_packet_detection() {
     }
 }
 
+/// Test case structure for build_ssh_arguments function.
+struct SshArgumentsTestCase<'a> {
+    /// Description of what this test case is testing.
+    description: &'a str,
+    /// Username to test.
+    username: &'a str,
+    /// Hostname to test.
+    host: &'a str,
+    /// Optional port to test.
+    port: Option<u16>,
+    /// Configuration to use for the test.
+    config: &'a ClientConfig,
+    /// Expected output arguments.
+    expected_output: Vec<String>,
+}
+
 #[test]
-fn test_replace_argument_placeholders() {
-    // Test single placeholder replacement
-    let arguments = vec![
-        "-XY".to_string(),
-        TEST_PLACEHOLDER.to_string(),
-        "-p".to_string(),
-        "2222".to_string(),
-    ];
-    let result = replace_argument_placeholders(&arguments, TEST_PLACEHOLDER, TEST_USERNAME_HOST);
-    let expected = vec![
-        "-XY".to_string(),
-        TEST_USERNAME_HOST.to_string(),
-        "-p".to_string(),
-        "2222".to_string(),
-    ];
-    assert_eq!(result, expected);
+fn test_build_ssh_arguments() {
+    let config = create_test_client_config("/nonexistent/path".to_string());
+    let complex_config = ClientConfig {
+        ssh_config_path: "/nonexistent/path".to_string(),
+        program: TEST_SSH_PROGRAM.to_string(),
+        arguments: vec![
+            "-v".to_string(),
+            "-o".to_string(),
+            "StrictHostKeyChecking=no".to_string(),
+            TEST_PLACEHOLDER.to_string(),
+            "-X".to_string(),
+        ],
+        username_host_placeholder: TEST_PLACEHOLDER.to_string(),
+    };
 
-    // Test multiple placeholder occurrences
-    let arguments = vec![
-        TEST_PLACEHOLDER.to_string(),
-        "-o".to_string(),
-        format!("ProxyCommand=ssh gateway nc {} 22", TEST_PLACEHOLDER),
+    let test_cases = [
+        SshArgumentsTestCase {
+            description: "basic case without port",
+            username: TEST_USERNAME,
+            host: TEST_HOSTNAME,
+            port: None,
+            config: &config,
+            expected_output: vec![
+                "-XY".to_string(),
+                format!("{TEST_USERNAME}@{TEST_HOSTNAME}"),
+            ],
+        },
+        SshArgumentsTestCase {
+            description: "empty username and host",
+            username: "",
+            host: "",
+            port: None,
+            config: &config,
+            expected_output: vec!["-XY".to_string(), "@".to_string()],
+        },
+        SshArgumentsTestCase {
+            description: "complex arguments without port",
+            username: TEST_USERNAME,
+            host: TEST_HOSTNAME,
+            port: None,
+            config: &complex_config,
+            expected_output: vec![
+                "-v".to_string(),
+                "-o".to_string(),
+                "StrictHostKeyChecking=no".to_string(),
+                format!("{TEST_USERNAME}@{TEST_HOSTNAME}"),
+                "-X".to_string(),
+            ],
+        },
+        // Cases with port
+        SshArgumentsTestCase {
+            description: "basic case with port 2222",
+            username: TEST_USERNAME,
+            host: TEST_HOSTNAME,
+            port: Some(2222),
+            config: &config,
+            expected_output: vec![
+                "-XY".to_string(),
+                format!("{TEST_USERNAME}@{TEST_HOSTNAME}"),
+                "-p".to_string(),
+                "2222".to_string(),
+            ],
+        },
+        SshArgumentsTestCase {
+            description: "standard SSH port 22",
+            username: TEST_USERNAME,
+            host: TEST_HOSTNAME,
+            port: Some(22),
+            config: &config,
+            expected_output: vec![
+                "-XY".to_string(),
+                format!("{TEST_USERNAME}@{TEST_HOSTNAME}"),
+                "-p".to_string(),
+                "22".to_string(),
+            ],
+        },
+        SshArgumentsTestCase {
+            description: "high port number",
+            username: TEST_USERNAME,
+            host: TEST_HOSTNAME,
+            port: Some(65535),
+            config: &config,
+            expected_output: vec![
+                "-XY".to_string(),
+                format!("{TEST_USERNAME}@{TEST_HOSTNAME}"),
+                "-p".to_string(),
+                "65535".to_string(),
+            ],
+        },
+        SshArgumentsTestCase {
+            description: "complex arguments with port",
+            username: TEST_USERNAME,
+            host: TEST_HOSTNAME,
+            port: Some(8080),
+            config: &complex_config,
+            expected_output: vec![
+                "-v".to_string(),
+                "-o".to_string(),
+                "StrictHostKeyChecking=no".to_string(),
+                format!("{TEST_USERNAME}@{TEST_HOSTNAME}"),
+                "-X".to_string(),
+                "-p".to_string(),
+                "8080".to_string(),
+            ],
+        },
+        // Special characters
+        SshArgumentsTestCase {
+            description: "hostname with dashes and port",
+            username: "user",
+            host: "host-name.example.com",
+            port: Some(2222),
+            config: &config,
+            expected_output: vec![
+                "-XY".to_string(),
+                "user@host-name.example.com".to_string(),
+                "-p".to_string(),
+                "2222".to_string(),
+            ],
+        },
+        SshArgumentsTestCase {
+            description: "IP address with port",
+            username: "user",
+            host: "192.168.1.1",
+            port: Some(8080),
+            config: &config,
+            expected_output: vec![
+                "-XY".to_string(),
+                "user@192.168.1.1".to_string(),
+                "-p".to_string(),
+                "8080".to_string(),
+            ],
+        },
+        SshArgumentsTestCase {
+            description: "IPv6 address with port",
+            username: "user",
+            host: "[::1]",
+            port: Some(2222),
+            config: &config,
+            expected_output: vec![
+                "-XY".to_string(),
+                "user@[::1]".to_string(),
+                "-p".to_string(),
+                "2222".to_string(),
+            ],
+        },
+        SshArgumentsTestCase {
+            description: "underscores in username and hostname",
+            username: "test_user",
+            host: "test_host",
+            port: Some(9999),
+            config: &config,
+            expected_output: vec![
+                "-XY".to_string(),
+                "test_user@test_host".to_string(),
+                "-p".to_string(),
+                "9999".to_string(),
+            ],
+        },
+        SshArgumentsTestCase {
+            description: "dots in username and hostname",
+            username: "user.name",
+            host: "host.name",
+            port: Some(1234),
+            config: &config,
+            expected_output: vec![
+                "-XY".to_string(),
+                "user.name@host.name".to_string(),
+                "-p".to_string(),
+                "1234".to_string(),
+            ],
+        },
     ];
-    let result = replace_argument_placeholders(&arguments, TEST_PLACEHOLDER, TEST_USERNAME_HOST);
-    let expected = vec![
-        TEST_USERNAME_HOST.to_string(),
-        "-o".to_string(),
-        format!("ProxyCommand=ssh gateway nc {} 22", TEST_USERNAME_HOST),
-    ];
-    assert_eq!(result, expected);
 
-    // Test no placeholders
-    let arguments = vec!["-v".to_string(), "-p".to_string(), "22".to_string()];
-    let result = replace_argument_placeholders(&arguments, TEST_PLACEHOLDER, TEST_USERNAME_HOST);
-    let expected = vec!["-v".to_string(), "-p".to_string(), "22".to_string()];
-    assert_eq!(result, expected);
-
-    // Test custom placeholder
-    let arguments = vec!["-XY".to_string(), "{{CUSTOM}}".to_string()];
-    let result = replace_argument_placeholders(&arguments, "{{CUSTOM}}", TEST_USERNAME_HOST);
-    let expected = vec!["-XY".to_string(), TEST_USERNAME_HOST.to_string()];
-    assert_eq!(result, expected);
+    for test_case in test_cases {
+        let result = build_ssh_arguments(
+            test_case.username,
+            test_case.host,
+            test_case.port,
+            test_case.config,
+        );
+        assert_eq!(
+            result, test_case.expected_output,
+            "Failed test case: {}",
+            test_case.description
+        );
+    }
 }
