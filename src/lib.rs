@@ -448,8 +448,8 @@ impl<R: Registry> Drop for WindowsSettingsDefaultTerminalApplicationGuard<R> {
 /// # Returns
 ///
 /// [PROCESS_INFORMATION] of the spawned process.
-pub fn spawn_console_process(application: &str, args: Vec<&str>) -> PROCESS_INFORMATION {
-    return spawn_console_process_with_api(&DefaultWindowsApi, application, &args)
+pub fn spawn_console_process(application: &str, args: Vec<String>) -> PROCESS_INFORMATION {
+    return spawn_console_process_with_api(&DefaultWindowsApi, application, args)
         .expect("Failed to create process");
 }
 
@@ -467,10 +467,9 @@ pub fn spawn_console_process(application: &str, args: Vec<&str>) -> PROCESS_INFO
 pub fn spawn_console_process_with_api<W: WindowsApi>(
     api: &W,
     application: &str,
-    args: &[&str],
+    args: Vec<String>,
 ) -> Option<PROCESS_INFORMATION> {
-    let string_args: Vec<String> = args.iter().map(|s| return s.to_string()).collect();
-    return api.create_process_with_args(application, string_args);
+    return api.create_process_with_args(application, args);
 }
 
 /// Initialize the logger.

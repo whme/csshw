@@ -399,14 +399,20 @@ async fn run(child: &mut Child) {
 /// * `username`    - The username to be used.
 ///                   Will try to resolve the correct username from the ssh config
 ///                   if none is given.
+/// * `cli_port`    - Optional port from CLI option. Inline port takes precedence.
 /// * `config`      - A reference to the `ClientConfig`.
-pub async fn main(host: String, username: Option<String>, config: &ClientConfig) {
-    let (host, port_str) = host
-        .rsplit_once(':')
-        .map_or((host.as_str(), None), |(host, port)| {
-            return (host, Some(port));
-        });
-    let port = port_str.and_then(|p| {
+pub async fn main(
+    host: String,
+    username: Option<String>,
+    cli_port: Option<u16>,
+    config: &ClientConfig,
+) {
+    let (host, inline_port) =
+        host.rsplit_once(':')
+            .map_or((host.as_str(), None), |(host, port)| {
+                return (host, Some(port));
+            });
+    let inline_port = inline_port.and_then(|p| {
         return p
             .parse::<u16>()
             .map_err(|e| {
@@ -414,13 +420,15 @@ pub async fn main(host: String, username: Option<String>, config: &ClientConfig)
             })
             .ok();
     });
+    // Inline port takes precedence over CLI port
+    let port = inline_port.or(cli_port);
 
     // Resolve username using SSH config if needed
     let resolved_username = resolve_username(username, host, config);
 
     // Create title for console window
-    let title_host = if let Some(port_str) = port_str {
-        format!("{host}:{port_str}")
+    let title_host = if let Some(port) = port {
+        format!("{host}:{port}")
     } else {
         host.to_string()
     };
