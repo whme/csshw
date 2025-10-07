@@ -87,16 +87,24 @@ fn write_console_input(input_record: INPUT_RECORD_0) {
     };
 }
 
-/// Use `username` or load the adequate one from SSH config.
+/// Resolve the username from the provided value or SSH config.
+///
+/// # Arguments
+///
+/// * `username` - Optional username to use. If None, will try to resolve from SSH config.
+/// * `host` - The hostname (without port) to connect to.
+/// * `config` - The client configuration containing SSH config path.
 ///
 /// # Returns
 ///
-/// The username and hostname in the format expected by SSH `<username>@<host>`.
-fn get_username_and_host(username: Option<String>, host: &str, config: &ClientConfig) -> String {
+/// The resolved username.
+fn resolve_username(username: Option<String>, host: &str, config: &ClientConfig) -> String {
+    if let Some(val) = username {
+        return val;
+    }
+
     let mut ssh_config = SshConfig::default();
-
     let ssh_config_path = Path::new(config.ssh_config_path.as_str());
-
     if ssh_config_path.exists() {
         let mut reader = BufReader::new(
             File::open(ssh_config_path).expect("Could not open SSH configuration file."),
@@ -105,16 +113,45 @@ fn get_username_and_host(username: Option<String>, host: &str, config: &ClientCo
             .parse(&mut reader, ParseRule::ALLOW_UNKNOWN_FIELDS)
             .expect("Failed to parse SSH configuration file");
     }
+    return ssh_config
+        .query(<&str>::clone(&host))
+        .user
+        .unwrap_or_default();
+}
 
-    let host_specific_params = ssh_config.query(<&str>::clone(&host));
+/// Build the SSH arguments from the username, host, port, and config.
+///
+/// # Arguments
+///
+/// * `username`    - The username to connect with.
+/// * `host`        - The hostname to connect to.
+/// * `port`        - Optional port number (0-65535).
+/// * `config`      - The client config indicating how to call the SSH program.
+///
+/// # Returns
+///
+/// A vector of arguments ready to be passed to the SSH command.
+fn build_ssh_arguments(
+    username: &str,
+    host: &str,
+    port: Option<u16>,
+    config: &ClientConfig,
+) -> Vec<String> {
+    let username_host = format!("{username}@{host}");
 
-    let username: String = if let Some(val) = username {
-        val
-    } else {
-        host_specific_params.user.unwrap_or_default()
-    };
+    let mut arguments = replace_argument_placeholders(
+        &config.arguments,
+        &config.username_host_placeholder,
+        &username_host,
+    );
 
-    return format!("{username}@{host}");
+    // Add port arguments if port was specified
+    if let Some(port) = port {
+        arguments.push("-p".to_string());
+        arguments.push(port.to_string());
+    }
+
+    return arguments;
 }
 
 /// Launch the SSH process.
@@ -124,18 +161,21 @@ fn get_username_and_host(username: Option<String>, host: &str, config: &ClientCo
 ///
 /// # Arguments
 ///
-/// * `username_host`   - `<username>@<hostname>` string.
-/// * `config`          - The client config indicating how to call the SSH program.
+/// * `username`    - The username to connect with.
+/// * `host`        - The hostname to connect to.
+/// * `port`        - Optional port number (0-65535).
+/// * `config`      - The client config indicating how to call the SSH program.
 ///
 /// # Returns
 ///
 /// The handle to created [Child] process.
-async fn launch_ssh_process(username_host: &str, config: &ClientConfig) -> Child {
-    let arguments = replace_argument_placeholders(
-        &config.arguments,
-        &config.username_host_placeholder,
-        username_host,
-    );
+async fn launch_ssh_process(
+    username: &str,
+    host: &str,
+    port: Option<u16>,
+    config: &ClientConfig,
+) -> Child {
+    let arguments = build_ssh_arguments(username, host, port, config);
     let child = Command::new(&config.program)
         .args(arguments.clone())
         .spawn()
@@ -355,14 +395,36 @@ async fn run(child: &mut Child) {
 ///
 /// # Arguments
 ///
-/// * `host`        - The name of the host to connect tol
+/// * `host`        - The name of the host to connect to, optionally with `:port` suffix.
 /// * `username`    - The username to be used.
 ///                   Will try to resolve the correct username from the ssh config
 ///                   if none is given.
 /// * `config`      - A reference to the `ClientConfig`.
 pub async fn main(host: String, username: Option<String>, config: &ClientConfig) {
-    let username_host = get_username_and_host(username, &host, config);
-    let username_host_title = username_host.clone();
+    let (host, port_str) = host
+        .rsplit_once(':')
+        .map_or((host.as_str(), None), |(host, port)| {
+            return (host, Some(port));
+        });
+    let port = port_str.and_then(|p| {
+        return p
+            .parse::<u16>()
+            .map_err(|e| {
+                warn!("Invalid port '{}': {}. Using default SSH port.", p, e);
+            })
+            .ok();
+    });
+
+    // Resolve username using SSH config if needed
+    let resolved_username = resolve_username(username, host, config);
+
+    // Create title for console window
+    let title_host = if let Some(port_str) = port_str {
+        format!("{host}:{port_str}")
+    } else {
+        host.to_string()
+    };
+    let username_host_title = format!("{resolved_username}@{title_host}");
     tokio::spawn(async move {
         loop {
             // Set the console title (child might overwrite it, so we have to keep checking it)
@@ -374,7 +436,7 @@ pub async fn main(host: String, username: Option<String>, config: &ClientConfig)
         }
     });
 
-    let mut child = launch_ssh_process(&username_host, config).await;
+    let mut child = launch_ssh_process(&resolved_username, host, port, config).await;
 
     run(&mut child).await;
 
