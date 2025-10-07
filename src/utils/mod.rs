@@ -305,7 +305,7 @@ pub fn clear_screen_with_api(api: &dyn WindowsApi) {
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
 /// use csshw_lib::utils::set_console_border_color;
 /// use windows::Win32::Foundation::COLORREF;
 ///
