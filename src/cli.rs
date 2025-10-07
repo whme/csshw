@@ -46,7 +46,7 @@ pub struct Args {
     /// Hosts can include a port number which will take precedence over the
     /// port given via the `-p` option.
     ///
-    /// E.g.: `csshw.exe -u root host1 host2:22 host3:2022`
+    /// E.g.: `csshw.exe -p 33 host1:11 host2:22 host3`
     #[clap(required = false, global = true)]
     hosts: Vec<String>,
     /// Enable extensive logging
