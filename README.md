@@ -24,6 +24,7 @@ To download the csshW application refer to the [Releases 📦](https://github.co
 
 ## Usage
 
+<!-- HELP_OUTPUT_START -->
 ```cmd
 csshw.exe --help
 Cluster SSH tool for Windows inspired by csshX
@@ -67,6 +68,7 @@ Options:
   -V, --version
           Print version
 ```
+<!-- HELP_OUTPUT_END -->
 Example:
 `csshw.exe -u root hosta.dev hostb.dev hostc.dev`
 

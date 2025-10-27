@@ -1,0 +1,184 @@
+# We're on Windows, use \r\n line endings
+
+[config]
+default_to_workspace = false
+
+[tasks.check-readme-help]
+# Task used to check whether the help section of the README.md matches the current `--help` output.
+# As the underlying task creates temporary files a cleanup task is defined to delete them afterwards.
+run_task = { name = ["check-readme-help-task"], fork = true, cleanup_task = "process-readme-help-cleanup"}
+
+[tasks.process-readme-help-cleanup]
+private = true
+description = "Remove temporary files created by the process-readme-help task"
+command = "CMD"
+args = ["/C", "DEL /F /Q .\\.help.tmp .\\.readme-help.tmp .\\.readme-content.tmp .\\.positions.tmp 2>nul"]
+
+[tasks.process-readme-help]
+private = true
+description = "Shared logic to process README help section and current --help output"
+script_runner = "@duckscript"
+script = '''
+# Get current help output
+# Sadly we have to redirect the output to a temporary file here
+# as duckscript does not support capturing stdout here
+exec "cmd" "/c" "cargo run -- --help > .help.tmp"
+actual_help = readfile .help.tmp
+
+# Preprocess actual_help to clean lines with only spaces
+# Split into lines, process each line, then rejoin
+# We split \n here because "empty" lines only uses \n
+lines = split ${actual_help} "\n"
+processed_lines = array
+for line in ${lines}
+    # Trim the line to check if it contains only whitespace
+    trimmed_line = trim ${line}
+    if is_empty ${trimmed_line}
+        # If line contains only whitespace, replace with empty line
+        array_push ${processed_lines} ""
+    else
+        # Keep the original line (preserving indentation)
+        array_push ${processed_lines} ${line}
+    end
+end
+actual_help = array_join ${processed_lines} "\r\n"
+actual_help = trim ${actual_help}
+# Write the processed lines back to the tmp file for later use
+writefile .help.tmp ${actual_help}
+
+# Read README.md content
+readme_content = readfile README.md
+
+# Check if delimiters exist
+start_marker = set "<!-- HELP_OUTPUT_START -->"
+end_marker = set "<!-- HELP_OUTPUT_END -->"
+
+start_index = indexof ${readme_content} ${start_marker}
+end_index = indexof ${readme_content} ${end_marker}
+
+if equals ${start_index} -1
+    exec "powershell" "-Command" "Write-Host -NoNewline -ForegroundColor Red 'ERROR'; Write-Host ' - Could not find <!-- HELP_OUTPUT_START --> delimiter in README.md'"
+    exit 1
+end
+
+if equals ${end_index} -1
+    exec "powershell" "-Command" "Write-Host -NoNewline -ForegroundColor Red 'ERROR'; Write-Host ' - Could not find <!-- HELP_OUTPUT_END --> delimiter in README.md'"
+    exit 1
+end
+
+# Calculate character offsets to skip unwanted content
+
+start_marker_len = length ${start_marker}
+skip_content = set "\r\n```cmd\r\ncsshw.exe --help\r\n"
+skip_content_len = length ${skip_content}
+help_start_pos = calc ${start_index} + ${start_marker_len} + ${skip_content_len}
+
+# For end skip: \r\n```\r\n
+end_content = set "\r\n```\r\n"
+end_content_len = length ${end_content}
+help_end_pos = calc ${end_index} - ${end_content_len}
+
+# Extract just the help content
+readme_help = substring ${readme_content} ${help_start_pos} ${help_end_pos}
+readme_help = trim ${readme_help}
+
+# Write data to temporary files for use by calling tasks
+writefile .readme-help.tmp ${readme_help}
+writefile .readme-content.tmp ${readme_content}
+writefile .positions.tmp "${start_index}\r\n${end_index}\r\n${help_start_pos}\r\n${help_end_pos}"
+'''
+
+[tasks.check-readme-help-task]
+private = true
+description = "Verify README help section matches current --help output"
+dependencies = ["process-readme-help"]
+script_runner = "@duckscript"
+script = '''
+# Read data from temporary files created by shared task
+actual_help = readfile .help.tmp
+readme_help = readfile .readme-help.tmp
+
+result = eq ${actual_help} ${readme_help}
+
+if not ${result}
+    # ERROR tag in red, rest in default
+    exec "powershell" "-Command" "Write-Host -NoNewline -ForegroundColor Red 'ERROR'; Write-Host ' - README.md help output is outdated!'"
+
+    echo ""
+    echo "Differences found:"
+    echo "=================="
+
+    # Use git diff to show only the differences with color
+    # --no-pager disable the pager
+    # --no-index allows diffing files outside git repo
+    # --color=always forces color output even when not in terminal
+    # --no-prefix removes a/ and b/ prefixes from filenames
+    # -U3 shows 3 lines of context around changes
+    # Redirect stderr to suppress line ending warnings
+    exec "cmd" "/c" "git --no-pager diff --no-index --color=always --no-prefix -U3 .readme-help.tmp .help.tmp 2>nul"
+
+    # ==> in yellow, rest in default
+    exec "powershell" "-Command" "Write-Host -NoNewline -ForegroundColor Yellow '==>'; Write-Host ' Run ''cargo make update-readme-help'' to fix this.'"
+
+    exit 1
+else
+    # INFO tag in green, rest in default
+    exec "powershell" "-Command" "Write-Host -NoNewline -ForegroundColor Green 'INFO'; Write-Host ' - README.md help output is up to date.'"
+end
+'''
+
+[tasks.update-readme-help]
+# Task used to check whether the help section of the README.md matches the current `--help` output
+# and update the README.md in case it doesn't.
+# As the underlying task creates temporary files a cleanup task is defined to delete them afterwards.
+description = "Update README.md help section with current --help output"
+run_task = { name = ["update-readme-help-task"], fork = true, cleanup_task = "process-readme-help-cleanup"}
+
+[tasks.update-readme-help-task]
+private = true
+description = "Update README.md help section with current --help output"
+dependencies = ["process-readme-help"]
+script_runner = "@duckscript"
+script = '''
+# Read data from temporary files created by shared task
+actual_help = readfile .help.tmp
+readme_help = readfile .readme-help.tmp
+
+result = eq ${actual_help} ${readme_help}
+
+if ${result}
+    exec "powershell" "-Command" "Write-Host -NoNewline -ForegroundColor Green 'INFO'; Write-Host ' - README.md help section is up to date, nothing to be done.'"
+ exit 0
+end
+
+exec "powershell" "-Command" "Write-Host -NoNewline -ForegroundColor Yellow 'WARNING'; Write-Host ' - README.md help section is outdated - fixing it.'"
+
+# Get processed data from shared task
+readme_content = readfile .readme-content.tmp
+positions = readfile .positions.tmp
+position_lines = split ${positions} "\r\n"
+start_index = array_get ${position_lines} 0
+end_index = array_get ${position_lines} 1
+help_start_pos = array_get ${position_lines} 2
+help_end_pos = array_get ${position_lines} 3
+
+# Build the new README content by replacing the help section
+# Get content before the help section
+before_help = substring ${readme_content} 0 ${help_start_pos}
+
+# Get content after the help section
+after_help = substring ${readme_content} ${help_end_pos}
+
+# Combine: before + new help + after
+new_readme_content = set "${before_help}${actual_help}${after_help}"
+
+# Write the updated content back to README.md
+writefile README.md ${new_readme_content}
+
+# INFO tag in green, rest in default
+exec "powershell" "-Command" "Write-Host -NoNewline -ForegroundColor Green 'INFO'; Write-Host ' - README.md help section has been updated with current --help output.'"
+
+# This task is run by pre-commit git hooks and should abort
+# a commit in case changes had to be made, thus we exit 1
+exit 1
+'''

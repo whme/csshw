@@ -57,6 +57,7 @@ features = [
 
 [dev-dependencies]
 mockall = "0.13.1"
+cargo-make = "0.37.22"
 
 [build-dependencies]
 embed-resource = "3.0.1"
