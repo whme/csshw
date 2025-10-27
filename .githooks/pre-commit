@@ -3,5 +3,6 @@ cargo fmt
 cargo lint
 cargo build
 cargo docs
+cargo make update-readme-help
 cargo doc-tests
 cargo tests
