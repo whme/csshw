@@ -120,7 +120,7 @@ jobs:
 
             // Find the current version's section in the changelog
             // This regex captures everything after the version header until the next version or end of file
-            const versionRegex = new RegExp(`## ${version.replace(/\./g, '\\.')}\\s*\\([^)]+\\)\\s*\\n([\\s\\S]*?)(?=\\n## |$)`, 'm');
+            const versionRegex = new RegExp(`## ${version.replace(/\./g, '\\.')}\\s*\\([^)]+\\)\\s*\\n([\\s\\S]*?)(?=\\n\\n## |\\n## |$)`, 'm');
             const match = changelogContent.match(versionRegex);
 
             let currentChangelog = 'No changelog entries found for this version.';
