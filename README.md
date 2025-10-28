@@ -158,7 +158,7 @@ Install them via ``git config --local core.hooksPath .githooks/``.
 ## Releases
 Step by step guide to create a new release:
 - `cargo make prepare-release` and follow the instructions
-- Create a pull request from the new maintenance branch OR cherry-pick the Version change from an existing maintenance branch
+- Create a pull request from the new maintenance branch to main OR cherry-pick the new Version change from the existing maintenance branch to main
 - `cargo make release` and follow the instructions
 - Revise the automatically created Release Draft and publish it
 
