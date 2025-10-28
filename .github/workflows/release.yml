@@ -1,0 +1,164 @@
+#
+#   csshw Release Automation
+#
+# Triggered by tag pushes matching semantic version pattern.
+# Creates optimized release builds and draft GitHub releases.
+# Uses multi-runner approach: Windows for compilation, Ubuntu for packaging/API calls.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: 1.88.0
+
+jobs:
+  extract-version:
+    runs-on: &ubuntu-runner
+      ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Extract version from tag
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+
+          # Split version into components
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+  build-release:
+    runs-on: windows-latest
+    steps:
+      - uses: &checkout-action
+          actions/checkout@v5
+
+      - name: Setup Rust toolchain
+        run: rustup update ${{ env.RUST_VERSION }} && rustup default ${{ env.RUST_VERSION }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ hashFiles('Cargo.toml') }}
+
+      - name: Build release binary
+        run: cargo release
+
+      - name: Upload release binary
+        uses: &upload-artifact-action
+          actions/upload-artifact@v4
+        with:
+          name: csshw-binary
+          path: target/release/csshw.exe
+          retention-days: 1
+
+  package-release:
+    runs-on: *ubuntu-runner
+    needs: [extract-version, build-release]
+    steps:
+      - uses: *checkout-action
+
+      - name: Download release binary
+        uses: &download-artifact-action
+          actions/download-artifact@v4
+        with:
+          name: csshw-binary
+          path: ./artifacts
+
+      - name: Create release package
+        run: |
+          VERSION="${{ needs.extract-version.outputs.version }}"
+
+          # Create package directory
+          mkdir -p package
+
+          # Copy and rename binary
+          cp artifacts/csshw.exe "package/csshw.${VERSION}.exe"
+
+          # Copy documentation
+          cp README.md package/
+          cp LICENSE.txt package/
+
+          # Create zip archive with maximum compression
+          zip -9 "csshw.${VERSION}.zip" package/*
+
+          # Get file size for logging
+          SIZE=$(stat -c%s "csshw.${VERSION}.zip")
+          echo "Package size: ${SIZE} bytes"
+
+      - name: Upload release package
+        uses: *upload-artifact-action
+        with:
+          name: release-package
+          path: csshw.${{ needs.extract-version.outputs.version }}.zip
+          retention-days: 1
+
+  create-draft-release:
+    runs-on: *ubuntu-runner
+    needs: [extract-version, package-release]
+    permissions:
+      contents: write
+    steps:
+      - uses: *checkout-action
+
+      - name: Download release package
+        uses: *download-artifact-action
+        with:
+          name: release-package
+          path: ./artifacts
+
+      - name: Create draft release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const version = '${{ needs.extract-version.outputs.version }}';
+
+            // Read and process release template
+            const templatePath = path.join(process.cwd(), 'templates', 'release_template.md');
+            let releaseBody = fs.readFileSync(templatePath, 'utf8');
+
+            // Replace version placeholder
+            releaseBody = releaseBody.replace(/\{\{VERSION\}\}/g, version);
+
+            console.log('Creating draft release for version:', version);
+            console.log('Release body:');
+            console.log(releaseBody);
+
+            // Create draft release
+            const release = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: version,
+              name: `Version ${version}`,
+              body: releaseBody,
+              draft: true,
+              prerelease: false
+            });
+
+            console.log('Draft release created:', release.data.html_url);
+
+            // Upload release asset
+            const assetPath = path.join(process.cwd(), 'artifacts', `csshw.${version}.zip`);
+            const assetData = fs.readFileSync(assetPath);
+
+            await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.data.id,
+              name: `csshw.${version}.zip`,
+              data: assetData,
+              headers: {
+                'content-type': 'application/zip',
+                'content-length': assetData.length
+              }
+            });
+
+            console.log('Release asset uploaded successfully');
+            console.log('Draft release is ready for review at:', release.data.html_url);
