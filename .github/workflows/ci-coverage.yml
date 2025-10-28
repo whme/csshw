@@ -5,7 +5,7 @@
 # Uses the shared CI workflow with coverage collection enabled.
 # Posts detailed coverage reports as PR comments and uploads HTML artifacts.
 
-name: CI with Coverage
+name: CI
 
 on:
   pull_request:
