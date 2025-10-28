@@ -40,13 +40,12 @@ jobs:
     # so there is no need to manually check for a cache hit
     - name: rust-toolchain-cache
       uses: actions/cache@v4
-      with:
+      with: &rust-toolchain-cache
         path: |
           ~\.cargo\bin
           ~\.cargo\registry
           ~\.cargo\git
-        key: &rust-toolchain-cache-key
-          rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
+        key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
 
     - name: Set up Rust toolchain (configure correct Rust version)
       run: rustup update $RUST_VERSION && rustup default $RUST_VERSION
@@ -66,12 +65,7 @@ jobs:
 
     - name: rust-toolchain-cache
       uses: actions/cache@v4
-      with:
-        path: |
-          ~\.cargo\bin
-          ~\.cargo\registry
-          ~\.cargo\git
-        key: *rust-toolchain-cache-key
+      with: *rust-toolchain-cache
 
     - uses: Swatinem/rust-cache@v2
       with: *rust-cache-shared-key
@@ -87,12 +81,7 @@ jobs:
 
     - name: rust-toolchain-cache
       uses: actions/cache@v4
-      with:
-        path: |
-          ~\.cargo\bin
-          ~\.cargo\registry
-          ~\.cargo\git
-        key: *rust-toolchain-cache-key
+      with: *rust-toolchain-cache
 
     - uses: Swatinem/rust-cache@v2
       with: *rust-cache-shared-key
@@ -113,12 +102,7 @@ jobs:
 
     - name: rust-toolchain-cache
       uses: actions/cache@v4
-      with:
-        path: |
-          ~\.cargo\bin
-          ~\.cargo\registry
-          ~\.cargo\git
-        key: *rust-toolchain-cache-key
+      with: *rust-toolchain-cache
 
     - uses: Swatinem/rust-cache@v2
       with: *rust-cache-shared-key
@@ -141,12 +125,7 @@ jobs:
 
     - name: rust-toolchain-cache
       uses: actions/cache@v4
-      with:
-        path: |
-          ~\.cargo\bin
-          ~\.cargo\registry
-          ~\.cargo\git
-        key: *rust-toolchain-cache-key
+      with: *rust-toolchain-cache
 
     - uses: Swatinem/rust-cache@v2
       with: *rust-cache-shared-key
@@ -162,12 +141,7 @@ jobs:
 
     - name: rust-toolchain-cache
       uses: actions/cache@v4
-      with:
-        path: |
-          ~\.cargo\bin
-          ~\.cargo\registry
-          ~\.cargo\git
-        key: *rust-toolchain-cache-key
+      with: *rust-toolchain-cache
 
     - uses: Swatinem/rust-cache@v2
       with: *rust-cache-shared-key
@@ -183,12 +157,7 @@ jobs:
 
     - name: rust-toolchain-cache
       uses: actions/cache@v4
-      with:
-        path: |
-          ~\.cargo\bin
-          ~\.cargo\registry
-          ~\.cargo\git
-        key: *rust-toolchain-cache-key
+      with: *rust-toolchain-cache
 
     - uses: Swatinem/rust-cache@v2
       with: *rust-cache-shared-key
