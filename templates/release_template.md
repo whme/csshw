@@ -1,6 +1,6 @@
 ## Changelog
 
-* TODO
+{{CHANGELOG}}
 
 ## Pre-requisite
 - Any SSH client (Windows 10 and Windows 11 already include a built-in SSH server and client - [docs](https://learn.microsoft.com/en-us/windows/terminal/tutorials/ssh))

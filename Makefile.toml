@@ -385,17 +385,30 @@ fn main() {
         exit(1);
     }
 
-    // Commit version change (including both Cargo.toml and Cargo.lock)
+    // Generate changelog
+    info!("Generating changelog");
+    let changelog_result = Command::new("cargo")
+        .args(&["make", "generate-changelog"])
+        .status()
+        .expect("Failed to run changelog generation");
+
+    if !changelog_result.success() {
+        error!("Failed to generate changelog");
+        exit(1);
+    }
+
+    // Commit version change (including Cargo.toml, Cargo.lock, CHANGELOG.md and changelogging.toml)
+    // NOTE: we expect here that the generate-changelog task did update the CHANGELOG.md and the changelogging.toml
     let commit_message = format!("Version {}", next_version);
     info!("Committing version change: {}", commit_message);
 
     let add_result = Command::new("git")
-        .args(&["add", "Cargo.toml", "Cargo.lock"])
+        .args(&["add", "Cargo.toml", "Cargo.lock", "CHANGELOG.md", "changelogging.toml"])
         .status()
-        .expect("Failed to add Cargo.toml and Cargo.lock");
+        .expect("Failed to add files to git");
 
     if !add_result.success() {
-        error!("Failed to add Cargo.toml and Cargo.lock to git");
+        error!("Failed to add files to git");
         exit(1);
     }
 
@@ -452,6 +465,59 @@ fn update_version_in_toml_edit(mut cargo_doc: toml_edit::Document, new_version: 
 
     // Return the document as string - toml_edit preserves formatting
     cargo_doc.to_string()
+}
+'''
+
+# ============================ #
+# === Changelog Management === #
+# ============================ #
+
+# Uses the current version, is only ment to be called from prepare-release
+# after the next version has been calculated and configured.
+[tasks.generate-changelog]
+description = "Generate changelog from fragments and update release template"
+script_runner = "@rust"
+script = '''
+//! ```cargo
+//! [dependencies]
+//! toml_edit = "0.21"
+//! ```
+
+use std::process::{Command, exit};
+use std::fs;
+
+fn main() {
+    // Get current version from Cargo.toml
+    let cargo_content = fs::read_to_string("Cargo.toml")
+        .expect("Failed to read Cargo.toml");
+    let cargo_doc = cargo_content.parse::<toml_edit::Document>()
+        .expect("Failed to parse Cargo.toml");
+    let current_version = cargo_doc["package"]["version"]
+        .as_str()
+        .expect("Failed to get version from Cargo.toml");
+
+    println!("Generating changelog for version {}", current_version);
+
+    // Update version in changelogging.toml
+    let changelogging_content = fs::read_to_string("changelogging.toml")
+        .expect("Failed to read changelogging.toml");
+    let mut changelogging_doc = changelogging_content.parse::<toml_edit::Document>()
+        .expect("Failed to parse changelogging.toml");
+
+    changelogging_doc["context"]["version"] = toml_edit::value(current_version);
+    fs::write("changelogging.toml", changelogging_doc.to_string())
+        .expect("Failed to write changelogging.toml");
+
+    // Run changelogging build to update CHANGELOG.md
+    let build_result = Command::new("changelogging")
+        .args(&["build"])
+        .status()
+        .expect("Failed to run changelogging build");
+
+    if !build_result.success() {
+        eprintln!("Failed to build changelog");
+        exit(1);
+    }
 }
 '''
 
