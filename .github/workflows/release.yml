@@ -86,7 +86,7 @@ jobs:
           cp LICENSE.txt package/
 
           # Create zip archive with maximum compression
-          zip -9 "csshw.${VERSION}.zip" package/*
+          (cd package && zip -9 "csshw.${VERSION}.zip" .)
 
           # Get file size for logging
           SIZE=$(stat -c%s "csshw.${VERSION}.zip")
