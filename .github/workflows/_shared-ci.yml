@@ -1,0 +1,158 @@
+#
+#   csshw Shared CI Logic
+#
+# Reusable workflow containing common CI jobs that can be called by both
+# the main CI workflow and the coverage CI workflow.
+# Uses YAML anchors where possible to reduce redundancy.
+
+name: Shared CI Logic
+
+on:
+  workflow_call:
+    inputs:
+      run_coverage:
+        description: 'Whether to run tests with coverage collection'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: 1.88.0
+
+jobs:
+  build:
+    runs-on: &runner-version
+      windows-latest
+    steps:
+    - uses: &checkout-action
+        actions/checkout@v5
+
+    - run: &rust-toolchain-setup
+        rustup update $RUST_VERSION && rustup default $RUST_VERSION
+
+    - uses: &rust-cache-action
+        Swatinem/rust-cache@v2
+      with: &rust-cache-shared-key
+        shared-key: ${{ hashFiles('Cargo.toml') }}
+
+    - uses: &build-cache
+        actions/cache@v4
+      with: &build-cache-paths
+        path: |
+          ~\.cargo\git
+          ~\.cargo\registry
+          target
+        key: ${{runner.os}}-build-cache-${{ hashFiles('Cargo.toml') }}
+
+    - name: Build
+      run: |
+        cargo build --all-targets --profile dev --verbose
+        cargo build --all-targets --profile test --verbose
+
+    - name: Build docs
+      run: cargo docs
+
+  check-format:
+    runs-on: *runner-version
+    steps:
+    - uses: *checkout-action
+    - run: *rust-toolchain-setup
+    - name: Check format
+      run: cargo fmt -- --check
+
+  check-lint:
+    runs-on: *runner-version
+    needs: build
+    steps:
+    - uses: *checkout-action
+    - run: *rust-toolchain-setup
+    - uses: *rust-cache-action
+      with: *rust-cache-shared-key
+    - uses: *build-cache
+      with: *build-cache-paths
+    - name: Run linter
+      run: cargo lint
+
+  tests:
+    runs-on: *runner-version
+    needs: build
+    steps:
+    - uses: *checkout-action
+    - run: *rust-toolchain-setup
+    - uses: *rust-cache-action
+      with: *rust-cache-shared-key
+    - uses: *build-cache
+      with: *build-cache-paths
+
+    # Install cargo-llvm-cov if coverage is requested
+    - name: Install cargo-llvm-cov
+      if: inputs.run_coverage
+      uses: &cargo-install
+        baptiste0928/cargo-install@v3
+      with:
+        crate: cargo-llvm-cov
+        version: '^0.6'
+
+    # Run tests with coverage if requested
+    - name: Run tests with coverage
+      if: inputs.run_coverage
+      run: |
+        # Run tests with coverage - Total coverage
+        cargo llvm-cov clean --workspace
+        cargo llvm-cov --all-features --workspace --cobertura --output-path coverage.xml
+        cargo llvm-cov --all-features --workspace --html --output-dir coverage-html
+
+    # Run regular tests if coverage is not requested
+    - name: Run tests (regular)
+      if: '!inputs.run_coverage'
+      run: cargo tests
+
+    # Upload coverage artifacts if coverage was collected
+    - name: Upload Total Coverage HTML
+      if: inputs.run_coverage
+      uses: &upload-artifact-action
+        actions/upload-artifact@v4
+      with:
+        name: coverage-html
+        path: coverage-html/
+        retention-days: 5
+
+    - name: Upload Coverage XML Data
+      if: inputs.run_coverage
+      uses: *upload-artifact-action
+      with:
+        name: coverage-xml-data
+        path: coverage.xml
+        retention-days: 2
+
+  tests-docs:
+    runs-on: *runner-version
+    needs: build
+    steps:
+    - uses: *checkout-action
+    - run: *rust-toolchain-setup
+    - uses: *rust-cache-action
+      with: *rust-cache-shared-key
+    - uses: *build-cache
+      with: *build-cache-paths
+    - name: Run tests docs
+      run: cargo doc-tests
+
+  make-checks:
+    runs-on: *runner-version
+    needs: build
+    steps:
+    - uses: *checkout-action
+    - run: *rust-toolchain-setup
+    - uses: *rust-cache-action
+      with: *rust-cache-shared-key
+    - uses: *build-cache
+      with: *build-cache-paths
+    - name: Install cargo-make
+      uses: *cargo-install
+      with:
+        crate: cargo-make
+        version: '^0.37'
+    - name: Run check-readme-help
+      run: cargo make check-readme-help
