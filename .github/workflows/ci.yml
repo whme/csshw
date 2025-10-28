@@ -14,6 +14,15 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+    paths:
+      - .cargo/**
+      - .github/workflows/ci.yml
+      - src/**
+      - build.rs
+      - Cargo.toml
+      - clippy.toml
+      - Makefile.toml
+      - rustfmt.toml
 
 env:
   CARGO_TERM_COLOR: always
