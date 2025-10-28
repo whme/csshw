@@ -198,7 +198,7 @@ script = '''
 //! ```cargo
 //! [dependencies]
 //! semver = "1.0"
-//! toml = "0.8"
+//! toml_edit = "0.21"
 //! log = "0.4"
 //! env_logger = "0.11"
 //! ```
@@ -268,14 +268,11 @@ fn main() {
 
     info!("Current branch: {}", current_branch);
 
-    // Read current version from Cargo.toml using simple TOML parsing
     let cargo_content = fs::read_to_string("Cargo.toml")
         .expect("Failed to read Cargo.toml");
-
-    let cargo_toml: toml::Value = toml::from_str(&cargo_content)
+    let cargo_doc = cargo_content.parse::<toml_edit::Document>()
         .expect("Failed to parse Cargo.toml");
-
-    let current_version_str = cargo_toml["package"]["version"]
+    let current_version_str = cargo_doc["package"]["version"]
         .as_str()
         .expect("Failed to get version from Cargo.toml");
 
@@ -369,9 +366,9 @@ fn main() {
         }
     }
 
-    // Update version in Cargo.toml using proper TOML manipulation
+    // Update version in Cargo.toml using toml_edit for format preservation
     info!("Updating Cargo.toml version to {}", next_version);
-    let updated_cargo = update_version_in_toml(cargo_toml, &next_version.to_string());
+    let updated_cargo = update_version_in_toml_edit(cargo_doc, &next_version.to_string());
     fs::write("Cargo.toml", updated_cargo)
         .expect("Failed to write updated Cargo.toml");
 
@@ -436,17 +433,12 @@ fn determine_release_type(current: &Version, next: &Version) -> ReleaseType {
     }
 }
 
-fn update_version_in_toml(mut cargo_toml: toml::Value, new_version: &str) -> String {
-    // Update the version in the [package] section
-    if let Some(package) = cargo_toml.get_mut("package") {
-        if let Some(package_table) = package.as_table_mut() {
-            package_table.insert("version".to_string(), toml::Value::String(new_version.to_string()));
-        }
-    }
+fn update_version_in_toml_edit(mut cargo_doc: toml_edit::Document, new_version: &str) -> String {
+    // Update the version in the [package] section using toml_edit for format preservation
+    cargo_doc["package"]["version"] = toml_edit::value(new_version);
 
-    // Serialize back to TOML string with pretty formatting
-    toml::to_string_pretty(&cargo_toml)
-        .expect("Failed to serialize updated TOML")
+    // Return the document as string - toml_edit preserves formatting
+    cargo_doc.to_string()
 }
 '''
 
