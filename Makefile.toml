@@ -372,17 +372,29 @@ fn main() {
     fs::write("Cargo.toml", updated_cargo)
         .expect("Failed to write updated Cargo.toml");
 
-    // Commit version change
+    // Run cargo update --workspace to update Cargo.lock with new version
+    info!("Updating Cargo.lock with new version");
+    let update_result = Command::new("cargo")
+        .args(&["update", "--workspace"])
+        .status()
+        .expect("Failed to run cargo update");
+
+    if !update_result.success() {
+        error!("Failed to update Cargo.lock - cargo update failed");
+        exit(1);
+    }
+
+    // Commit version change (including both Cargo.toml and Cargo.lock)
     let commit_message = format!("Version {}", next_version);
     info!("Committing version change: {}", commit_message);
 
     let add_result = Command::new("git")
-        .args(&["add", "Cargo.toml"])
+        .args(&["add", "Cargo.toml", "Cargo.lock"])
         .status()
-        .expect("Failed to add Cargo.toml");
+        .expect("Failed to add Cargo.toml and Cargo.lock");
 
     if !add_result.success() {
-        error!("Failed to add Cargo.toml to git");
+        error!("Failed to add Cargo.toml and Cargo.lock to git");
         exit(1);
     }
 
