@@ -40,6 +40,10 @@ jobs:
   package-release:
     runs-on: &ubuntu-runner
       ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
     needs: build-release
     steps:
       - uses: *checkout-action
