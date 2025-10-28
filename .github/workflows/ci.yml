@@ -74,6 +74,17 @@ jobs:
       with: &rust-cache-shared-key
         shared-key: ${{ hashFiles('Cargo.toml') }}
 
+    # The rust-cache action only caches dependencies
+    # With our build cache we cache our own binaries
+    - uses: &build-cache
+        actions/cache@v4
+      with: &build-cache-paths
+        path: |
+          ~\.cargo\git
+          ~\.cargo\registry
+          target
+        key: ${{runner.os}}-build-cache-${{ hashFiles('Cargo.toml') }}
+
     - name: Build
       run: |
         cargo build --all-targets --profile dev --verbose
@@ -93,13 +104,14 @@ jobs:
     - uses: *rust-cache-action
       with: *rust-cache-shared-key
 
+    - uses: *build-cache
+      with: *build-cache-paths
+
     - name: Run linter
       run: cargo lint
 
   tests:
     runs-on: windows-latest
-    # DEFINE the test-dependencies anchor to be re-used later
-    #
     # Only run tests and other final checks if
     # build, formatting and linting completed successfully
     needs: &test-dependencies
@@ -113,6 +125,9 @@ jobs:
 
     - uses: *rust-cache-action
       with: *rust-cache-shared-key
+
+    - uses: *build-cache
+      with: *build-cache-paths
 
     - name: Run tests all
       run: cargo tests
@@ -128,6 +143,9 @@ jobs:
     - uses: *rust-cache-action
       with: *rust-cache-shared-key
 
+    - uses: *build-cache
+      with: *build-cache-paths
+
     - name: Run tests docs
       run: cargo doc-tests
 
@@ -141,6 +159,9 @@ jobs:
 
     - uses: *rust-cache-action
       with: *rust-cache-shared-key
+
+    - uses: *build-cache
+      with: *build-cache-paths
 
     - uses: *cached-cargo-install
       with: *cargo-make
