@@ -5,9 +5,7 @@
 # Caches the rust toolchain based on the runner and RUST versions.
 # Uses Swatinem/rust-cache@v2 to cache rust dependencies.
 # Runs linters, formatters and tests in parallel.
-#
-# GitHub only supports a limited set of YAML anchors which means
-# we still have to repeat ourselves for the rust-toolchain-cache step
+# Uses YAML anchors where possible to reduce redundancy.
 
 name: CI
 
@@ -29,7 +27,8 @@ jobs:
   # Setup the Rust toolchain and install additional binaries
   # Uses a cache
   setup:
-    runs-on: windows-latest
+    runs-on: &runner-version
+      windows-latest
     steps:
     - uses: &checkout-action
         actions/checkout@v5
@@ -50,7 +49,7 @@ jobs:
         crate: cargo-make
 
   check-format:
-    runs-on: windows-latest
+    runs-on: *runner-version
     needs: setup
     steps:
     - uses: *checkout-action
@@ -61,7 +60,7 @@ jobs:
       run: cargo fmt -- --check
 
   build:
-    runs-on: windows-latest
+    runs-on: *runner-version
     needs: setup
     steps:
     - uses: *checkout-action
@@ -94,7 +93,7 @@ jobs:
       run: cargo docs
 
   check-lint:
-    runs-on: windows-latest
+    runs-on: *runner-version
     needs: build
     steps:
     - uses: *checkout-action
@@ -111,7 +110,7 @@ jobs:
       run: cargo lint
 
   tests:
-    runs-on: windows-latest
+    runs-on: *runner-version
     # Only run tests and other final checks if
     # build, formatting and linting completed successfully
     needs: &test-dependencies
@@ -133,7 +132,7 @@ jobs:
       run: cargo tests
 
   tests-docs:
-    runs-on: windows-latest
+    runs-on: *runner-version
     needs: *test-dependencies
     steps:
     - uses: *checkout-action
@@ -150,7 +149,7 @@ jobs:
       run: cargo doc-tests
 
   make-checks:
-    runs-on: windows-latest
+    runs-on: *runner-version
     needs: *test-dependencies
     steps:
     - uses: *checkout-action
