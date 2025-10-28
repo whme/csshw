@@ -186,3 +186,448 @@ exec "powershell" "-Command" "Write-Host -NoNewline -ForegroundColor Green 'INFO
 # a commit in case changes had to be made, thus we exit 1
 exit 1
 '''
+
+# ============================= #
+# === Release Automation === #
+# ============================= #
+
+[tasks.prepare-release]
+description = "Prepare a new release by updating version, creating maintenance branch if needed, committing and pushing changes"
+script_runner = "@rust"
+script = '''
+//! ```cargo
+//! [dependencies]
+//! semver = "1.0"
+//! toml_edit = "0.21"
+//! log = "0.4"
+//! env_logger = "0.11"
+//! ```
+
+use std::process::{Command, exit};
+use std::fs;
+use std::io::{self, Write};
+use semver::Version;
+use log::{info, error};
+
+#[derive(Debug, PartialEq)]
+enum ReleaseType {
+    Major,
+    Minor,
+    Patch,
+}
+
+impl std::fmt::Display for ReleaseType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReleaseType::Major => write!(f, "major"),
+            ReleaseType::Minor => write!(f, "minor"),
+            ReleaseType::Patch => write!(f, "patch"),
+        }
+    }
+}
+
+fn main() {
+    // Initialize logger with custom format: "LEVEL - message" with colors
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Info)
+        .format_timestamp(None)
+        .format_module_path(false)
+        .format_target(false)
+        .format(|buf, record| {
+            use std::io::Write;
+            let level_style = buf.default_level_style(record.level());
+            writeln!(
+                buf,
+                "{level_style}{}{level_style:#} - {}",
+                record.level(),
+                record.args()
+            )
+        })
+        .init();
+
+    // Check if git working directory is clean
+    let status_output = Command::new("git")
+        .args(&["status", "--porcelain"])
+        .output()
+        .expect("Failed to check git status");
+
+    if !status_output.stdout.is_empty() {
+        error!("Git working directory is not clean. Please commit or stash changes first.");
+        exit(1);
+    }
+
+    // Get current branch
+    let branch_output = Command::new("git")
+        .args(&["branch", "--show-current"])
+        .output()
+        .expect("Failed to get current branch");
+
+    let current_branch = String::from_utf8(branch_output.stdout)
+        .expect("Invalid UTF-8 in branch name")
+        .trim()
+        .to_string();
+
+    info!("Current branch: {}", current_branch);
+
+    let cargo_content = fs::read_to_string("Cargo.toml")
+        .expect("Failed to read Cargo.toml");
+    let cargo_doc = cargo_content.parse::<toml_edit::Document>()
+        .expect("Failed to parse Cargo.toml");
+    let current_version_str = cargo_doc["package"]["version"]
+        .as_str()
+        .expect("Failed to get version from Cargo.toml");
+
+    let current_version = Version::parse(current_version_str)
+        .expect("Failed to parse current version");
+
+    info!("Current version: {}", current_version);
+
+    // Determine suggested release type and calculate next version
+    let (suggested_release_type, suggested_version) = if current_branch == "main" {
+        // Minor release from main branch
+        let mut next = current_version.clone();
+        next.minor += 1;
+        next.patch = 0;
+        (ReleaseType::Minor, next)
+    } else if current_branch.ends_with("-maintenance") {
+        // Patch release from maintenance branch
+        let mut next = current_version.clone();
+        next.patch += 1;
+        (ReleaseType::Patch, next)
+    } else {
+        error!("Must be on 'main' branch or a '*-maintenance' branch to prepare a release");
+        eprintln!("       Current branch: {}", current_branch);
+        exit(1);
+    };
+
+    // Ask user for confirmation and allow custom version
+    print!("Preparing {} release: {} -> {}. Continue? [Y/n]: ",
+           suggested_release_type, current_version, suggested_version);
+    io::stdout().flush().unwrap();
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).expect("Failed to read input");
+    let input = input.trim().to_lowercase();
+
+    let (next_version, actual_release_type) = if input == "n" || input == "no" {
+        print!("Enter custom version (current: {}): ", current_version);
+        io::stdout().flush().unwrap();
+
+        let mut custom_version = String::new();
+        io::stdin().read_line(&mut custom_version).expect("Failed to read input");
+        let custom_version_str = custom_version.trim().to_string();
+
+        if custom_version_str.is_empty() {
+            error!("Version cannot be empty");
+            exit(1);
+        }
+
+        // Parse and validate version using semver
+        let custom_version = match Version::parse(&custom_version_str) {
+            Ok(v) => v,
+            Err(_) => {
+                error!("Invalid version format. Use semantic versioning (e.g., 1.2.3)");
+                exit(1);
+            }
+        };
+
+        // Determine actual release type based on version comparison
+        let release_type = determine_release_type(&current_version, &custom_version);
+        (custom_version, release_type)
+    } else if input.is_empty() || input == "y" || input == "yes" {
+        (suggested_version, suggested_release_type)
+    } else {
+        error!("Invalid input. Please enter Y/n");
+        exit(1);
+    };
+
+    // Calculate target branch
+    let target_branch = if current_branch == "main" {
+        format!("{}.{}-maintenance", next_version.major, next_version.minor)
+    } else {
+        current_branch.clone()
+    };
+
+    info!("Preparing {} release: {} -> {}", actual_release_type, current_version, next_version);
+    info!("Target branch: {}", target_branch);
+
+    // If we're on main, create and switch to maintenance branch
+    if current_branch == "main" {
+        info!("Creating maintenance branch: {}", target_branch);
+
+        // Create maintenance branch
+        let create_result = Command::new("git")
+            .args(&["checkout", "-b", &target_branch])
+            .status()
+            .expect("Failed to create maintenance branch");
+
+        if !create_result.success() {
+            error!("Failed to create maintenance branch");
+            exit(1);
+        }
+    }
+
+    // Update version in Cargo.toml using toml_edit for format preservation
+    info!("Updating Cargo.toml version to {}", next_version);
+    let updated_cargo = update_version_in_toml_edit(cargo_doc, &next_version.to_string());
+    fs::write("Cargo.toml", updated_cargo)
+        .expect("Failed to write updated Cargo.toml");
+
+    // Run cargo update --workspace to update Cargo.lock with new version
+    info!("Updating Cargo.lock with new version");
+    let update_result = Command::new("cargo")
+        .args(&["update", "--workspace"])
+        .status()
+        .expect("Failed to run cargo update");
+
+    if !update_result.success() {
+        error!("Failed to update Cargo.lock - cargo update failed");
+        exit(1);
+    }
+
+    // Commit version change (including both Cargo.toml and Cargo.lock)
+    let commit_message = format!("Version {}", next_version);
+    info!("Committing version change: {}", commit_message);
+
+    let add_result = Command::new("git")
+        .args(&["add", "Cargo.toml", "Cargo.lock"])
+        .status()
+        .expect("Failed to add Cargo.toml and Cargo.lock");
+
+    if !add_result.success() {
+        error!("Failed to add Cargo.toml and Cargo.lock to git");
+        exit(1);
+    }
+
+    let commit_result = Command::new("git")
+        .args(&["commit", "-m", &commit_message])
+        .status()
+        .expect("Failed to commit version change");
+
+    if !commit_result.success() {
+        error!("Failed to commit version change");
+        exit(1);
+    }
+
+    // Push to remote
+    info!("Pushing version commit to remote");
+    let push_args = if current_branch == "main" {
+        // Push new maintenance branch with upstream
+        vec!["push", "-u", "origin", &target_branch]
+    } else {
+        // Push to existing branch
+        vec!["push"]
+    };
+
+    let push_result = Command::new("git")
+        .args(&push_args)
+        .status()
+        .expect("Failed to push to remote");
+
+    if !push_result.success() {
+        error!("Failed to push to remote");
+        exit(1);
+    }
+
+    info!("Release {} prepared and pushed on branch {}", next_version, target_branch);
+    info!("Run 'cargo make create-release-tag' to create and push the release tag");
+}
+
+fn determine_release_type(current: &Version, next: &Version) -> ReleaseType {
+    if next.major > current.major {
+        ReleaseType::Major
+    } else if next.minor > current.minor {
+        ReleaseType::Minor
+    } else if next.patch > current.patch {
+        ReleaseType::Patch
+    } else {
+        // Fallback for edge cases
+        ReleaseType::Patch
+    }
+}
+
+fn update_version_in_toml_edit(mut cargo_doc: toml_edit::Document, new_version: &str) -> String {
+    // Update the version in the [package] section using toml_edit for format preservation
+    cargo_doc["package"]["version"] = toml_edit::value(new_version);
+
+    // Return the document as string - toml_edit preserves formatting
+    cargo_doc.to_string()
+}
+'''
+
+[tasks.release]
+description = "Create and push an annotated git tag for the current release version, inturn triggering the release github workflow"
+script_runner = "@rust"
+script = '''
+//! ```cargo
+//! [dependencies]
+//! semver = "1.0"
+//! toml = "0.8"
+//! log = "0.4"
+//! env_logger = "0.11"
+//! ```
+
+use std::process::{Command, exit};
+use std::fs;
+use std::io::{self, Write};
+use semver::Version;
+use log::{info, warn, error};
+
+fn main() {
+    // Initialize logger with custom format: "LEVEL - message" with colors
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Info)
+        .format_timestamp(None)
+        .format_module_path(false)
+        .format_target(false)
+        .format(|buf, record| {
+            use std::io::Write;
+            let level_style = buf.default_level_style(record.level());
+            writeln!(
+                buf,
+                "{level_style}{}{level_style:#} - {}",
+                record.level(),
+                record.args()
+            )
+        })
+        .init();
+
+    // Get current branch
+    let branch_output = Command::new("git")
+        .args(&["branch", "--show-current"])
+        .output()
+        .expect("Failed to get current branch");
+
+    let current_branch = String::from_utf8(branch_output.stdout)
+        .expect("Invalid UTF-8 in branch name")
+        .trim()
+        .to_string();
+
+    // Verify we're on a maintenance branch
+    if !current_branch.ends_with("-maintenance") {
+        error!("Must be on a maintenance branch to create release tag");
+        eprintln!("       Current branch: {}", current_branch);
+        eprintln!("       Run 'cargo make prepare-release' first");
+        exit(1);
+    }
+
+    // Read version from Cargo.toml using simple TOML parsing
+    let cargo_content = fs::read_to_string("Cargo.toml")
+        .expect("Failed to read Cargo.toml");
+
+    let cargo_toml: toml::Value = toml::from_str(&cargo_content)
+        .expect("Failed to parse Cargo.toml");
+
+    let current_version_str = cargo_toml["package"]["version"]
+        .as_str()
+        .expect("Failed to get version from Cargo.toml");
+
+    let version = Version::parse(current_version_str)
+        .expect("Failed to parse version");
+
+    info!("Current branch: {}", current_branch);
+    info!("Version to tag: {}", version);
+
+    // Check if tag already exists
+    let tag_check = Command::new("git")
+        .args(&["tag", "-l", &version.to_string()])
+        .output()
+        .expect("Failed to check existing tags");
+
+    if !tag_check.stdout.is_empty() {
+        error!("Tag {} already exists", version);
+        exit(1);
+    }
+
+    // Verify the latest commit message matches the version
+    let commit_msg_output = Command::new("git")
+        .args(&["log", "-1", "--pretty=format:%s"])
+        .output()
+        .expect("Failed to get latest commit message");
+
+    let commit_msg = String::from_utf8(commit_msg_output.stdout)
+        .expect("Invalid UTF-8 in commit message")
+        .trim()
+        .to_string();
+
+    let expected_msg = format!("Version {}", version);
+    if commit_msg != expected_msg {
+        error!("Latest commit message doesn't match expected version commit");
+        eprintln!("       Expected: {}", expected_msg);
+        eprintln!("       Actual: {}", commit_msg);
+        eprintln!("       Run 'cargo make prepare-release' first");
+        exit(1);
+    }
+
+    // Fetch latest changes to ensure we're up to date
+    info!("Fetching latest changes from remote");
+    let fetch_result = Command::new("git")
+        .args(&["fetch"])
+        .status()
+        .expect("Failed to fetch from remote");
+
+    if !fetch_result.success() {
+        warn!("Failed to fetch from remote, continuing anyway");
+    }
+
+    // Check if we're behind remote
+    let behind_check = Command::new("git")
+        .args(&["rev-list", "--count", &format!("HEAD..origin/{}", current_branch)])
+        .output()
+        .expect("Failed to check if behind remote");
+
+    let behind_count = String::from_utf8(behind_check.stdout)
+        .expect("Invalid UTF-8 in behind count")
+        .trim()
+        .parse::<u32>()
+        .unwrap_or(0);
+
+    if behind_count > 0 {
+        error!("Local branch is {} commits behind remote", behind_count);
+        eprintln!("       Run 'git pull' to update");
+        exit(1);
+    }
+
+    // Ask for user confirmation
+    print!("About to create and push tag '{}' for release. Continue? [Y/n]: ", version);
+    io::stdout().flush().unwrap();
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).expect("Failed to read input");
+
+    if input.trim().to_lowercase() != "y" {
+        info!("Tag creation cancelled");
+        exit(0);
+    }
+
+    // Create annotated tag
+    let tag_message = format!("Version {}", version);
+    info!("Creating annotated tag: {}", version);
+
+    let tag_result = Command::new("git")
+        .args(&["tag", "-a", &version.to_string(), "-m", &tag_message])
+        .status()
+        .expect("Failed to create tag");
+
+    if !tag_result.success() {
+        error!("Failed to create tag");
+        exit(1);
+    }
+
+    // Push tag to remote
+    info!("Pushing tag to remote");
+    let push_result = Command::new("git")
+        .args(&["push", "origin", &version.to_string()])
+        .status()
+        .expect("Failed to push tag");
+
+    if !push_result.success() {
+        error!("Failed to push tag to remote");
+        exit(1);
+    }
+
+    info!("Tag '{}' created and pushed to remote", version);
+    info!("GitHub Actions release workflow should now be triggered");
+    info!("Check: https://github.com/whme/csshw/actions/workflows/release.yml");
+}
+'''

@@ -155,6 +155,13 @@ e.g. white font on red background: 8+4+2+1+64+128 = `207`
 csshW uses pre-commit githooks to enforce good code style.<br>
 Install them via ``git config --local core.hooksPath .githooks/``.
 
+## Releases
+Step by step guide to create a new release:
+- `cargo make prepare-release` and follow the instructions
+- Create a pull request from the new maintenance branch OR cherry-pick the Version change from an existing maintenance branch
+- `cargo make release` and follow the instructions
+- Revise the automatically created Release Draft and publish it
+
 [^1]: The searchbar used to launch csshw in the demo clip is [keypirinha](https://keypirinha.com/).
 [^2]: The tool to show key presses in the demo clip is [carnac the magnificent](https://github.com/Code52/carnac).
 [^3]: The tool used to record the screen as GIF is [ScreenToGif](https://github.com/NickeManarin/ScreenToGif).
