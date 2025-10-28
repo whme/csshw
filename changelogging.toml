@@ -2,3 +2,13 @@
 name = "csshw"
 version = "0.18.1"
 url = "https://github.com/whme/csshw"
+
+[paths]
+directory = "news"
+
+[types]
+security = "Security"
+feature = "Features"
+bugfix = "Bug Fixes"
+deprecation = "Deprecations"
+removal = "Removals"
