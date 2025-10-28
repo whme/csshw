@@ -27,6 +27,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Extract version from tag
+        id: version
         run: |
           # VERSION=${GITHUB_REF#refs/tags/}
           VERSION=0.0.0
@@ -34,6 +35,7 @@ jobs:
           # Split version into components
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
 
+          echo "$VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
   build-release:
