@@ -510,7 +510,7 @@ fn main() {
 
     // Run changelogging build to update CHANGELOG.md
     let build_result = Command::new("changelogging")
-        .args(&["build"])
+        .args(&["build", "--remove"])
         .status()
         .expect("Failed to run changelogging build");
 
