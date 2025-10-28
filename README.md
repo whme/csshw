@@ -52,6 +52,8 @@ Arguments:
 
           E.g.: `csshw.exe -p 33 host1:11 host2:22 host3`
 
+          If no hosts are provided and the application is launched in a new console window (e.g. by double clicking the executable in the File Explorer), it will launch in interactive mode.
+
 Options:
   -u, --username <USERNAME>
           Optional username used to connect to the hosts
