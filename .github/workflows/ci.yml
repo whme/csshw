@@ -50,8 +50,9 @@ jobs:
           ~\.cargo\.crates2.json
         key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
 
-    - name: Set up Rust toolchain (configure correct Rust version)
-      run: rustup update $RUST_VERSION && rustup default $RUST_VERSION
+    # Set up Rust toolchain (configure correct Rust version)
+    - run: &rust-toolchain-setup
+        rustup update $RUST_VERSION && rustup default $RUST_VERSION
 
     # Don't use a shared-key here as the dependencies for cargo-make
     # are not relevant for the other jobs
@@ -67,8 +68,7 @@ jobs:
     steps:
     - uses: *checkout-action
 
-    - uses: *cache-action
-      with: *rust-toolchain-cache
+    - run: *rust-toolchain-setup
 
     - name: Check format
       run: cargo fmt -- --check
@@ -79,8 +79,7 @@ jobs:
     steps:
     - uses: *checkout-action
 
-    - uses: *cache-action
-      with: *rust-toolchain-cache
+    - run: *rust-toolchain-setup
 
     - uses: *rust-cache-action
       # The shared key will be surrounded by additional information such as language, OS, and arch
@@ -102,8 +101,7 @@ jobs:
     steps:
     - uses: *checkout-action
 
-    - uses: *cache-action
-      with: *rust-toolchain-cache
+    - run: *rust-toolchain-setup
 
     - uses: *rust-cache-action
       with: *rust-cache-shared-key
@@ -124,8 +122,7 @@ jobs:
     steps:
     - uses: *checkout-action
 
-    - uses: *cache-action
-      with: *rust-toolchain-cache
+    - run: *rust-toolchain-setup
 
     - uses: *rust-cache-action
       with: *rust-cache-shared-key
@@ -139,8 +136,7 @@ jobs:
     steps:
     - uses: *checkout-action
 
-    - uses: *cache-action
-      with: *rust-toolchain-cache
+    - run: *rust-toolchain-setup
 
     - uses: *rust-cache-action
       with: *rust-cache-shared-key
@@ -154,8 +150,7 @@ jobs:
     steps:
     - uses: *checkout-action
 
-    - uses: *cache-action
-      with: *rust-toolchain-cache
+    - run: *rust-toolchain-setup
 
     - uses: *rust-cache-action
       with: *rust-cache-shared-key
