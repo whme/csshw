@@ -32,7 +32,7 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: &checkout-action
-        actions/checkout@v4
+        actions/checkout@v5
 
     # Why are we not explicitly checking for a cache hit?
     # -> The cache action will try to restore the cache
@@ -54,12 +54,10 @@ jobs:
     - name: Set up Rust toolchain (configure correct Rust version)
       run: rustup update $RUST_VERSION && rustup default $RUST_VERSION
 
+    # Don't use a shared-key here as the dependencies for cargo-make
+    # are not relevant for the other jobs
     - uses: &rust-cache-action
           Swatinem/rust-cache@v2
-      # The shared key will be surrounded by additional information such as language, OS, and arch
-      # so there is no need for us to include that information as well
-      with: &rust-cache-shared-key
-        shared-key: ${{ hashFiles('Cargo.toml') }}
 
     - name: Add cargo-make
       run: cargo install cargo-make
@@ -91,7 +89,10 @@ jobs:
       with: *rust-toolchain-cache
 
     - uses: *rust-cache-action
-      with: *rust-cache-shared-key
+      # The shared key will be surrounded by additional information such as language, OS, and arch
+      # so there is no need for us to include that information as well
+      with: &rust-cache-shared-key
+        shared-key: ${{ hashFiles('Cargo.toml') }}
 
     - name: Build
       run: |
