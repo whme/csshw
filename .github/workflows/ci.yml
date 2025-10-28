@@ -53,8 +53,10 @@ jobs:
       run: rustup update $RUST_VERSION && rustup default $RUST_VERSION
 
     - uses: Swatinem/rust-cache@v2
+      # The shared key will be surrounded by additional information such as language, OS, and arch
+      # so there is no need for us to include that information as well
       with: &rust-cache-shared-key
-        shared-key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ hashFiles('Cargo.toml') }}
+        shared-key: ${{ hashFiles('Cargo.toml') }}
 
     - name: Add cargo-make
       run: cargo install cargo-make
