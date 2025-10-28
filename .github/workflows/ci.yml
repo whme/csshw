@@ -39,8 +39,7 @@ jobs:
     # if its available. If we have a cache hit
     # the rustup and cargo install commands will be fast
     # so there is no need to manually check for a cache hit
-    - name: rust-toolchain-cache
-      uses: &cache-action
+    - uses: &cache-action
         actions/cache@v4
       with: &rust-toolchain-cache
         path: |
@@ -68,8 +67,7 @@ jobs:
     steps:
     - uses: *checkout-action
 
-    - name: rust-toolchain-cache
-      uses: *cache-action
+    - uses: *cache-action
       with: *rust-toolchain-cache
 
     - name: Check format
@@ -81,8 +79,7 @@ jobs:
     steps:
     - uses: *checkout-action
 
-    - name: rust-toolchain-cache
-      uses: *cache-action
+    - uses: *cache-action
       with: *rust-toolchain-cache
 
     - uses: *rust-cache-action
@@ -105,8 +102,7 @@ jobs:
     steps:
     - uses: *checkout-action
 
-    - name: rust-toolchain-cache
-      uses: *cache-action
+    - uses: *cache-action
       with: *rust-toolchain-cache
 
     - uses: *rust-cache-action
@@ -128,8 +124,7 @@ jobs:
     steps:
     - uses: *checkout-action
 
-    - name: rust-toolchain-cache
-      uses: *cache-action
+    - uses: *cache-action
       with: *rust-toolchain-cache
 
     - uses: *rust-cache-action
@@ -144,8 +139,7 @@ jobs:
     steps:
     - uses: *checkout-action
 
-    - name: rust-toolchain-cache
-      uses: *cache-action
+    - uses: *cache-action
       with: *rust-toolchain-cache
 
     - uses: *rust-cache-action
@@ -160,8 +154,7 @@ jobs:
     steps:
     - uses: *checkout-action
 
-    - name: rust-toolchain-cache
-      uses: *cache-action
+    - uses: *cache-action
       with: *rust-toolchain-cache
 
     - uses: *rust-cache-action
