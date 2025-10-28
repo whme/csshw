@@ -1,22 +1,21 @@
 #
 #   csshw CI
 #
-# Only runs on the main branch on pushes and pull_requests.
-# Caches the rust toolchain based on the runner and RUST versions.
-# Uses Swatinem/rust-cache@v2 to cache rust dependencies.
-# Runs linters, formatters and tests in parallel.
-# Uses YAML anchors where possible to reduce redundancy.
+# Only runs on the main branch on pushes.
+# For pull requests, see ci-coverage.yml which includes coverage reporting.
+# Uses the shared CI workflow without coverage collection.
 
 name: CI
 
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
     paths:
+      # NOTE: Keep this list in sync with ci-coverage.yml
       - .cargo/**
+      - .github/workflows/ci-coverage.yml
       - .github/workflows/ci.yml
+      - .github/workflows/_shared-ci.yml
       - src/**
       - build.rs
       - Cargo.toml
@@ -24,131 +23,8 @@ on:
       - Makefile.toml
       - rustfmt.toml
 
-env:
-  CARGO_TERM_COLOR: always
-  RUST_VERSION: 1.88.0
-
-
 jobs:
-  build:
-    runs-on: &runner-version
-      windows-latest
-    steps:
-    - uses: &checkout-action
-        actions/checkout@v5
-
-    - run: &rust-toolchain-setup
-        rustup update $RUST_VERSION && rustup default $RUST_VERSION
-
-    - uses: &rust-cache-action
-        Swatinem/rust-cache@v2
-      # The shared key will be surrounded by additional information such as language, OS, and arch
-      # so there is no need for us to include that information as well
-      with: &rust-cache-shared-key
-        shared-key: ${{ hashFiles('Cargo.toml') }}
-
-    # The rust-cache action only caches dependencies
-    # With this build-cache we cache the project binaries
-    - uses: &build-cache
-        actions/cache@v4
-      with: &build-cache-paths
-        path: |
-          ~\.cargo\git
-          ~\.cargo\registry
-          target
-        key: ${{runner.os}}-build-cache-${{ hashFiles('Cargo.toml') }}
-
-    - name: Build
-      run: |
-        cargo build --all-targets --profile dev --verbose
-        cargo build --all-targets --profile test --verbose
-
-    - name: Build docs
-      run: cargo docs
-
-  check-format:
-    runs-on: *runner-version
-    steps:
-    - uses: *checkout-action
-
-    - run: *rust-toolchain-setup
-
-    - name: Check format
-      run: cargo fmt -- --check
-
-  check-lint:
-    runs-on: *runner-version
-    needs: build
-    steps:
-    - uses: *checkout-action
-
-    - run: *rust-toolchain-setup
-
-    - uses: *rust-cache-action
-      with: *rust-cache-shared-key
-
-    - uses: *build-cache
-      with: *build-cache-paths
-
-    - name: Run linter
-      run: cargo lint
-
-  tests:
-    runs-on: *runner-version
-    needs: &test-dependencies
-      - build
-    steps:
-    - uses: *checkout-action
-
-    - run: *rust-toolchain-setup
-
-    - uses: *rust-cache-action
-      with: *rust-cache-shared-key
-
-    - uses: *build-cache
-      with: *build-cache-paths
-
-    - name: Run tests all
-      run: cargo tests
-
-  tests-docs:
-    runs-on: *runner-version
-    needs: *test-dependencies
-    steps:
-    - uses: *checkout-action
-
-    - run: *rust-toolchain-setup
-
-    - uses: *rust-cache-action
-      with: *rust-cache-shared-key
-
-    - uses: *build-cache
-      with: *build-cache-paths
-
-    - name: Run tests docs
-      run: cargo doc-tests
-
-  make-checks:
-    runs-on: *runner-version
-    needs: *test-dependencies
-    steps:
-    - uses: *checkout-action
-
-    - run: *rust-toolchain-setup
-
-    - uses: *rust-cache-action
-      with: *rust-cache-shared-key
-
-    - uses: *build-cache
-      with: *build-cache-paths
-
-    # The cargo-install action caches the binary
-    # and re-uses it if there is a cache hit
-    - name: Install cargo-make
-      uses: baptiste0928/cargo-install@v3
-      with:
-        crate: cargo-make
-        version: '^0.37'
-
-    - name: Run check-readme-help
-      run: cargo make check-readme-help
+  ci:
+    uses: ./.github/workflows/_shared-ci.yml
+    with:
+      run_coverage: false
