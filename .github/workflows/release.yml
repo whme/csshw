@@ -114,8 +114,44 @@ jobs:
             const templatePath = path.join(process.cwd(), 'templates', 'release_template.md');
             let releaseBody = fs.readFileSync(templatePath, 'utf8');
 
-            // Replace version placeholder
+            // Extract current version's changelog from CHANGELOG.md
+            const changelogPath = path.join(process.cwd(), 'CHANGELOG.md');
+            const changelogContent = fs.readFileSync(changelogPath, 'utf8');
+
+            // Parse changelog line by line to extract current version's content
+            const lines = changelogContent.split('\n');
+            let currentChangelog = 'No changelog entries found for this version.';
+            let inTargetVersion = false;
+            let changelogLines = [];
+
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+
+              // Check if this is the start of our target version
+              if (line.startsWith('## ') && line.includes(version)) {
+                inTargetVersion = true;
+                continue; // Skip the version header line
+              }
+
+              // Check if we've hit the next version (stop collecting)
+              if (inTargetVersion && line.startsWith('## ')) {
+                break;
+              }
+
+              // Collect lines for our target version
+              if (inTargetVersion) {
+                changelogLines.push(line);
+              }
+            }
+
+            // Join the collected lines and trim
+            if (changelogLines.length > 0) {
+              currentChangelog = changelogLines.join('\n').trim();
+            }
+
+            // Replace placeholders
             releaseBody = releaseBody.replace(/\{\{VERSION\}\}/g, version);
+            releaseBody = releaseBody.replace(/\{\{CHANGELOG\}\}/g, currentChangelog);
 
             console.log('Creating draft release for version:', version);
             console.log('Release body:');
