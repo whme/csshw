@@ -17,23 +17,6 @@ env:
   RUST_VERSION: 1.88.0
 
 jobs:
-  extract-version:
-    runs-on: &ubuntu-runner
-      ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-    steps:
-      - name: Extract version from tag
-        id: version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-
-          # Split version into components
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-
-          echo "$VERSION"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
   build-release:
     runs-on: windows-latest
     steps:
@@ -55,8 +38,9 @@ jobs:
           retention-days: 1
 
   package-release:
-    runs-on: *ubuntu-runner
-    needs: [extract-version, build-release]
+    runs-on: &ubuntu-runner
+      ubuntu-latest
+    needs: build-release
     steps:
       - uses: *checkout-action
 
@@ -69,7 +53,7 @@ jobs:
 
       - name: Create release package
         run: |
-          VERSION="${{ needs.extract-version.outputs.version }}"
+          VERSION="${{ github.ref_name }}"
 
           # Create package directory
           mkdir -p package
@@ -92,12 +76,12 @@ jobs:
         uses: *upload-artifact-action
         with:
           name: release-package
-          path: csshw.${{ needs.extract-version.outputs.version }}.zip
+          path: csshw.${{ github.ref_name }}.zip
           retention-days: 1
 
   create-draft-release:
     runs-on: *ubuntu-runner
-    needs: [extract-version, package-release]
+    needs: package-release
     permissions:
       contents: write
     steps:
@@ -116,7 +100,7 @@ jobs:
             const fs = require('fs');
             const path = require('path');
 
-            const version = '${{ needs.extract-version.outputs.version }}';
+            const version = '${{ github.ref_name }}';
 
             // Read and process release template
             const templatePath = path.join(process.cwd(), 'templates', 'release_template.md');
