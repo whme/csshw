@@ -88,7 +88,7 @@ jobs:
     # Install cargo-llvm-cov if coverage is requested
     - name: Install cargo-llvm-cov
       if: inputs.run_coverage
-      uses: &cargo-install
+      uses: &cargo-install-action
         baptiste0928/cargo-install@v3
       with:
         crate: cargo-llvm-cov
@@ -109,7 +109,8 @@ jobs:
 
     - name: Upload Coverage XML Data
       if: inputs.run_coverage
-      uses: *upload-artifact-action
+      uses: &upload-artifact-action
+        actions/upload-artifact@v4
       with:
         name: coverage-xml-data
         path: coverage.xml
@@ -139,7 +140,7 @@ jobs:
     - uses: *build-cache
       with: *build-cache-paths
     - name: Install cargo-make
-      uses: *cargo-install
+      uses: *cargo-install-action
       with:
         crate: cargo-make
         version: '^0.37'
