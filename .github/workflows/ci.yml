@@ -31,7 +31,8 @@ jobs:
   setup:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: &checkout-action
+        actions/checkout@v4
 
     # Why are we not explicitly checking for a cache hit?
     # -> The cache action will try to restore the cache
@@ -39,7 +40,8 @@ jobs:
     # the rustup and cargo install commands will be fast
     # so there is no need to manually check for a cache hit
     - name: rust-toolchain-cache
-      uses: actions/cache@v4
+      uses: &cache-action
+        actions/cache@v4
       with: &rust-toolchain-cache
         path: |
           ~\.cargo\bin
@@ -52,7 +54,8 @@ jobs:
     - name: Set up Rust toolchain (configure correct Rust version)
       run: rustup update $RUST_VERSION && rustup default $RUST_VERSION
 
-    - uses: Swatinem/rust-cache@v2
+    - uses: &rust-cache-action
+          Swatinem/rust-cache@v2
       # The shared key will be surrounded by additional information such as language, OS, and arch
       # so there is no need for us to include that information as well
       with: &rust-cache-shared-key
@@ -65,13 +68,13 @@ jobs:
     runs-on: windows-latest
     needs: setup
     steps:
-    - uses: actions/checkout@v4
+    - uses: *checkout-action
 
     - name: rust-toolchain-cache
-      uses: actions/cache@v4
+      uses: *cache-action
       with: *rust-toolchain-cache
 
-    - uses: Swatinem/rust-cache@v2
+    - uses: *rust-cache-action
       with: *rust-cache-shared-key
 
     - name: Check format
@@ -81,13 +84,13 @@ jobs:
     runs-on: windows-latest
     needs: setup
     steps:
-    - uses: actions/checkout@v4
+    - uses: *checkout-action
 
     - name: rust-toolchain-cache
-      uses: actions/cache@v4
+      uses: *cache-action
       with: *rust-toolchain-cache
 
-    - uses: Swatinem/rust-cache@v2
+    - uses: *rust-cache-action
       with: *rust-cache-shared-key
 
     - name: Build
@@ -102,13 +105,13 @@ jobs:
     runs-on: windows-latest
     needs: build
     steps:
-    - uses: actions/checkout@v4
+    - uses: *checkout-action
 
     - name: rust-toolchain-cache
-      uses: actions/cache@v4
+      uses: *cache-action
       with: *rust-toolchain-cache
 
-    - uses: Swatinem/rust-cache@v2
+    - uses: *rust-cache-action
       with: *rust-cache-shared-key
 
     - name: Run linter
@@ -125,13 +128,13 @@ jobs:
       - check-format
       - check-lint
     steps:
-    - uses: actions/checkout@v4
+    - uses: *checkout-action
 
     - name: rust-toolchain-cache
-      uses: actions/cache@v4
+      uses: *cache-action
       with: *rust-toolchain-cache
 
-    - uses: Swatinem/rust-cache@v2
+    - uses: *rust-cache-action
       with: *rust-cache-shared-key
 
     - name: Run tests all
@@ -141,13 +144,13 @@ jobs:
     runs-on: windows-latest
     needs: *test-dependencies
     steps:
-    - uses: actions/checkout@v4
+    - uses: *checkout-action
 
     - name: rust-toolchain-cache
-      uses: actions/cache@v4
+      uses: *cache-action
       with: *rust-toolchain-cache
 
-    - uses: Swatinem/rust-cache@v2
+    - uses: *rust-cache-action
       with: *rust-cache-shared-key
 
     - name: Run tests docs
@@ -157,13 +160,13 @@ jobs:
     runs-on: windows-latest
     needs: *test-dependencies
     steps:
-    - uses: actions/checkout@v4
+    - uses: *checkout-action
 
     - name: rust-toolchain-cache
-      uses: actions/cache@v4
+      uses: *cache-action
       with: *rust-toolchain-cache
 
-    - uses: Swatinem/rust-cache@v2
+    - uses: *rust-cache-action
       with: *rust-cache-shared-key
 
     - name: Run check-readme-help make
