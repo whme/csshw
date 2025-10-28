@@ -111,12 +111,9 @@ jobs:
 
   tests:
     runs-on: *runner-version
-    # Only run tests and other final checks if
-    # build, formatting and linting completed successfully
     needs: &test-dependencies
       - build
       - check-format
-      - check-lint
     steps:
     - uses: *checkout-action
 
