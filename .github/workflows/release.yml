@@ -72,6 +72,10 @@ jobs:
           SIZE=$(stat -c%s "csshw.${VERSION}.zip")
           echo "Package size: ${SIZE} bytes"
 
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: 'csshw.${{ github.ref_name }}.zip'
+
       - name: Upload release package
         uses: *upload-artifact-action
         with:
