@@ -57,7 +57,7 @@ jobs:
     # Don't use a shared-key here as the dependencies for cargo-make
     # are not relevant for the other jobs
     - uses: &rust-cache-action
-          Swatinem/rust-cache@v2
+        Swatinem/rust-cache@v2
 
     - name: Add cargo-make
       run: cargo install cargo-make
