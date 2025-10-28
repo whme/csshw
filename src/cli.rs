@@ -101,6 +101,22 @@ impl ArgsCommand for CLIArgsCommand {
     }
 }
 
+/// Trait for logger initialization to enable mocking in tests
+#[cfg_attr(test, automock)]
+pub trait LoggerInitializer {
+    /// Initialize logger with the given name
+    fn init_logger(&self, name: &str);
+}
+
+/// Default implementation of LoggerInitializer trait
+pub struct CLILoggerInitializer;
+
+impl LoggerInitializer for CLILoggerInitializer {
+    fn init_logger(&self, name: &str) {
+        init_logger(name);
+    }
+}
+
 /// Trait defining the entrypoint functions of the different
 /// subcommands
 #[cfg_attr(test, automock)]
@@ -219,31 +235,33 @@ fn read_user_input() -> Result<Option<String>, std::io::Error> {
 /// # Arguments
 ///
 /// * `input` - The user input string
+/// * `args_command` - The ArgsCommand trait object for printing help
 ///
 /// # Returns
 ///
 /// * `true` - Command was handled, continue loop
 /// * `false` - Command needs full parsing
-fn handle_special_commands(input: &str) -> bool {
+fn handle_special_commands<A: ArgsCommand>(input: &str, args_command: &A) -> bool {
     if input == "--help" || input == "-h" {
-        Args::command().print_help().unwrap();
+        let _ = args_command.print_help();
         return true;
     }
     return false;
 }
 
 /// Execute a parsed command using the provided entrypoint
-async fn execute_parsed_command<T: Entrypoint, A: ArgsCommand>(
+async fn execute_parsed_command<T: Entrypoint, A: ArgsCommand, L: LoggerInitializer>(
     parsed_args: Args,
     entrypoint: &mut T,
     args_command: &A,
+    logger_initializer: &L,
     config: &Config,
     config_path: &str,
 ) {
     match &parsed_args.command {
         Some(Commands::Client { host }) => {
             if parsed_args.debug {
-                init_logger(&format!("csshw_client_{host}"));
+                logger_initializer.init_logger(&format!("csshw_client_{host}"));
             }
             entrypoint
                 .client_main(
@@ -256,7 +274,7 @@ async fn execute_parsed_command<T: Entrypoint, A: ArgsCommand>(
         }
         Some(Commands::Daemon {}) => {
             if parsed_args.debug {
-                init_logger("csshw_daemon");
+                logger_initializer.init_logger("csshw_daemon");
             }
             entrypoint
                 .daemon_main(
@@ -292,7 +310,7 @@ async fn run_interactive_mode<T: Entrypoint>(
         match read_user_input() {
             Ok(Some(input)) => {
                 // Handle special commands first
-                if handle_special_commands(&input) {
+                if handle_special_commands(&input, &CLIArgsCommand) {
                     continue;
                 }
 
@@ -307,6 +325,7 @@ async fn run_interactive_mode<T: Entrypoint>(
                             parsed_args,
                             &mut entrypoint,
                             &CLIArgsCommand,
+                            &CLILoggerInitializer,
                             config,
                             config_path,
                         )
