@@ -210,7 +210,7 @@ mod cli_main_test {
 mod interactive_mode_test {
     use crate::cli::{
         execute_parsed_command, handle_special_commands, Args, Commands, MockArgsCommand,
-        MockEntrypoint,
+        MockEntrypoint, MockLoggerInitializer,
     };
     use crate::utils::config::Config;
     use mockall::predicate::*;
@@ -218,26 +218,46 @@ mod interactive_mode_test {
     /// Test handle_special_commands function
     #[test]
     fn test_handle_special_commands() {
+        let mut mock_args_command = MockArgsCommand::new();
+
+        // Set up expectations for help commands
+        mock_args_command
+            .expect_print_help()
+            .times(2)
+            .returning(|| return Ok(()));
+
         // Test --help command
-        assert!(handle_special_commands("--help"));
+        assert!(handle_special_commands("--help", &mock_args_command));
 
         // Test -h command
-        assert!(handle_special_commands("-h"));
+        assert!(handle_special_commands("-h", &mock_args_command));
 
-        // Test non-special commands
-        assert!(!handle_special_commands("host1 host2"));
-        assert!(!handle_special_commands("-u username host1"));
-        assert!(!handle_special_commands("daemon host1"));
-        assert!(!handle_special_commands("client host1"));
-        assert!(!handle_special_commands(""));
-        assert!(!handle_special_commands("--version"));
-        assert!(!handle_special_commands("-v"));
+        // Test non-special commands (these don't need mock expectations)
+        let mock_args_command2 = MockArgsCommand::new();
+        assert!(!handle_special_commands("host1 host2", &mock_args_command2));
+        assert!(!handle_special_commands(
+            "-u username host1",
+            &mock_args_command2
+        ));
+        assert!(!handle_special_commands(
+            "daemon host1",
+            &mock_args_command2
+        ));
+        assert!(!handle_special_commands(
+            "client host1",
+            &mock_args_command2
+        ));
+        assert!(!handle_special_commands("", &mock_args_command2));
+        assert!(!handle_special_commands("--version", &mock_args_command2));
+        assert!(!handle_special_commands("-v", &mock_args_command2));
     }
 
     /// Test execute_parsed_command with Client command
     #[tokio::test]
     async fn test_execute_parsed_command_client() {
         let mut mock_entrypoint = MockEntrypoint::new();
+        let mock_args_command = MockArgsCommand::new();
+        let mock_logger_initializer = MockLoggerInitializer::new();
         let config = Config::default();
         let config_path = "test-config.toml";
 
@@ -263,11 +283,12 @@ mod interactive_mode_test {
             debug: false,
         };
 
-        let mock_args_command = MockArgsCommand::new();
+        // Call the actual execute_parsed_command function with mocked dependencies
         execute_parsed_command(
             args,
             &mut mock_entrypoint,
             &mock_args_command,
+            &mock_logger_initializer,
             &config,
             config_path,
         )
@@ -278,8 +299,17 @@ mod interactive_mode_test {
     #[tokio::test]
     async fn test_execute_parsed_command_daemon() {
         let mut mock_entrypoint = MockEntrypoint::new();
+        let mock_args_command = MockArgsCommand::new();
+        let mut mock_logger_initializer = MockLoggerInitializer::new();
         let config = Config::default();
         let config_path = "test-config.toml";
+
+        // Set up expectations for logger initialization
+        mock_logger_initializer
+            .expect_init_logger()
+            .with(eq("csshw_daemon"))
+            .times(1)
+            .returning(|_| {});
 
         // Set up expectations
         mock_entrypoint
@@ -303,11 +333,12 @@ mod interactive_mode_test {
             debug: true,
         };
 
-        let mock_args_command = MockArgsCommand::new();
+        // Call the actual execute_parsed_command function with mocked dependencies
         execute_parsed_command(
             args,
             &mut mock_entrypoint,
             &mock_args_command,
+            &mock_logger_initializer,
             &config,
             config_path,
         )
@@ -318,6 +349,8 @@ mod interactive_mode_test {
     #[tokio::test]
     async fn test_execute_parsed_command_none_with_hosts() {
         let mut mock_entrypoint = MockEntrypoint::new();
+        let mock_args_command = MockArgsCommand::new();
+        let mock_logger_initializer = MockLoggerInitializer::new();
         let config = Config::default();
         let config_path = "test-config.toml";
 
@@ -336,11 +369,12 @@ mod interactive_mode_test {
             debug: false,
         };
 
-        let mock_args_command = MockArgsCommand::new();
+        // Call the actual execute_parsed_command function with mocked dependencies
         execute_parsed_command(
             args,
             &mut mock_entrypoint,
             &mock_args_command,
+            &mock_logger_initializer,
             &config,
             config_path,
         )
@@ -352,6 +386,7 @@ mod interactive_mode_test {
     async fn test_execute_parsed_command_none_no_hosts() {
         let mut mock_entrypoint = MockEntrypoint::new();
         let mut mock_args_command = MockArgsCommand::new();
+        let mock_logger_initializer = MockLoggerInitializer::new();
         let config = Config::default();
         let config_path = "test-config.toml";
 
@@ -369,10 +404,12 @@ mod interactive_mode_test {
             debug: false,
         };
 
+        // Call the actual execute_parsed_command function with mocked dependencies
         execute_parsed_command(
             args,
             &mut mock_entrypoint,
             &mock_args_command,
+            &mock_logger_initializer,
             &config,
             config_path,
         )
