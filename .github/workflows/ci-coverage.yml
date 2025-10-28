@@ -11,6 +11,7 @@ on:
   pull_request:
     branches: [ "main" ]
     paths:
+      # NOTE: Keep this list in sync with ci.yml
       - .cargo/**
       - .github/workflows/ci-coverage.yml
       - .github/workflows/ci.yml
@@ -42,7 +43,7 @@ jobs:
         path: coverage-data/
 
     - name: Generate Code Coverage Summary
-      uses: irongut/CodeCoverageSummary@v1
+      uses: irongut/CodeCoverageSummary@v1.3.0
       with:
         filename: coverage-data/coverage.xml
         badge: true

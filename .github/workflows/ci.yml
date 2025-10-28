@@ -11,7 +11,9 @@ on:
   push:
     branches: [ "main" ]
     paths:
+      # NOTE: Keep this list in sync with ci-coverage.yml
       - .cargo/**
+      - .github/workflows/ci-coverage.yml
       - .github/workflows/ci.yml
       - .github/workflows/_shared-ci.yml
       - src/**
