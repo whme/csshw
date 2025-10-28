@@ -34,22 +34,6 @@ jobs:
     - uses: &checkout-action
         actions/checkout@v5
 
-    # Why are we not explicitly checking for a cache hit?
-    # -> The cache action will try to restore the cache
-    # if its available. If we have a cache hit
-    # the rustup and cargo install commands will be fast
-    # so there is no need to manually check for a cache hit
-    - uses: &cache-action
-        actions/cache@v4
-      with: &rust-toolchain-cache
-        path: |
-          ~\.cargo\bin
-          ~\.cargo\registry
-          ~\.cargo\git
-          ~\.cargo\crates.toml
-          ~\.cargo\.crates2.json
-        key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
-
     # Set up Rust toolchain (configure correct Rust version)
     - run: &rust-toolchain-setup
         rustup update $RUST_VERSION && rustup default $RUST_VERSION
@@ -59,8 +43,11 @@ jobs:
     - uses: &rust-cache-action
         Swatinem/rust-cache@v2
 
-    - name: Add cargo-make
-      run: cargo install cargo-make
+    - name: Install cargo-make
+      uses: &cached-cargo-install
+        baptiste0928/cargo-install@v3
+      with: &cargo-make
+        crate: cargo-make
 
   check-format:
     runs-on: windows-latest
@@ -155,5 +142,8 @@ jobs:
     - uses: *rust-cache-action
       with: *rust-cache-shared-key
 
-    - name: Run check-readme-help make
+    - uses: *cached-cargo-install
+      with: *cargo-make
+
+    - name: Run check-readme-help
       run: cargo make check-readme-help
