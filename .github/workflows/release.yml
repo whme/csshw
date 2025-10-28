@@ -28,7 +28,8 @@ jobs:
     steps:
       - name: Extract version from tag
         run: |
-          VERSION=${GITHUB_REF#refs/tags/}
+          # VERSION=${GITHUB_REF#refs/tags/}
+          VERSION=0.0.0
 
           # Split version into components
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
@@ -43,10 +44,6 @@ jobs:
 
       - name: Setup Rust toolchain
         run: rustup update ${{ env.RUST_VERSION }} && rustup default ${{ env.RUST_VERSION }}
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ${{ hashFiles('Cargo.toml') }}
 
       - name: Build release binary
         run: cargo release
