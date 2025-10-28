@@ -101,22 +101,11 @@ jobs:
         # Run tests with coverage - Total coverage
         cargo llvm-cov clean --workspace
         cargo llvm-cov --all-features --workspace --cobertura --output-path coverage.xml
-        cargo llvm-cov --all-features --workspace --html --output-dir coverage-html
 
     # Run regular tests if coverage is not requested
     - name: Run tests (regular)
       if: '!inputs.run_coverage'
       run: cargo tests
-
-    # Upload coverage artifacts if coverage was collected
-    - name: Upload Total Coverage HTML
-      if: inputs.run_coverage
-      uses: &upload-artifact-action
-        actions/upload-artifact@v4
-      with:
-        name: coverage-html
-        path: coverage-html/
-        retention-days: 5
 
     - name: Upload Coverage XML Data
       if: inputs.run_coverage
