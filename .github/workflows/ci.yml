@@ -3,7 +3,7 @@
 #
 # Only runs on the main branch on pushes and pull_requests.
 # Caches the rust toolchain based on the runner and RUST versions.
-# Shares build artifacts between jobs.
+# Uses Swatinem/rust-cache@v2 to cache rust dependencies.
 # Runs linters, formatters and tests in parallel.
 #
 # GitHub only supports a limited set of YAML anchors which means
@@ -45,10 +45,15 @@ jobs:
           ~\.cargo\bin
           ~\.cargo\registry
           ~\.cargo\git
-        key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
+        key: &rust-toolchain-cache-key
+          rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
 
     - name: Set up Rust toolchain (configure correct Rust version)
       run: rustup update $RUST_VERSION && rustup default $RUST_VERSION
+
+    - uses: Swatinem/rust-cache@v2
+      with: &rust-cache-shared-key
+        shared-key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ hashFiles('Cargo.toml') }}
 
     - name: Add cargo-make
       run: cargo install cargo-make
@@ -66,13 +71,14 @@ jobs:
           ~\.cargo\bin
           ~\.cargo\registry
           ~\.cargo\git
-        key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
+        key: *rust-toolchain-cache-key
+
+    - uses: Swatinem/rust-cache@v2
+      with: *rust-cache-shared-key
 
     - name: Check format
       run: cargo fmt -- --check
 
-  # Compiles the rust code and docs and uploads
-  # the build artifacts.
   build:
     runs-on: windows-latest
     needs: setup
@@ -86,10 +92,10 @@ jobs:
           ~\.cargo\bin
           ~\.cargo\registry
           ~\.cargo\git
-        key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
+        key: *rust-toolchain-cache-key
 
-    # Cache rust dependencies
     - uses: Swatinem/rust-cache@v2
+      with: *rust-cache-shared-key
 
     - name: Build
       run: |
@@ -112,9 +118,10 @@ jobs:
           ~\.cargo\bin
           ~\.cargo\registry
           ~\.cargo\git
-        key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
+        key: *rust-toolchain-cache-key
 
     - uses: Swatinem/rust-cache@v2
+      with: *rust-cache-shared-key
 
     - name: Run linter
       run: cargo lint
@@ -139,9 +146,10 @@ jobs:
           ~\.cargo\bin
           ~\.cargo\registry
           ~\.cargo\git
-        key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
+        key: *rust-toolchain-cache-key
 
     - uses: Swatinem/rust-cache@v2
+      with: *rust-cache-shared-key
 
     - name: Run tests all
       run: cargo tests
@@ -159,9 +167,10 @@ jobs:
           ~\.cargo\bin
           ~\.cargo\registry
           ~\.cargo\git
-        key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
+        key: *rust-toolchain-cache-key
 
     - uses: Swatinem/rust-cache@v2
+      with: *rust-cache-shared-key
 
     - name: Run tests docs
       run: cargo doc-tests
@@ -179,9 +188,10 @@ jobs:
           ~\.cargo\bin
           ~\.cargo\registry
           ~\.cargo\git
-        key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
+        key: *rust-toolchain-cache-key
 
     - uses: Swatinem/rust-cache@v2
+      with: *rust-cache-shared-key
 
     - name: Run check-readme-help make
       run: cargo make check-readme-help
