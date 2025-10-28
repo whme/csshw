@@ -1,0 +1,167 @@
+<h1 align="center">csshW</h3>
+<p align="center"><i>Cluster SSH tool for Windows inspired by <a href="https://github.com/brockgr/csshx">csshX</a></i></p>
+<p align="center">
+  <a href="./LICENSE.txt"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
+  <a href="https://github.com/whme/csshw/releases/latest"><img src="https://img.shields.io/github/v/release/whme/csshw.svg"></a>
+  <a href="https://github.com/whme/csshw/releases"><img src="https://img.shields.io/github/downloads/whme/csshw/total"></a><br>
+  <a href="https://github.com/whme/csshw/actions/workflows/ci.yml"><img src="https://github.com/whme/csshw/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/whme/csshw/actions/workflows/deploy_docs.yml"><img src="https://github.com/whme/csshw/actions/workflows/deploy_docs.yml/badge.svg"></a>
+</p>
+
+![csshw demo](https://raw.githubusercontent.com/whme/csshw/refs/heads/main/demo/csshw.gif)[^1][^2][^3]
+
+## Pre-requisite
+- Any SSH client (Windows 10 and Windows 11 already include a built-in SSH server and client - [docs](https://learn.microsoft.com/en-us/windows/terminal/tutorials/ssh))
+
+## Overview
+csshW will launch 1 daemon and N client windows (with N being the number of hosts to SSH onto).<br>
+Key-strokes performed while having the daemon console focussed will be sent to all clients simoultaneously and be replayed by them.<br>
+Focussing a client will cause any key-strokes to be sent to this client only.
+
+## Download/Installation
+csshW is a portable application and is not installed.<br>
+To download the csshW application refer to the [Releases 📦](https://github.com/whme/csshw/releases) page.
+
+## Usage
+
+<!-- HELP_OUTPUT_START -->
+```cmd
+csshw.exe --help
+Cluster SSH tool for Windows inspired by csshX
+
+Usage: csshw.exe [OPTIONS] [HOSTS]... [COMMAND]
+
+Commands:
+  client  Subcommand that will launch a single client window
+  daemon  Subcommand that will launch the daemon window
+  help    Print this message or the help of the given subcommand(s)
+
+Arguments:
+  [HOSTS]...
+          Hosts and/or cluster tag(s) to connect to
+
+          Hosts or cluster tags might use brace expansion, but need to be properly quoted.
+
+          E.g.: `csshw.exe "host{1..3}" hostA`
+
+          Hosts can include a username which will take precedence over the username given via the `-u` option and over any ssh config value.
+
+          E.g.: `csshw.exe -u user3 user1@host1 userA@hostA host3`
+
+          Hosts can include a port number which will take precedence over the port given via the `-p` option.
+
+          E.g.: `csshw.exe -p 33 host1:11 host2:22 host3`
+
+Options:
+  -u, --username <USERNAME>
+          Optional username used to connect to the hosts
+
+  -p, --port <PORT>
+          Optional port used for all SSH connections
+
+  -d, --debug
+          Enable extensive logging
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+```
+<!-- HELP_OUTPUT_END -->
+Example:
+`csshw.exe -u root hosta.dev hostb.dev hostc.dev`
+
+We recommend using the [ssh_config](https://linux.die.net/man/5/ssh_config) for any configurations like default username etc.
+
+### Configuration
+
+`csshw-config.toml` contains all relevant configurations and is located in the same directory as the executable.
+It is automatically created with default values if not present.
+
+#### `clusters`
+An array of clusters that can be used to alias a set of host names to a specific tag:
+```toml
+clusters = [
+    { name = "dev", hosts = ["hosta.dev", "root@hostb.dev", "hostc.dev"] }
+]
+```
+Clusters may be nested, but be aware of recursive clusters which are not checked for.
+
+#### `client`
+A collection containing client relevant configuration
+``` toml
+[client]
+ssh_config_path = 'C:\Users\demo_user\.ssh\config'
+program = 'ssh'
+arguments = [
+    '-XY',
+    '{{USERNAME_AT_HOST}}',
+]
+username_host_placeholder = '{{USERNAME_AT_HOST}}'
+```
+
+##### `ssh_config_path`
+The full qualified path where your ssh configuration can be found.
+
+##### `program`
+Which executable will be used to establish ssh connections.
+
+##### `arguments`
+Additional arguments specified to the chosen program.
+
+##### `username_host_placeholder`
+Placeholder string that indicates where the `username@host` string should be inserted in the program arguments.
+
+#### `daemon`
+A collection containing daemon relevant configuration
+``` toml
+[daemon]
+height = 200
+aspect_ratio_adjustement = -1.0
+console_color = 207
+```
+
+##### `height`
+The height of the daemon console.
+
+##### `aspect_ratio_adjustment`
+Configures whether the available screen space should rather be used horizontally or vertically.
+* `> 0.0` - Aims for vertical rectangle shape.
+  The larger the value, the more exaggerated the "verticality".
+  Eventually the windows will all be columns.
+* `= 0.0` - Aims for square shape.
+* `< 0.0` - Aims for horizontal rectangle shape.
+  The smaller the value, the more exaggerated the "horizontality".
+  Eventually the windows will all be rows.
+  `-1.0` is the sweetspot for mostly preserving a 16:9 ratio.
+
+##### `console_color`
+Configures background and foreground colors used by the daemon console.
+Available are all standard windows color combinations ([windows docs](https://learn.microsoft.com/en-us/windows/console/console-screen-buffers#character-attributes)):
+```
+FOREGROUND_BLUE:        1
+FOREGROUND_GREEN:       2
+FOREGROUND_RED:         4
+FOREGROUND_INTENSITY:   8
+BACKGROUND_BLUE:        16
+BACKGROUND_GREEN:       32
+BACKGROUND_RED:         64
+BACKGROUND_INTENSITY:   128
+```
+e.g. white font on red background: 8+4+2+1+64+128 = `207`
+
+## Contributing
+csshW uses pre-commit githooks to enforce good code style.<br>
+Install them via ``git config --local core.hooksPath .githooks/``.
+
+## Releases
+Step by step guide to create a new release:
+- `cargo make prepare-release` and follow the instructions
+- Create a pull request from the new maintenance branch to main OR cherry-pick the new Version change from the existing maintenance branch to main
+- `cargo make release` and follow the instructions
+- Revise the automatically created Release Draft and publish it
+
+[^1]: The searchbar used to launch csshw in the demo clip is [keypirinha](https://keypirinha.com/).
+[^2]: The tool to show key presses in the demo clip is [carnac the magnificent](https://github.com/Code52/carnac).
+[^3]: The tool used to record the screen as GIF is [ScreenToGif](https://github.com/NickeManarin/ScreenToGif).
