@@ -45,6 +45,8 @@ jobs:
           ~\.cargo\bin
           ~\.cargo\registry
           ~\.cargo\git
+          ~\.cargo\crates.toml
+          ~\.cargo\.crates2.json
         key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
 
     - name: Set up Rust toolchain (configure correct Rust version)
