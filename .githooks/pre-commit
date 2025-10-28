@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 cargo fmt
 cargo lint
 cargo build
