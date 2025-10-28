@@ -298,12 +298,12 @@ fn main() {
         (ReleaseType::Patch, next)
     } else {
         error!("Must be on 'main' branch or a '*-maintenance' branch to prepare a release");
-        eprintln!("       Current branch: {}", current_branch);
+        error!("       Current branch: {}", current_branch);
         exit(1);
     };
 
     // Ask user for confirmation and allow custom version
-    print!("Preparing {} release: {} -> {}. Continue? [Y/n]: ",
+    info!("Preparing {} release: {} -> {}. Continue? [Y/n]: ",
            suggested_release_type, current_version, suggested_version);
     io::stdout().flush().unwrap();
 
@@ -312,7 +312,7 @@ fn main() {
     let input = input.trim().to_lowercase();
 
     let (next_version, actual_release_type) = if input == "n" || input == "no" {
-        print!("Enter custom version (current: {}): ", current_version);
+        info!("Enter custom version (current: {}): ", current_version);
         io::stdout().flush().unwrap();
 
         let mut custom_version = String::new();
@@ -500,8 +500,8 @@ fn main() {
     // Verify we're on a maintenance branch
     if !current_branch.ends_with("-maintenance") {
         error!("Must be on a maintenance branch to create release tag");
-        eprintln!("       Current branch: {}", current_branch);
-        eprintln!("       Run 'cargo make prepare-release' first");
+        error!("       Current branch: {}", current_branch);
+        error!("       Run 'cargo make prepare-release' first");
         exit(1);
     }
 
@@ -547,9 +547,9 @@ fn main() {
     let expected_msg = format!("Version {}", version);
     if commit_msg != expected_msg {
         error!("Latest commit message doesn't match expected version commit");
-        eprintln!("       Expected: {}", expected_msg);
-        eprintln!("       Actual: {}", commit_msg);
-        eprintln!("       Run 'cargo make prepare-release' first");
+        error!("       Expected: {}", expected_msg);
+        error!("       Actual: {}", commit_msg);
+        error!("       Run 'cargo make prepare-release' first");
         exit(1);
     }
 
@@ -578,12 +578,12 @@ fn main() {
 
     if behind_count > 0 {
         error!("Local branch is {} commits behind remote", behind_count);
-        eprintln!("       Run 'git pull' to update");
+        error!("       Run 'git pull' to update");
         exit(1);
     }
 
     // Ask for user confirmation
-    print!("About to create and push tag '{}' for release. Continue? [Y/n]: ", version);
+    info!("About to create and push tag '{}' for release. Continue? [Y/n]: ", version);
     io::stdout().flush().unwrap();
 
     let mut input = String::new();
