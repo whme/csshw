@@ -450,8 +450,8 @@ fn update_version_in_toml(mut cargo_toml: toml::Value, new_version: &str) -> Str
 }
 '''
 
-[tasks.create-release-tag]
-description = "Create and push an annotated git tag for the current release version"
+[tasks.release]
+description = "Create and push an annotated git tag for the current release version, inturn triggering the release github workflow"
 script_runner = "@rust"
 script = '''
 //! ```cargo
