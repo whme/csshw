@@ -1,3 +1,14 @@
+#
+#   csshw CI
+#
+# Only runs on the main branch on pushes and pull_requests.
+# Caches the rust toolchain based on the runner and RUST versions.
+# Shares build artifacts between jobs.
+# Runs linters, formatters and tests in parallel.
+#
+# GitHub only supports a limited set of YAML anchors which means
+# we still have to repeat ourselves for the rust-toolchain-cache step
+
 name: CI
 
 on:
@@ -8,29 +19,169 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_VERSION: 1.88.0
+  # Must be updated when any steps in the setup job change
+  # that affect cached paths in order to rebuild the cache
+  SETUP_VERSION: 1.0.0
+
 
 jobs:
-  build:
+  # Setup the Rust toolchain and install additional binaries
+  # Uses a cache
+  setup:
     runs-on: windows-latest
-    env:
-      RUST_VERSION: 1.88.0
     steps:
-    - uses: actions/checkout@v3
-    - name: Configure correct rust version
+    - uses: actions/checkout@v4
+
+    # Why are we not explicitly checking for a cache hit?
+    # -> The cache action will try to restore the cache
+    # if its available. If we have a cache hit
+    # the rustup and cargo install commands will be fast
+    # so there is no need to manually check for a cache hit
+    - name: rust-toolchain-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~\.cargo\bin
+          ~\.cargo\registry
+          ~\.cargo\git
+        key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
+
+    - name: Set up Rust toolchain (configure correct Rust version)
       run: rustup update $RUST_VERSION && rustup default $RUST_VERSION
+
     - name: Add cargo-make
       run: cargo install cargo-make
+
+  check-format:
+    runs-on: windows-latest
+    needs: setup
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: rust-toolchain-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~\.cargo\bin
+          ~\.cargo\registry
+          ~\.cargo\git
+        key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
+
     - name: Check format
       run: cargo fmt -- --check
-    - name: Run linter
-      run: cargo lint
+
+  # Compiles the rust code and docs and uploads
+  # the build artifacts.
+  build:
+    runs-on: windows-latest
+    needs: setup
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: rust-toolchain-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~\.cargo\bin
+          ~\.cargo\registry
+          ~\.cargo\git
+        key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
+
+    # Cache rust dependencies
+    - uses: Swatinem/rust-cache@v2
+
     - name: Build
-      run: cargo build --verbose
+      run: |
+        cargo build --all-targets --profile dev --verbose
+        cargo build --all-targets --profile test --verbose
+
     - name: Build docs
       run: cargo docs
-    - name: Verify README CLI help
-      run: cargo make check-readme-help
-    - name: Run tests docs
-      run: cargo doc-tests
+
+  check-lint:
+    runs-on: windows-latest
+    needs: build
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: rust-toolchain-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~\.cargo\bin
+          ~\.cargo\registry
+          ~\.cargo\git
+        key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
+
+    - uses: Swatinem/rust-cache@v2
+
+    - name: Run linter
+      run: cargo lint
+
+  tests:
+    runs-on: windows-latest
+    # DEFINE the test-dependencies anchor to be re-used later
+    #
+    # Only run tests and other final checks if
+    # build, formatting and linting completed successfully
+    needs: &test-dependencies
+      - build
+      - check-format
+      - check-lint
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: rust-toolchain-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~\.cargo\bin
+          ~\.cargo\registry
+          ~\.cargo\git
+        key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
+
+    - uses: Swatinem/rust-cache@v2
+
     - name: Run tests all
       run: cargo tests
+
+  tests-docs:
+    runs-on: windows-latest
+    needs: *test-dependencies
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: rust-toolchain-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~\.cargo\bin
+          ~\.cargo\registry
+          ~\.cargo\git
+        key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
+
+    - uses: Swatinem/rust-cache@v2
+
+    - name: Run tests docs
+      run: cargo doc-tests
+
+  make-checks:
+    runs-on: windows-latest
+    needs: *test-dependencies
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: rust-toolchain-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~\.cargo\bin
+          ~\.cargo\registry
+          ~\.cargo\git
+        key: rust-${{ runner.os }}-${{ env.RUST_VERSION }}-${{ env.SETUP_VERSION }}
+
+    - uses: Swatinem/rust-cache@v2
+
+    - name: Run check-readme-help make
+      run: cargo make check-readme-help
