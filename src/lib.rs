@@ -16,6 +16,9 @@ use registry::{value, Data, Hive, Security};
 use simplelog::{format_description, ConfigBuilder, LevelFilter, WriteLogger};
 use windows::core::{HSTRING, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{BOOL, FALSE, HWND, LPARAM, TRUE};
+use windows::Win32::System::Console::{
+    GetConsoleScreenBufferInfo, GetStdHandle, CONSOLE_SCREEN_BUFFER_INFO, STD_OUTPUT_HANDLE,
+};
 use windows::Win32::System::Threading::{
     CreateProcessW, CREATE_NEW_CONSOLE, PROCESS_INFORMATION, STARTUPINFOW,
 };
@@ -99,6 +102,36 @@ impl Registry for DefaultRegistry {
         } else {
             return false;
         }
+    }
+}
+
+/// Trait for console operations to enable mocking in tests
+#[cfg_attr(test, automock)]
+pub trait ConsoleApi {
+    /// Get standard output handle
+    fn get_std_handle(&self) -> windows::core::Result<windows::Win32::Foundation::HANDLE>;
+    /// Get console screen buffer information
+    fn get_console_screen_buffer_info(
+        &self,
+        handle: windows::Win32::Foundation::HANDLE,
+    ) -> windows::core::Result<CONSOLE_SCREEN_BUFFER_INFO>;
+}
+
+/// Default implementation of ConsoleApi trait that performs actual Windows console API calls
+pub struct WindowsConsoleAPI;
+
+impl ConsoleApi for WindowsConsoleAPI {
+    fn get_std_handle(&self) -> windows::core::Result<windows::Win32::Foundation::HANDLE> {
+        return unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
+    }
+
+    fn get_console_screen_buffer_info(
+        &self,
+        handle: windows::Win32::Foundation::HANDLE,
+    ) -> windows::core::Result<CONSOLE_SCREEN_BUFFER_INFO> {
+        let mut csbi = CONSOLE_SCREEN_BUFFER_INFO::default();
+        unsafe { GetConsoleScreenBufferInfo(handle, &mut csbi) }?;
+        return Ok(csbi);
     }
 }
 
@@ -513,6 +546,53 @@ pub fn init_logger_with_fs<F: FileSystem>(fs: &F, name: &str) {
             log_panics::init();
         }
     }
+}
+
+/// Detect if application was launched from Windows Explorer (GUI) vs command line using the provided console API.
+///
+/// Returns true if launched from GUI (separate console), false if from existing console.
+/// Based on: <https://stackoverflow.com/a/513574>
+///
+/// # Arguments
+///
+/// * `console_api` - Console API operations implementation
+///
+/// # Returns
+///
+/// * `true` - Application was launched from GUI (Explorer, double-click, etc.)
+/// * `false` - Application was launched from existing console (command line)
+pub fn is_launched_from_gui_with_api<C: ConsoleApi>(console_api: &C) -> bool {
+    match console_api.get_std_handle() {
+        Ok(handle) => {
+            match console_api.get_console_screen_buffer_info(handle) {
+                Ok(csbi) => {
+                    // The cursor has not moved from the initial 0,0 position -> launched in separate console
+                    return csbi.dwCursorPosition.X == 0 && csbi.dwCursorPosition.Y == 0;
+                }
+                Err(err) => {
+                    warn!("GetConsoleScreenBufferInfo failed: {:?}", err);
+                    return false;
+                }
+            }
+        }
+        Err(err) => {
+            warn!("GetStdHandle failed: {:?}", err);
+            return false;
+        }
+    }
+}
+
+/// Detect if application was launched from Windows Explorer (GUI) vs command line.
+///
+/// Returns true if launched from GUI (separate console), false if from existing console.
+/// Based on: <https://stackoverflow.com/a/513574>
+///
+/// # Returns
+///
+/// * `true` - Application was launched from GUI (Explorer, double-click, etc.)
+/// * `false` - Application was launched from existing console (command line)
+pub fn is_launched_from_gui() -> bool {
+    return is_launched_from_gui_with_api(&WindowsConsoleAPI);
 }
 
 #[cfg(test)]

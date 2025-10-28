@@ -7,7 +7,7 @@ use crate::{
     get_console_window_handle, init_logger, spawn_console_process,
     WindowsSettingsDefaultTerminalApplicationGuard,
 };
-use clap::{ArgAction, Parser, Subcommand};
+use clap::{ArgAction, CommandFactory, Parser, Subcommand};
 
 #[cfg(test)]
 use mockall::{automock, predicate::*};
@@ -47,6 +47,10 @@ pub struct Args {
     /// port given via the `-p` option.
     ///
     /// E.g.: `csshw.exe -p 33 host1:11 host2:22 host3`
+    ///
+    /// If no hosts are provided and the application is launched in a new console window
+    /// (e.g. by double clicking the executable in the File Explorer),
+    /// it will launch in interactive mode.
     #[clap(required = false, global = true)]
     hosts: Vec<String>,
     /// Enable extensive logging
@@ -80,6 +84,22 @@ enum Commands {
 /// Used to implement the entrypoint functions of the different
 /// subcommands
 pub struct MainEntrypoint;
+
+/// Trait for Args operations to enable mocking in tests
+#[cfg_attr(test, automock)]
+pub trait ArgsCommand {
+    /// Print help message
+    fn print_help(&self) -> Result<(), std::io::Error>;
+}
+
+/// Default implementation of ArgsCommand trait
+pub struct CLIArgsCommand;
+
+impl ArgsCommand for CLIArgsCommand {
+    fn print_help(&self) -> Result<(), std::io::Error> {
+        return Args::command().print_help();
+    }
+}
 
 /// Trait defining the entrypoint functions of the different
 /// subcommands
@@ -165,6 +185,148 @@ impl Entrypoint for MainEntrypoint {
     }
 }
 
+/// Display the interactive mode prompt and instructions
+fn show_interactive_prompt() {
+    println!("\n=== Interactive Mode ===");
+    println!("Enter your {PKG_NAME} arguments (or press Enter to exit):");
+    println!("Example: -u myuser host1 host2 host3");
+    println!("Example: --help");
+    print!("> ");
+    std::io::Write::flush(&mut std::io::stdout()).unwrap();
+}
+
+/// Read user input from stdin
+///
+/// # Returns
+///
+/// * `Ok(Some(input))` - User provided input
+/// * `Ok(None)` - User wants to exit (empty input or "exit")
+/// * `Err(error)` - Error reading input
+fn read_user_input() -> Result<Option<String>, std::io::Error> {
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+
+    let input = input.trim();
+    if input.is_empty() || input.to_lowercase() == "exit" {
+        return Ok(None);
+    }
+
+    return Ok(Some(input.to_string()));
+}
+
+/// Handle special commands that don't need full parsing
+///
+/// # Arguments
+///
+/// * `input` - The user input string
+///
+/// # Returns
+///
+/// * `true` - Command was handled, continue loop
+/// * `false` - Command needs full parsing
+fn handle_special_commands(input: &str) -> bool {
+    if input == "--help" || input == "-h" {
+        Args::command().print_help().unwrap();
+        return true;
+    }
+    return false;
+}
+
+/// Execute a parsed command using the provided entrypoint
+async fn execute_parsed_command<T: Entrypoint, A: ArgsCommand>(
+    parsed_args: Args,
+    entrypoint: &mut T,
+    args_command: &A,
+    config: &Config,
+    config_path: &str,
+) {
+    match &parsed_args.command {
+        Some(Commands::Client { host }) => {
+            if parsed_args.debug {
+                init_logger(&format!("csshw_client_{host}"));
+            }
+            entrypoint
+                .client_main(
+                    host.to_owned(),
+                    parsed_args.username.to_owned(),
+                    parsed_args.port,
+                    &config.client,
+                )
+                .await;
+        }
+        Some(Commands::Daemon {}) => {
+            if parsed_args.debug {
+                init_logger("csshw_daemon");
+            }
+            entrypoint
+                .daemon_main(
+                    parsed_args.hosts.to_owned(),
+                    parsed_args.username.clone(),
+                    parsed_args.port,
+                    &config.daemon,
+                    &config.clusters,
+                    parsed_args.debug,
+                )
+                .await;
+        }
+        None => {
+            if !parsed_args.hosts.is_empty() {
+                entrypoint.main(config_path, config, parsed_args);
+            } else {
+                // Show help for empty hosts
+                let _ = args_command.print_help();
+            }
+        }
+    }
+}
+
+/// Run the interactive mode loop for GUI launches
+async fn run_interactive_mode<T: Entrypoint>(
+    mut entrypoint: T,
+    config: &Config,
+    config_path: &str,
+) {
+    loop {
+        show_interactive_prompt();
+
+        match read_user_input() {
+            Ok(Some(input)) => {
+                // Handle special commands first
+                if handle_special_commands(&input) {
+                    continue;
+                }
+
+                // Parse the input as command line arguments
+                let input_args: Vec<&str> = input.split_whitespace().collect();
+                let mut full_args = vec![PKG_NAME];
+                full_args.extend(input_args);
+
+                match Args::try_parse_from(full_args) {
+                    Ok(parsed_args) => {
+                        execute_parsed_command(
+                            parsed_args,
+                            &mut entrypoint,
+                            &CLIArgsCommand,
+                            config,
+                            config_path,
+                        )
+                        .await;
+                    }
+                    Err(err) => {
+                        eprintln!("\nError parsing arguments: {err}");
+                    }
+                }
+            }
+            Ok(None) => {
+                return;
+            }
+            Err(err) => {
+                eprintln!("Error reading input: {err}");
+            }
+        }
+    }
+}
+
 /// The main entrypoint
 ///
 /// Parses the CLI arguments,
@@ -172,6 +334,9 @@ impl Entrypoint for MainEntrypoint {
 /// calls the respective subcommand.
 /// If no subcommand is given we launch the daemon subcommand in a new window.
 pub async fn main<T: Entrypoint>(args: Args, mut entrypoint: T) {
+    // CRITICAL: Check GUI launch BEFORE any output to console
+    let launched_from_gui = crate::is_launched_from_gui();
+
     // Set DPI awareness programatically. Using the manifest is the recommended way
     // but conhost.exe does not do any manifest loading.
     // https://github.com/microsoft/terminal/issues/18464#issuecomment-2623392013
@@ -227,6 +392,18 @@ pub async fn main<T: Entrypoint>(args: Args, mut entrypoint: T) {
                 .await;
         }
         None => {
+            // If no hosts provided, show help and handle GUI vs console launch
+            if args.hosts.is_empty() {
+                // Show help using clap's built-in help
+                Args::command().print_help().unwrap();
+
+                // If launched from GUI, allow user to input arguments interactively
+                if launched_from_gui {
+                    run_interactive_mode(entrypoint, &config, &config_path).await;
+                }
+                return;
+            }
+
             entrypoint.main(&config_path, &config, args);
         }
     }
