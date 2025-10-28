@@ -18,63 +18,28 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_VERSION: 1.88.0
-  # Must be updated when any steps in the setup job change
-  # that affect cached paths in order to rebuild the cache
-  SETUP_VERSION: 1.0.0
 
 
 jobs:
-  # Setup the Rust toolchain and install additional binaries
-  # Uses a cache
-  setup:
+  build:
     runs-on: &runner-version
       windows-latest
     steps:
     - uses: &checkout-action
         actions/checkout@v5
 
-    # Set up Rust toolchain (configure correct Rust version)
     - run: &rust-toolchain-setup
         rustup update $RUST_VERSION && rustup default $RUST_VERSION
 
-    # Don't use a shared-key here as the dependencies for cargo-make
-    # are not relevant for the other jobs
     - uses: &rust-cache-action
         Swatinem/rust-cache@v2
-
-    - name: Install cargo-make
-      uses: &cached-cargo-install
-        baptiste0928/cargo-install@v3
-      with: &cargo-make
-        crate: cargo-make
-
-  check-format:
-    runs-on: *runner-version
-    needs: setup
-    steps:
-    - uses: *checkout-action
-
-    - run: *rust-toolchain-setup
-
-    - name: Check format
-      run: cargo fmt -- --check
-
-  build:
-    runs-on: *runner-version
-    needs: setup
-    steps:
-    - uses: *checkout-action
-
-    - run: *rust-toolchain-setup
-
-    - uses: *rust-cache-action
       # The shared key will be surrounded by additional information such as language, OS, and arch
       # so there is no need for us to include that information as well
       with: &rust-cache-shared-key
         shared-key: ${{ hashFiles('Cargo.toml') }}
 
     # The rust-cache action only caches dependencies
-    # With our build cache we cache our own binaries
+    # With this build-cache we cache the project binaries
     - uses: &build-cache
         actions/cache@v4
       with: &build-cache-paths
@@ -91,6 +56,16 @@ jobs:
 
     - name: Build docs
       run: cargo docs
+
+  check-format:
+    runs-on: *runner-version
+    steps:
+    - uses: *checkout-action
+
+    - run: *rust-toolchain-setup
+
+    - name: Check format
+      run: cargo fmt -- --check
 
   check-lint:
     runs-on: *runner-version
@@ -113,7 +88,6 @@ jobs:
     runs-on: *runner-version
     needs: &test-dependencies
       - build
-      - check-format
     steps:
     - uses: *checkout-action
 
@@ -159,8 +133,12 @@ jobs:
     - uses: *build-cache
       with: *build-cache-paths
 
-    - uses: *cached-cargo-install
-      with: *cargo-make
+    # The cargo-install action caches the binary
+    # and re-uses it if there is a cache hit
+    - name: Install cargo-make
+      uses: baptiste0928/cargo-install@v3
+      with:
+        crate: cargo-make
 
     - name: Run check-readme-help
       run: cargo make check-readme-help
