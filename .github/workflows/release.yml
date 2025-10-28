@@ -11,6 +11,9 @@ on:
   push:
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
+  # FOR TESTING ONLY - DROP ME BEFORE MERGE
+  pull_request:
+    branches: [ "main" ]
 
 env:
   CARGO_TERM_COLOR: always
