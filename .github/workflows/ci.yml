@@ -72,9 +72,6 @@ jobs:
       uses: *cache-action
       with: *rust-toolchain-cache
 
-    - uses: *rust-cache-action
-      with: *rust-cache-shared-key
-
     - name: Check format
       run: cargo fmt -- --check
 
