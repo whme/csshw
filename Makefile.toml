@@ -1,7 +1,11 @@
-# We're on Windows, use \r\n line endings
-
 [config]
 default_to_workspace = false
+
+# ============================= #
+# === readme-CLI-help Tasks === #
+# ============================= #
+
+# We're on Windows, use \r\n line endings
 
 [tasks.check-readme-help]
 # Task used to check whether the help section of the README.md matches the current `--help` output.
