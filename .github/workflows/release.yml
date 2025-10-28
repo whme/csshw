@@ -118,15 +118,35 @@ jobs:
             const changelogPath = path.join(process.cwd(), 'CHANGELOG.md');
             const changelogContent = fs.readFileSync(changelogPath, 'utf8');
 
-            // Find the current version's section in the changelog
-            // This regex captures everything after the version header until the next version or end of file
-            const versionRegex = new RegExp(`## ${version.replace(/\./g, '\\.')}\\s*\\([^)]+\\)\\s*\\n([\\s\\S]*?)(?=\\n\\n## |\\n## |$)`, 'm');
-            const match = changelogContent.match(versionRegex);
-
+            // Parse changelog line by line to extract current version's content
+            const lines = changelogContent.split('\n');
             let currentChangelog = 'No changelog entries found for this version.';
-            if (match && match[1]) {
-              // Trim whitespace and remove any leading/trailing newlines
-              currentChangelog = match[1].trim();
+            let inTargetVersion = false;
+            let changelogLines = [];
+
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+
+              // Check if this is the start of our target version
+              if (line.startsWith('## ') && line.includes(version)) {
+                inTargetVersion = true;
+                continue; // Skip the version header line
+              }
+
+              // Check if we've hit the next version (stop collecting)
+              if (inTargetVersion && line.startsWith('## ')) {
+                break;
+              }
+
+              // Collect lines for our target version
+              if (inTargetVersion) {
+                changelogLines.push(line);
+              }
+            }
+
+            // Join the collected lines and trim
+            if (changelogLines.length > 0) {
+              currentChangelog = changelogLines.join('\n').trim();
             }
 
             // Replace placeholders
