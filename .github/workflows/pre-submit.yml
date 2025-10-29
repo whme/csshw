@@ -69,7 +69,7 @@ jobs:
         # Publish the rendered output as a PR comment
         publish: true
         # Create a coverage diff report.
-        diff: false
+        diff: true
         # A custom title that can be added to the code
         # coverage summary in the PR comment.
         coverage-summary-title: "Code Coverage Summary"
