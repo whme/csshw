@@ -42,16 +42,6 @@ jobs:
     with:
       run_coverage: true
 
-  ci-skipped:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.src == 'false' && needs.detect-changes.outputs.workflows == 'false'
-    runs-on: ubuntu-latest
-    steps:
-      - name: CI Tests Skipped
-        run: |
-          echo "✅ CI tests skipped - no source code or workflow changes detected"
-          echo "This is expected behavior when only documentation, news fragments, or other non-source files are modified"
-
   coverage-report:
     needs: ci
     if: always() && needs.ci.result == 'success'
@@ -99,13 +89,3 @@ jobs:
         new-uncovered-statements-failure: false
         # Fail if the overall coverage percentage decreases (more forgiving approach)
         coverage-rate-reduction-failure: false
-
-  coverage-report-skipped:
-    needs: [detect-changes, ci]
-    if: always() && (needs.detect-changes.outputs.src == 'false' && needs.detect-changes.outputs.workflows == 'false')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Coverage Report Skipped
-        run: |
-          echo "✅ Coverage report skipped - no source code changes detected"
-          echo "Coverage analysis is only needed when source code is modified"
