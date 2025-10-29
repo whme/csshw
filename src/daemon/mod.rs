@@ -1128,5 +1128,5 @@ pub async fn main(
 }
 
 #[cfg(test)]
-#[path = "../tests/test_daemon.rs"]
-mod test_daemon;
+#[path = "../tests/daemon/test_mod.rs"]
+mod test_mod;
