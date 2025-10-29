@@ -5,12 +5,14 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
 use windows::Win32::System::Console::{
-    KEY_EVENT_RECORD, KEY_EVENT_RECORD_0, LEFT_ALT_PRESSED, RIGHT_ALT_PRESSED, SHIFT_PRESSED,
+    INPUT_RECORD_0, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0, LEFT_ALT_PRESSED, RIGHT_ALT_PRESSED,
+    SHIFT_PRESSED,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::client::{
-    build_ssh_arguments, is_alt_shift_c_combination, is_keep_alive_packet, resolve_username,
+    build_ssh_arguments, is_alt_shift_c_combination, is_keep_alive_packet,
+    replace_argument_placeholders, resolve_username, write_console_input,
 };
 use crate::serde::SERIALIZED_INPUT_RECORD_0_LENGTH;
 use crate::utils::config::ClientConfig;
@@ -417,5 +419,416 @@ fn test_build_ssh_arguments() {
             "Failed test case: {}",
             test_case.description
         );
+    }
+}
+
+/// Test module for argument placeholder replacement
+mod placeholder_test {
+    use super::*;
+
+    #[test]
+    fn test_replace_argument_placeholders_basic() {
+        let arguments = vec![
+            "-v".to_string(),
+            "{{USER_HOST}}".to_string(),
+            "-X".to_string(),
+        ];
+        let placeholder = "{{USER_HOST}}";
+        let replacement = "user@example.com";
+
+        let result = replace_argument_placeholders(&arguments, placeholder, replacement);
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], "-v");
+        assert_eq!(result[1], "user@example.com");
+        assert_eq!(result[2], "-X");
+    }
+
+    #[test]
+    fn test_replace_argument_placeholders_multiple_occurrences() {
+        let arguments = vec![
+            "{{HOST}}".to_string(),
+            "-o".to_string(),
+            "ProxyCommand=ssh {{HOST}} nc %h %p".to_string(),
+            "{{HOST}}".to_string(),
+        ];
+        let placeholder = "{{HOST}}";
+        let replacement = "jumphost";
+
+        let result = replace_argument_placeholders(&arguments, placeholder, replacement);
+
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0], "jumphost");
+        assert_eq!(result[1], "-o");
+        assert_eq!(result[2], "ProxyCommand=ssh jumphost nc %h %p");
+        assert_eq!(result[3], "jumphost");
+    }
+
+    #[test]
+    fn test_replace_argument_placeholders_no_matches() {
+        let arguments = vec!["-v".to_string(), "-X".to_string(), "user@host".to_string()];
+        let placeholder = "{{NONEXISTENT}}";
+        let replacement = "replacement";
+
+        let result = replace_argument_placeholders(&arguments, placeholder, replacement);
+
+        // Should return identical arguments
+        assert_eq!(result, arguments);
+    }
+
+    #[test]
+    fn test_replace_argument_placeholders_empty_arguments() {
+        let arguments: Vec<String> = vec![];
+        let placeholder = "{{HOST}}";
+        let replacement = "example.com";
+
+        let result = replace_argument_placeholders(&arguments, placeholder, replacement);
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_replace_argument_placeholders_partial_matches() {
+        let arguments = vec![
+            "{{HOST".to_string(),
+            "HOST}}".to_string(),
+            "{{HOST}}extra".to_string(),
+            "prefix{{HOST}}".to_string(),
+        ];
+        let placeholder = "{{HOST}}";
+        let replacement = "example.com";
+
+        let result = replace_argument_placeholders(&arguments, placeholder, replacement);
+
+        assert_eq!(result[0], "{{HOST");
+        assert_eq!(result[1], "HOST}}");
+        assert_eq!(result[2], "example.comextra");
+        assert_eq!(result[3], "prefixexample.com");
+    }
+
+    #[test]
+    fn test_replace_argument_placeholders_special_characters() {
+        let arguments = vec![
+            "{{USER@HOST}}".to_string(),
+            "-o".to_string(),
+            "UserKnownHostsFile={{USER@HOST}}.known_hosts".to_string(),
+        ];
+        let placeholder = "{{USER@HOST}}";
+        let replacement = "test.user@sub.example.com";
+
+        let result = replace_argument_placeholders(&arguments, placeholder, replacement);
+
+        assert_eq!(result[0], "test.user@sub.example.com");
+        assert_eq!(result[1], "-o");
+        assert_eq!(
+            result[2],
+            "UserKnownHostsFile=test.user@sub.example.com.known_hosts"
+        );
+    }
+
+    #[test]
+    fn test_replace_argument_placeholders_unicode() {
+        let arguments = vec!["{{ÜSER}}".to_string(), "hëllo {{ÜSER}}".to_string()];
+        let placeholder = "{{ÜSER}}";
+        let replacement = "tëst@exämple.com";
+
+        let result = replace_argument_placeholders(&arguments, placeholder, replacement);
+
+        assert_eq!(result[0], "tëst@exämple.com");
+        assert_eq!(result[1], "hëllo tëst@exämple.com");
+    }
+}
+
+/// Test module for console input writing
+mod console_input_test {
+    use super::*;
+
+    #[test]
+    fn test_write_console_input_basic() {
+        // Test that write_console_input doesn't panic with valid input
+        let input_record = INPUT_RECORD_0 {
+            KeyEvent: KEY_EVENT_RECORD {
+                bKeyDown: true.into(),
+                wRepeatCount: 1,
+                wVirtualKeyCode: 0x41, // 'A' key
+                wVirtualScanCode: 0x1E,
+                uChar: KEY_EVENT_RECORD_0 {
+                    UnicodeChar: 'A' as u16,
+                },
+                dwControlKeyState: 0,
+            },
+        };
+
+        // This function writes to the console input buffer
+        // We can't easily test the actual writing, but we can ensure it doesn't panic
+        write_console_input(input_record);
+    }
+
+    #[test]
+    fn test_write_console_input_special_keys() {
+        // Test with special key combinations
+        let test_cases = vec![
+            (0x0D, "Enter"),     // Enter key
+            (0x08, "Backspace"), // Backspace
+            (0x09, "Tab"),       // Tab
+            (0x1B, "Escape"),    // Escape
+            (0x20, "Space"),     // Space
+        ];
+
+        for (key_code, _description) in test_cases {
+            let input_record = INPUT_RECORD_0 {
+                KeyEvent: KEY_EVENT_RECORD {
+                    bKeyDown: true.into(),
+                    wRepeatCount: 1,
+                    wVirtualKeyCode: key_code,
+                    wVirtualScanCode: 0,
+                    uChar: KEY_EVENT_RECORD_0 {
+                        UnicodeChar: key_code,
+                    },
+                    dwControlKeyState: 0,
+                },
+            };
+
+            // Should not panic
+            write_console_input(input_record);
+        }
+    }
+
+    #[test]
+    fn test_write_console_input_key_up_down() {
+        // Test both key down and key up events
+        for key_down in [true, false] {
+            let input_record = INPUT_RECORD_0 {
+                KeyEvent: KEY_EVENT_RECORD {
+                    bKeyDown: key_down.into(),
+                    wRepeatCount: 1,
+                    wVirtualKeyCode: 0x42, // 'B' key
+                    wVirtualScanCode: 0x30,
+                    uChar: KEY_EVENT_RECORD_0 {
+                        UnicodeChar: 'B' as u16,
+                    },
+                    dwControlKeyState: 0,
+                },
+            };
+
+            // Should not panic
+            write_console_input(input_record);
+        }
+    }
+
+    #[test]
+    fn test_write_console_input_with_modifiers() {
+        // Test with various modifier key combinations
+        let modifier_states = vec![
+            0x0001, // RIGHT_ALT_PRESSED
+            0x0002, // LEFT_ALT_PRESSED
+            0x0004, // RIGHT_CTRL_PRESSED
+            0x0008, // SHIFT_PRESSED
+            0x0010, // NUMLOCK_ON
+            0x0020, // SCROLLLOCK_ON
+            0x0040, // CAPSLOCK_ON
+            0x0080, // ENHANCED_KEY
+        ];
+
+        for modifier_state in modifier_states {
+            let input_record = INPUT_RECORD_0 {
+                KeyEvent: KEY_EVENT_RECORD {
+                    bKeyDown: true.into(),
+                    wRepeatCount: 1,
+                    wVirtualKeyCode: 0x43, // 'C' key
+                    wVirtualScanCode: 0x2E,
+                    uChar: KEY_EVENT_RECORD_0 {
+                        UnicodeChar: 'C' as u16,
+                    },
+                    dwControlKeyState: modifier_state,
+                },
+            };
+
+            // Should not panic
+            write_console_input(input_record);
+        }
+    }
+
+    #[test]
+    fn test_write_console_input_unicode_characters() {
+        // Test with various Unicode characters
+        let unicode_chars = vec![
+            'ä', 'ö', 'ü', 'ß', // German
+            'α', 'β', 'γ', 'δ', // Greek
+            '中', '文', // Chinese
+            '🦀', '🔥', // Emojis
+        ];
+
+        for unicode_char in unicode_chars {
+            let input_record = INPUT_RECORD_0 {
+                KeyEvent: KEY_EVENT_RECORD {
+                    bKeyDown: true.into(),
+                    wRepeatCount: 1,
+                    wVirtualKeyCode: 0,
+                    wVirtualScanCode: 0,
+                    uChar: KEY_EVENT_RECORD_0 {
+                        UnicodeChar: unicode_char as u16,
+                    },
+                    dwControlKeyState: 0,
+                },
+            };
+
+            // Should not panic
+            write_console_input(input_record);
+        }
+    }
+}
+
+/// Test module for SSH config integration
+mod ssh_config_integration_test {
+    use super::*;
+
+    #[test]
+    fn test_resolve_username_simple_ssh_config() {
+        // Test with a simple SSH config that should work
+        let ssh_config_content = r#"Host testhost
+    User testuser
+"#;
+        let (_temp_dir, config_path) = create_temp_ssh_config(ssh_config_content);
+        let config = ClientConfig {
+            ssh_config_path: config_path,
+            program: "ssh".to_string(),
+            arguments: vec![],
+            username_host_placeholder: "{{HOST}}".to_string(),
+        };
+
+        // Test exact host match
+        let result = resolve_username(None, "testhost", &config);
+        assert_eq!(result, "testuser");
+
+        // Test non-matching host should return empty string
+        let result = resolve_username(None, "nonexistent", &config);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_resolve_username_nonexistent_ssh_config() {
+        // Test with nonexistent SSH config file
+        let config = ClientConfig {
+            ssh_config_path: "/nonexistent/path/config".to_string(),
+            program: "ssh".to_string(),
+            arguments: vec![],
+            username_host_placeholder: "{{HOST}}".to_string(),
+        };
+
+        let result = resolve_username(None, "any.host", &config);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_resolve_username_empty_ssh_config() {
+        let (_temp_dir, config_path) = create_temp_ssh_config("");
+        let config = ClientConfig {
+            ssh_config_path: config_path,
+            program: "ssh".to_string(),
+            arguments: vec![],
+            username_host_placeholder: "{{HOST}}".to_string(),
+        };
+
+        let result = resolve_username(None, "any.host", &config);
+        assert_eq!(result, "");
+    }
+}
+
+/// Test module for edge cases and error conditions
+mod edge_cases_test {
+    use super::*;
+
+    #[test]
+    fn test_build_ssh_arguments_edge_cases() {
+        // Test with empty config arguments
+        let empty_config = ClientConfig {
+            ssh_config_path: "/nonexistent".to_string(),
+            program: "ssh".to_string(),
+            arguments: vec![],
+            username_host_placeholder: "{{HOST}}".to_string(),
+        };
+
+        let result = build_ssh_arguments("user", "host", None, &empty_config);
+        assert!(result.is_empty());
+
+        let result = build_ssh_arguments("user", "host", Some(22), &empty_config);
+        assert_eq!(result, vec!["-p".to_string(), "22".to_string()]);
+    }
+
+    #[test]
+    fn test_build_ssh_arguments_no_placeholder() {
+        // Test config without placeholder
+        let config = ClientConfig {
+            ssh_config_path: "/nonexistent".to_string(),
+            program: "ssh".to_string(),
+            arguments: vec!["-v".to_string(), "-X".to_string()],
+            username_host_placeholder: "{{HOST}}".to_string(),
+        };
+
+        let result = build_ssh_arguments("user", "host", None, &config);
+        assert_eq!(result, vec!["-v".to_string(), "-X".to_string()]);
+
+        let result = build_ssh_arguments("user", "host", Some(8080), &config);
+        assert_eq!(
+            result,
+            vec![
+                "-v".to_string(),
+                "-X".to_string(),
+                "-p".to_string(),
+                "8080".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_build_ssh_arguments_extreme_port_values() {
+        let config = ClientConfig {
+            ssh_config_path: "/nonexistent".to_string(),
+            program: "ssh".to_string(),
+            arguments: vec!["{{HOST}}".to_string()],
+            username_host_placeholder: "{{HOST}}".to_string(),
+        };
+
+        // Test minimum port
+        let result = build_ssh_arguments("user", "host", Some(1), &config);
+        assert_eq!(
+            result,
+            vec!["user@host".to_string(), "-p".to_string(), "1".to_string()]
+        );
+
+        // Test maximum port
+        let result = build_ssh_arguments("user", "host", Some(65535), &config);
+        assert_eq!(
+            result,
+            vec![
+                "user@host".to_string(),
+                "-p".to_string(),
+                "65535".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_resolve_username_edge_cases() {
+        let config = ClientConfig {
+            ssh_config_path: "/nonexistent/path/that/does/not/exist".to_string(),
+            program: "ssh".to_string(),
+            arguments: vec![],
+            username_host_placeholder: "{{HOST}}".to_string(),
+        };
+
+        // Test with very long hostname
+        let long_hostname = "a".repeat(1000);
+        let result = resolve_username(Some("user".to_string()), &long_hostname, &config);
+        assert_eq!(result, "user");
+
+        // Test with empty strings
+        let result = resolve_username(Some("".to_string()), "", &config);
+        assert_eq!(result, "");
+
+        // Test with whitespace
+        let result = resolve_username(Some(" user ".to_string()), " host ", &config);
+        assert_eq!(result, " user ");
     }
 }
