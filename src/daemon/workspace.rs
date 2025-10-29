@@ -65,3 +65,7 @@ pub fn get_workspace_area(daemon_console_height: i32) -> WorkspaceArea {
         y_size_frame,
     };
 }
+
+#[cfg(test)]
+#[path = "../tests/daemon/test_workspace.rs"]
+mod test_daemon_workspace;
