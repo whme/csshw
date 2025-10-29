@@ -1,10 +1,613 @@
 <?xml version="1.0" ?>
 <!DOCTYPE coverage SYSTEM "https://cobertura.sourceforge.net/xml/coverage-04.dtd">
-<coverage branch-rate="0" branches-covered="0" branches-valid="0" complexity="0" line-rate="0.3453145057766367" lines-covered="538" lines-valid="1558" timestamp="1761759836" version="2.0.3">
+<coverage branch-rate="0" branches-covered="0" branches-valid="0" complexity="0" line-rate="0.4146341463414634" lines-covered="646" lines-valid="1558" timestamp="1761762444" version="2.0.3">
     <sources>
         <source>D:\a\csshw\csshw</source>
     </sources>
     <packages>
+        <package line-rate="0.9292604501607717" branch-rate="0" name="src.utils" complexity="0">
+            <classes>
+                <class branch-rate="0" complexity="0" filename="src\utils\mod.rs" line-rate="0.9299065420560748" name="src.utils.mod.rs">
+                    <methods>
+                        <method name="csshw_lib::utils::get_std_handle::{closure#0}" signature="" complexity="0" line-rate="0" branch-rate="0">
+                            <lines>
+                                <line hits="0" number="428" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::utf16_buffer_to_string::{closure#0}" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="11309" number="355" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::utf16_buffer_to_string::{closure#1}" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="4" number="357" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::get_window_title_with_api::{closure#0}" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="10240" number="407" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::get_window_title_with_api::{closure#1}" signature="" complexity="0" line-rate="0" branch-rate="0">
+                            <lines>
+                                <line hits="0" number="409" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::clear_screen" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="266" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::is_windows_10" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="543" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::get_std_handle" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="4" number="425" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::arrange_console" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="512" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::get_window_title" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="387" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::get_console_title" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="338" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::set_console_color" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="242" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::set_console_title" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="223" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::print_console_rect" signature="" complexity="0" line-rate="0" branch-rate="0">
+                            <lines>
+                                <line hits="0" number="209" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::read_keyboard_input" signature="" complexity="0" line-rate="0" branch-rate="0">
+                            <lines>
+                                <line hits="0" number="471" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::clear_screen_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="6" number="275" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::is_windows_10_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="21" number="558" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::utf16_buffer_to_string" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="17" number="351" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::arrange_console_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="3" number="529" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::get_console_input_buffer" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="2" number="433" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::set_console_border_color" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="317" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::get_console_output_buffer" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="2" number="438" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::get_window_title_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="5" number="401" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::get_console_title_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="5" number="372" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::set_console_color_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="7" number="252" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::set_console_title_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="3" number="233" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::read_console_input_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="12" number="453" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::read_keyboard_input_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="3" number="486" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::utils::set_console_border_color_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="6" number="331" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::get_os_version" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="3" number="101" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::get_std_handle" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="168" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::arrange_console" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="2" number="105" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::set_console_title" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="2" number="93" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::read_console_input" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="172" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::set_dwm_border_color" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="2" number="178" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::get_console_title_utf16" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="2" number="97" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::set_console_text_attribute" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="2" number="115" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::set_console_cursor_position" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="164" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::scroll_console_screen_buffer" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="147" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::fill_console_output_attribute" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="128" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::get_console_screen_buffer_info" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="2" number="122" branch="false"/>
+                            </lines>
+                        </method>
+                    </methods>
+                    <lines>
+                        <line branch="false" hits="2" number="93"/>
+                        <line branch="false" hits="2" number="94"/>
+                        <line branch="false" hits="2" number="95"/>
+                        <line branch="false" hits="2" number="97"/>
+                        <line branch="false" hits="2" number="98"/>
+                        <line branch="false" hits="2" number="99"/>
+                        <line branch="false" hits="3" number="101"/>
+                        <line branch="false" hits="3" number="102"/>
+                        <line branch="false" hits="3" number="103"/>
+                        <line branch="false" hits="2" number="105"/>
+                        <line branch="false" hits="2" number="106"/>
+                        <line branch="false" hits="2" number="107"/>
+                        <line branch="false" hits="2" number="108"/>
+                        <line branch="false" hits="2" number="109"/>
+                        <line branch="false" hits="2" number="110"/>
+                        <line branch="false" hits="2" number="111"/>
+                        <line branch="false" hits="2" number="112"/>
+                        <line branch="false" hits="2" number="113"/>
+                        <line branch="false" hits="2" number="115"/>
+                        <line branch="false" hits="2" number="116"/>
+                        <line branch="false" hits="2" number="117"/>
+                        <line branch="false" hits="2" number="118"/>
+                        <line branch="false" hits="2" number="119"/>
+                        <line branch="false" hits="2" number="120"/>
+                        <line branch="false" hits="2" number="122"/>
+                        <line branch="false" hits="2" number="123"/>
+                        <line branch="false" hits="2" number="124"/>
+                        <line branch="false" hits="0" number="125"/>
+                        <line branch="false" hits="2" number="126"/>
+                        <line branch="false" hits="1" number="128"/>
+                        <line branch="false" hits="1" number="129"/>
+                        <line branch="false" hits="1" number="130"/>
+                        <line branch="false" hits="1" number="131"/>
+                        <line branch="false" hits="1" number="132"/>
+                        <line branch="false" hits="1" number="133"/>
+                        <line branch="false" hits="1" number="134"/>
+                        <line branch="false" hits="1" number="136"/>
+                        <line branch="false" hits="1" number="137"/>
+                        <line branch="false" hits="1" number="138"/>
+                        <line branch="false" hits="1" number="139"/>
+                        <line branch="false" hits="1" number="140"/>
+                        <line branch="false" hits="1" number="141"/>
+                        <line branch="false" hits="1" number="142"/>
+                        <line branch="false" hits="0" number="144"/>
+                        <line branch="false" hits="1" number="145"/>
+                        <line branch="false" hits="1" number="147"/>
+                        <line branch="false" hits="1" number="148"/>
+                        <line branch="false" hits="1" number="149"/>
+                        <line branch="false" hits="1" number="150"/>
+                        <line branch="false" hits="1" number="151"/>
+                        <line branch="false" hits="1" number="152"/>
+                        <line branch="false" hits="1" number="154"/>
+                        <line branch="false" hits="1" number="155"/>
+                        <line branch="false" hits="1" number="156"/>
+                        <line branch="false" hits="1" number="157"/>
+                        <line branch="false" hits="1" number="158"/>
+                        <line branch="false" hits="1" number="159"/>
+                        <line branch="false" hits="1" number="162"/>
+                        <line branch="false" hits="1" number="164"/>
+                        <line branch="false" hits="1" number="165"/>
+                        <line branch="false" hits="1" number="166"/>
+                        <line branch="false" hits="1" number="168"/>
+                        <line branch="false" hits="1" number="169"/>
+                        <line branch="false" hits="1" number="170"/>
+                        <line branch="false" hits="1" number="172"/>
+                        <line branch="false" hits="1" number="173"/>
+                        <line branch="false" hits="1" number="174"/>
+                        <line branch="false" hits="0" number="175"/>
+                        <line branch="false" hits="1" number="176"/>
+                        <line branch="false" hits="2" number="178"/>
+                        <line branch="false" hits="2" number="180"/>
+                        <line branch="false" hits="2" number="181"/>
+                        <line branch="false" hits="2" number="183"/>
+                        <line branch="false" hits="2" number="184"/>
+                        <line branch="false" hits="2" number="187"/>
+                        <line branch="false" hits="0" number="209"/>
+                        <line branch="false" hits="0" number="210"/>
+                        <line branch="false" hits="0" number="211"/>
+                        <line branch="false" hits="0" number="212"/>
+                        <line branch="false" hits="0" number="213"/>
+                        <line branch="false" hits="0" number="214"/>
+                        <line branch="false" hits="0" number="215"/>
+                        <line branch="false" hits="1" number="223"/>
+                        <line branch="false" hits="1" number="224"/>
+                        <line branch="false" hits="1" number="225"/>
+                        <line branch="false" hits="3" number="233"/>
+                        <line branch="false" hits="3" number="234"/>
+                        <line branch="false" hits="3" number="235"/>
+                        <line branch="false" hits="1" number="242"/>
+                        <line branch="false" hits="1" number="243"/>
+                        <line branch="false" hits="1" number="244"/>
+                        <line branch="false" hits="7" number="252"/>
+                        <line branch="false" hits="7" number="253"/>
+                        <line branch="false" hits="7" number="254"/>
+                        <line branch="false" hits="149" number="255"/>
+                        <line branch="false" hits="149" number="256"/>
+                        <line branch="false" hits="149" number="257"/>
+                        <line branch="false" hits="149" number="258"/>
+                        <line branch="false" hits="149" number="259"/>
+                        <line branch="false" hits="149" number="260"/>
+                        <line branch="false" hits="149" number="261"/>
+                        <line branch="false" hits="149" number="262"/>
+                        <line branch="false" hits="7" number="263"/>
+                        <line branch="false" hits="1" number="266"/>
+                        <line branch="false" hits="1" number="267"/>
+                        <line branch="false" hits="1" number="268"/>
+                        <line branch="false" hits="6" number="275"/>
+                        <line branch="false" hits="6" number="276"/>
+                        <line branch="false" hits="6" number="277"/>
+                        <line branch="false" hits="6" number="278"/>
+                        <line branch="false" hits="6" number="279"/>
+                        <line branch="false" hits="6" number="280"/>
+                        <line branch="false" hits="6" number="281"/>
+                        <line branch="false" hits="6" number="282"/>
+                        <line branch="false" hits="6" number="283"/>
+                        <line branch="false" hits="6" number="284"/>
+                        <line branch="false" hits="6" number="285"/>
+                        <line branch="false" hits="6" number="286"/>
+                        <line branch="false" hits="6" number="287"/>
+                        <line branch="false" hits="6" number="288"/>
+                        <line branch="false" hits="6" number="289"/>
+                        <line branch="false" hits="6" number="291"/>
+                        <line branch="false" hits="6" number="292"/>
+                        <line branch="false" hits="6" number="294"/>
+                        <line branch="false" hits="6" number="295"/>
+                        <line branch="false" hits="6" number="296"/>
+                        <line branch="false" hits="1" number="317"/>
+                        <line branch="false" hits="1" number="318"/>
+                        <line branch="false" hits="1" number="319"/>
+                        <line branch="false" hits="6" number="331"/>
+                        <line branch="false" hits="6" number="332"/>
+                        <line branch="false" hits="4" number="333"/>
+                        <line branch="false" hits="4" number="334"/>
+                        <line branch="false" hits="6" number="335"/>
+                        <line branch="false" hits="1" number="338"/>
+                        <line branch="false" hits="1" number="339"/>
+                        <line branch="false" hits="1" number="340"/>
+                        <line branch="false" hits="17" number="351"/>
+                        <line branch="false" hits="17" number="352"/>
+                        <line branch="false" hits="17" number="353"/>
+                        <line branch="false" hits="17" number="354"/>
+                        <line branch="false" hits="11309" number="355"/>
+                        <line branch="false" hits="17" number="356"/>
+                        <line branch="false" hits="17" number="357"/>
+                        <line branch="false" hits="4" number="358"/>
+                        <line branch="false" hits="4" number="359"/>
+                        <line branch="false" hits="17" number="361"/>
+                        <line branch="false" hits="5" number="372"/>
+                        <line branch="false" hits="5" number="373"/>
+                        <line branch="false" hits="5" number="374"/>
+                        <line branch="false" hits="5" number="375"/>
+                        <line branch="false" hits="5" number="376"/>
+                        <line branch="false" hits="1" number="387"/>
+                        <line branch="false" hits="1" number="388"/>
+                        <line branch="false" hits="1" number="389"/>
+                        <line branch="false" hits="5" number="401"/>
+                        <line branch="false" hits="5" number="403"/>
+                        <line branch="false" hits="5" number="404"/>
+                        <line branch="false" hits="5" number="405"/>
+                        <line branch="false" hits="5" number="406"/>
+                        <line branch="false" hits="10240" number="407"/>
+                        <line branch="false" hits="5" number="408"/>
+                        <line branch="false" hits="5" number="409"/>
+                        <line branch="false" hits="0" number="410"/>
+                        <line branch="false" hits="0" number="411"/>
+                        <line branch="false" hits="5" number="413"/>
+                        <line branch="false" hits="4" number="425"/>
+                        <line branch="false" hits="4" number="427"/>
+                        <line branch="false" hits="4" number="428"/>
+                        <line branch="false" hits="4" number="430"/>
+                        <line branch="false" hits="2" number="433"/>
+                        <line branch="false" hits="2" number="434"/>
+                        <line branch="false" hits="2" number="435"/>
+                        <line branch="false" hits="2" number="438"/>
+                        <line branch="false" hits="2" number="439"/>
+                        <line branch="false" hits="2" number="440"/>
+                        <line branch="false" hits="12" number="453"/>
+                        <line branch="false" hits="12" number="455"/>
+                        <line branch="false" hits="14" number="457"/>
+                        <line branch="false" hits="14" number="458"/>
+                        <line branch="false" hits="14" number="459"/>
+                        <line branch="false" hits="14" number="460"/>
+                        <line branch="false" hits="12" number="461"/>
+                        <line branch="false" hits="2" number="462"/>
+                        <line branch="false" hits="12" number="464"/>
+                        <line branch="false" hits="12" number="465"/>
+                        <line branch="false" hits="0" number="471"/>
+                        <line branch="false" hits="0" number="472"/>
+                        <line branch="false" hits="0" number="473"/>
+                        <line branch="false" hits="3" number="486"/>
+                        <line branch="false" hits="7" number="488"/>
+                        <line branch="false" hits="7" number="489"/>
+                        <line branch="false" hits="3" number="491"/>
+                        <line branch="false" hits="4" number="494"/>
+                        <line branch="false" hits="3" number="498"/>
+                        <line branch="false" hits="1" number="512"/>
+                        <line branch="false" hits="1" number="513"/>
+                        <line branch="false" hits="1" number="514"/>
+                        <line branch="false" hits="3" number="529"/>
+                        <line branch="false" hits="3" number="533"/>
+                        <line branch="false" hits="3" number="534"/>
+                        <line branch="false" hits="1" number="543"/>
+                        <line branch="false" hits="1" number="544"/>
+                        <line branch="false" hits="1" number="545"/>
+                        <line branch="false" hits="21" number="558"/>
+                        <line branch="false" hits="21" number="559"/>
+                        <line branch="false" hits="21" number="560"/>
+                        <line branch="false" hits="21" number="561"/>
+                        <line branch="false" hits="21" number="562"/>
+                        <line branch="false" hits="21" number="563"/>
+                        <line branch="false" hits="21" number="564"/>
+                        <line branch="false" hits="21" number="565"/>
+                        <line branch="false" hits="21" number="566"/>
+                        <line branch="false" hits="21" number="567"/>
+                    </lines>
+                </class>
+                <class branch-rate="0" complexity="0" filename="src\utils\debug.rs" line-rate="1" name="src.utils.debug.rs">
+                    <methods>
+                        <method name="&lt;windows::Win32::System::Console::KEY_EVENT_RECORD_0 as csshw_lib::utils::debug::StringRepr&gt;::string_repr" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="6" number="21" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;windows::Win32::System::Console::INPUT_RECORD_0 as csshw_lib::utils::debug::StringRepr&gt;::string_repr" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="51" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;windows::Win32::System::Console::KEY_EVENT_RECORD as csshw_lib::utils::debug::StringRepr&gt;::string_repr" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="13" number="31" branch="false"/>
+                            </lines>
+                        </method>
+                    </methods>
+                    <lines>
+                        <line branch="false" hits="6" number="21"/>
+                        <line branch="false" hits="6" number="22"/>
+                        <line branch="false" hits="6" number="23"/>
+                        <line branch="false" hits="13" number="31"/>
+                        <line branch="false" hits="13" number="32"/>
+                        <line branch="false" hits="13" number="33"/>
+                        <line branch="false" hits="13" number="34"/>
+                        <line branch="false" hits="13" number="35"/>
+                        <line branch="false" hits="13" number="36"/>
+                        <line branch="false" hits="13" number="37"/>
+                        <line branch="false" hits="13" number="38"/>
+                        <line branch="false" hits="13" number="39"/>
+                        <line branch="false" hits="13" number="40"/>
+                        <line branch="false" hits="13" number="41"/>
+                        <line branch="false" hits="1" number="51"/>
+                        <line branch="false" hits="1" number="52"/>
+                        <line branch="false" hits="1" number="53"/>
+                    </lines>
+                </class>
+                <class branch-rate="0" complexity="0" filename="src\utils\config.rs" line-rate="0.9125" name="src.utils.config.rs">
+                    <methods>
+                        <method name="&lt;csshw_lib::utils::config::Config as core::convert::From&lt;csshw_lib::utils::config::ConfigOpt&gt;&gt;::from" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="7" number="46" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::config::ClientConfig as core::default::Default&gt;::default" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="29" number="118" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::config::ClientConfigOpt as core::default::Default&gt;::default" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="6" number="146" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::config::ClientConfig as core::convert::From&lt;csshw_lib::utils::config::ClientConfigOpt&gt;&gt;::from" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="10" number="153" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::config::ClientConfigOpt as core::convert::From&lt;csshw_lib::utils::config::ClientConfig&gt;&gt;::from" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="6" number="168" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::config::DaemonConfig as core::default::Default&gt;::default" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="28" number="229" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::config::DaemonConfigOpt as core::default::Default&gt;::default" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="5" number="257" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::config::DaemonConfig as core::convert::From&lt;csshw_lib::utils::config::DaemonConfigOpt&gt;&gt;::from" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="10" number="264" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::config::DaemonConfigOpt as core::convert::From&lt;csshw_lib::utils::config::DaemonConfig&gt;&gt;::from" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="5" number="278" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="&lt;csshw_lib::utils::config::ConfigOpt as core::convert::From&lt;csshw_lib::utils::config::Config&gt;&gt;::from" signature="" complexity="0" line-rate="0" branch-rate="0">
+                            <lines>
+                                <line hits="0" number="57" branch="false"/>
+                            </lines>
+                        </method>
+                    </methods>
+                    <lines>
+                        <line branch="false" hits="7" number="46"/>
+                        <line branch="false" hits="7" number="47"/>
+                        <line branch="false" hits="7" number="48"/>
+                        <line branch="false" hits="7" number="49"/>
+                        <line branch="false" hits="7" number="50"/>
+                        <line branch="false" hits="7" number="51"/>
+                        <line branch="false" hits="7" number="52"/>
+                        <line branch="false" hits="0" number="57"/>
+                        <line branch="false" hits="0" number="58"/>
+                        <line branch="false" hits="0" number="59"/>
+                        <line branch="false" hits="0" number="60"/>
+                        <line branch="false" hits="0" number="61"/>
+                        <line branch="false" hits="0" number="62"/>
+                        <line branch="false" hits="0" number="63"/>
+                        <line branch="false" hits="29" number="118"/>
+                        <line branch="false" hits="29" number="119"/>
+                        <line branch="false" hits="29" number="120"/>
+                        <line branch="false" hits="29" number="121"/>
+                        <line branch="false" hits="29" number="122"/>
+                        <line branch="false" hits="29" number="123"/>
+                        <line branch="false" hits="29" number="124"/>
+                        <line branch="false" hits="29" number="125"/>
+                        <line branch="false" hits="29" number="126"/>
+                        <line branch="false" hits="29" number="127"/>
+                        <line branch="false" hits="29" number="128"/>
+                        <line branch="false" hits="6" number="146"/>
+                        <line branch="false" hits="6" number="147"/>
+                        <line branch="false" hits="6" number="148"/>
+                        <line branch="false" hits="10" number="153"/>
+                        <line branch="false" hits="10" number="154"/>
+                        <line branch="false" hits="10" number="155"/>
+                        <line branch="false" hits="10" number="156"/>
+                        <line branch="false" hits="10" number="157"/>
+                        <line branch="false" hits="10" number="158"/>
+                        <line branch="false" hits="10" number="159"/>
+                        <line branch="false" hits="10" number="160"/>
+                        <line branch="false" hits="10" number="161"/>
+                        <line branch="false" hits="10" number="162"/>
+                        <line branch="false" hits="10" number="163"/>
+                        <line branch="false" hits="6" number="168"/>
+                        <line branch="false" hits="6" number="169"/>
+                        <line branch="false" hits="6" number="170"/>
+                        <line branch="false" hits="6" number="171"/>
+                        <line branch="false" hits="6" number="172"/>
+                        <line branch="false" hits="6" number="173"/>
+                        <line branch="false" hits="6" number="174"/>
+                        <line branch="false" hits="6" number="175"/>
+                        <line branch="false" hits="28" number="229"/>
+                        <line branch="false" hits="28" number="230"/>
+                        <line branch="false" hits="28" number="231"/>
+                        <line branch="false" hits="28" number="232"/>
+                        <line branch="false" hits="28" number="233"/>
+                        <line branch="false" hits="28" number="234"/>
+                        <line branch="false" hits="28" number="235"/>
+                        <line branch="false" hits="28" number="236"/>
+                        <line branch="false" hits="28" number="237"/>
+                        <line branch="false" hits="28" number="238"/>
+                        <line branch="false" hits="28" number="239"/>
+                        <line branch="false" hits="28" number="240"/>
+                        <line branch="false" hits="28" number="241"/>
+                        <line branch="false" hits="5" number="257"/>
+                        <line branch="false" hits="5" number="258"/>
+                        <line branch="false" hits="5" number="259"/>
+                        <line branch="false" hits="10" number="264"/>
+                        <line branch="false" hits="10" number="265"/>
+                        <line branch="false" hits="10" number="266"/>
+                        <line branch="false" hits="10" number="267"/>
+                        <line branch="false" hits="10" number="268"/>
+                        <line branch="false" hits="10" number="269"/>
+                        <line branch="false" hits="10" number="270"/>
+                        <line branch="false" hits="10" number="271"/>
+                        <line branch="false" hits="10" number="272"/>
+                        <line branch="false" hits="10" number="273"/>
+                        <line branch="false" hits="5" number="278"/>
+                        <line branch="false" hits="5" number="279"/>
+                        <line branch="false" hits="5" number="280"/>
+                        <line branch="false" hits="5" number="281"/>
+                        <line branch="false" hits="5" number="282"/>
+                        <line branch="false" hits="5" number="283"/>
+                        <line branch="false" hits="5" number="284"/>
+                    </lines>
+                </class>
+            </classes>
+        </package>
         <package line-rate="0.07832422586520947" branch-rate="0" name="src.daemon" complexity="0">
             <classes>
                 <class branch-rate="0" complexity="0" filename="src\daemon\mod.rs" line-rate="0.08097928436911488" name="src.daemon.mod.rs">
@@ -810,611 +1413,27 @@
                 </class>
             </classes>
         </package>
-        <package line-rate="0.5819935691318328" branch-rate="0" name="src.utils" complexity="0">
-            <classes>
-                <class branch-rate="0" complexity="0" filename="src\utils\debug.rs" line-rate="1" name="src.utils.debug.rs">
-                    <methods>
-                        <method name="&lt;windows::Win32::System::Console::KEY_EVENT_RECORD_0 as csshw_lib::utils::debug::StringRepr&gt;::string_repr" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="6" number="21" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;windows::Win32::System::Console::INPUT_RECORD_0 as csshw_lib::utils::debug::StringRepr&gt;::string_repr" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="1" number="51" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;windows::Win32::System::Console::KEY_EVENT_RECORD as csshw_lib::utils::debug::StringRepr&gt;::string_repr" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="13" number="31" branch="false"/>
-                            </lines>
-                        </method>
-                    </methods>
-                    <lines>
-                        <line branch="false" hits="6" number="21"/>
-                        <line branch="false" hits="6" number="22"/>
-                        <line branch="false" hits="6" number="23"/>
-                        <line branch="false" hits="13" number="31"/>
-                        <line branch="false" hits="13" number="32"/>
-                        <line branch="false" hits="13" number="33"/>
-                        <line branch="false" hits="13" number="34"/>
-                        <line branch="false" hits="13" number="35"/>
-                        <line branch="false" hits="13" number="36"/>
-                        <line branch="false" hits="13" number="37"/>
-                        <line branch="false" hits="13" number="38"/>
-                        <line branch="false" hits="13" number="39"/>
-                        <line branch="false" hits="13" number="40"/>
-                        <line branch="false" hits="13" number="41"/>
-                        <line branch="false" hits="1" number="51"/>
-                        <line branch="false" hits="1" number="52"/>
-                        <line branch="false" hits="1" number="53"/>
-                    </lines>
-                </class>
-                <class branch-rate="0" complexity="0" filename="src\utils\config.rs" line-rate="0.9125" name="src.utils.config.rs">
-                    <methods>
-                        <method name="&lt;csshw_lib::utils::config::Config as core::convert::From&lt;csshw_lib::utils::config::ConfigOpt&gt;&gt;::from" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="7" number="46" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::config::ClientConfig as core::default::Default&gt;::default" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="29" number="118" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::config::ClientConfigOpt as core::default::Default&gt;::default" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="6" number="146" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::config::ClientConfig as core::convert::From&lt;csshw_lib::utils::config::ClientConfigOpt&gt;&gt;::from" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="10" number="153" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::config::ClientConfigOpt as core::convert::From&lt;csshw_lib::utils::config::ClientConfig&gt;&gt;::from" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="6" number="168" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::config::DaemonConfig as core::default::Default&gt;::default" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="28" number="229" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::config::DaemonConfigOpt as core::default::Default&gt;::default" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="5" number="257" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::config::DaemonConfig as core::convert::From&lt;csshw_lib::utils::config::DaemonConfigOpt&gt;&gt;::from" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="10" number="264" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::config::DaemonConfigOpt as core::convert::From&lt;csshw_lib::utils::config::DaemonConfig&gt;&gt;::from" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="5" number="278" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::config::ConfigOpt as core::convert::From&lt;csshw_lib::utils::config::Config&gt;&gt;::from" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="57" branch="false"/>
-                            </lines>
-                        </method>
-                    </methods>
-                    <lines>
-                        <line branch="false" hits="7" number="46"/>
-                        <line branch="false" hits="7" number="47"/>
-                        <line branch="false" hits="7" number="48"/>
-                        <line branch="false" hits="7" number="49"/>
-                        <line branch="false" hits="7" number="50"/>
-                        <line branch="false" hits="7" number="51"/>
-                        <line branch="false" hits="7" number="52"/>
-                        <line branch="false" hits="0" number="57"/>
-                        <line branch="false" hits="0" number="58"/>
-                        <line branch="false" hits="0" number="59"/>
-                        <line branch="false" hits="0" number="60"/>
-                        <line branch="false" hits="0" number="61"/>
-                        <line branch="false" hits="0" number="62"/>
-                        <line branch="false" hits="0" number="63"/>
-                        <line branch="false" hits="29" number="118"/>
-                        <line branch="false" hits="29" number="119"/>
-                        <line branch="false" hits="29" number="120"/>
-                        <line branch="false" hits="29" number="121"/>
-                        <line branch="false" hits="29" number="122"/>
-                        <line branch="false" hits="29" number="123"/>
-                        <line branch="false" hits="29" number="124"/>
-                        <line branch="false" hits="29" number="125"/>
-                        <line branch="false" hits="29" number="126"/>
-                        <line branch="false" hits="29" number="127"/>
-                        <line branch="false" hits="29" number="128"/>
-                        <line branch="false" hits="6" number="146"/>
-                        <line branch="false" hits="6" number="147"/>
-                        <line branch="false" hits="6" number="148"/>
-                        <line branch="false" hits="10" number="153"/>
-                        <line branch="false" hits="10" number="154"/>
-                        <line branch="false" hits="10" number="155"/>
-                        <line branch="false" hits="10" number="156"/>
-                        <line branch="false" hits="10" number="157"/>
-                        <line branch="false" hits="10" number="158"/>
-                        <line branch="false" hits="10" number="159"/>
-                        <line branch="false" hits="10" number="160"/>
-                        <line branch="false" hits="10" number="161"/>
-                        <line branch="false" hits="10" number="162"/>
-                        <line branch="false" hits="10" number="163"/>
-                        <line branch="false" hits="6" number="168"/>
-                        <line branch="false" hits="6" number="169"/>
-                        <line branch="false" hits="6" number="170"/>
-                        <line branch="false" hits="6" number="171"/>
-                        <line branch="false" hits="6" number="172"/>
-                        <line branch="false" hits="6" number="173"/>
-                        <line branch="false" hits="6" number="174"/>
-                        <line branch="false" hits="6" number="175"/>
-                        <line branch="false" hits="28" number="229"/>
-                        <line branch="false" hits="28" number="230"/>
-                        <line branch="false" hits="28" number="231"/>
-                        <line branch="false" hits="28" number="232"/>
-                        <line branch="false" hits="28" number="233"/>
-                        <line branch="false" hits="28" number="234"/>
-                        <line branch="false" hits="28" number="235"/>
-                        <line branch="false" hits="28" number="236"/>
-                        <line branch="false" hits="28" number="237"/>
-                        <line branch="false" hits="28" number="238"/>
-                        <line branch="false" hits="28" number="239"/>
-                        <line branch="false" hits="28" number="240"/>
-                        <line branch="false" hits="28" number="241"/>
-                        <line branch="false" hits="5" number="257"/>
-                        <line branch="false" hits="5" number="258"/>
-                        <line branch="false" hits="5" number="259"/>
-                        <line branch="false" hits="10" number="264"/>
-                        <line branch="false" hits="10" number="265"/>
-                        <line branch="false" hits="10" number="266"/>
-                        <line branch="false" hits="10" number="267"/>
-                        <line branch="false" hits="10" number="268"/>
-                        <line branch="false" hits="10" number="269"/>
-                        <line branch="false" hits="10" number="270"/>
-                        <line branch="false" hits="10" number="271"/>
-                        <line branch="false" hits="10" number="272"/>
-                        <line branch="false" hits="10" number="273"/>
-                        <line branch="false" hits="5" number="278"/>
-                        <line branch="false" hits="5" number="279"/>
-                        <line branch="false" hits="5" number="280"/>
-                        <line branch="false" hits="5" number="281"/>
-                        <line branch="false" hits="5" number="282"/>
-                        <line branch="false" hits="5" number="283"/>
-                        <line branch="false" hits="5" number="284"/>
-                    </lines>
-                </class>
-                <class branch-rate="0" complexity="0" filename="src\utils\mod.rs" line-rate="0.4252336448598131" name="src.utils.mod.rs">
-                    <methods>
-                        <method name="csshw_lib::utils::get_std_handle::{closure#0}" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="428" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::utf16_buffer_to_string::{closure#0}" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="8241" number="355" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::utf16_buffer_to_string::{closure#1}" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="357" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::get_window_title_with_api::{closure#0}" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="2048" number="407" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::get_window_title_with_api::{closure#1}" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="409" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::clear_screen" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="266" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::is_windows_10" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="543" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::get_std_handle" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="425" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::arrange_console" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="512" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::get_window_title" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="387" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::get_console_title" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="338" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::set_console_color" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="242" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::set_console_title" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="223" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::print_console_rect" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="209" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::read_keyboard_input" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="471" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::clear_screen_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="3" number="275" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::is_windows_10_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="14" number="558" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::utf16_buffer_to_string" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="9" number="351" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::arrange_console_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="1" number="529" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::get_console_input_buffer" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="433" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::set_console_border_color" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="317" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::get_console_output_buffer" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="438" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::get_window_title_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="1" number="401" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::get_console_title_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="4" number="372" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::set_console_color_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="3" number="252" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::set_console_title_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="2" number="233" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::read_console_input_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="8" number="453" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::read_keyboard_input_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="2" number="486" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::utils::set_console_border_color_with_api" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="5" number="331" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::get_os_version" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="101" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::get_std_handle" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="168" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::arrange_console" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="105" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::set_console_title" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="93" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::read_console_input" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="172" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::set_dwm_border_color" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="178" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::get_console_title_utf16" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="97" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::set_console_text_attribute" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="115" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::set_console_cursor_position" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="164" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::scroll_console_screen_buffer" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="147" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::fill_console_output_attribute" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="128" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="&lt;csshw_lib::utils::DefaultWindowsApi as csshw_lib::utils::WindowsApi&gt;::get_console_screen_buffer_info" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="122" branch="false"/>
-                            </lines>
-                        </method>
-                    </methods>
-                    <lines>
-                        <line branch="false" hits="0" number="93"/>
-                        <line branch="false" hits="0" number="94"/>
-                        <line branch="false" hits="0" number="95"/>
-                        <line branch="false" hits="0" number="97"/>
-                        <line branch="false" hits="0" number="98"/>
-                        <line branch="false" hits="0" number="99"/>
-                        <line branch="false" hits="0" number="101"/>
-                        <line branch="false" hits="0" number="102"/>
-                        <line branch="false" hits="0" number="103"/>
-                        <line branch="false" hits="0" number="105"/>
-                        <line branch="false" hits="0" number="106"/>
-                        <line branch="false" hits="0" number="107"/>
-                        <line branch="false" hits="0" number="108"/>
-                        <line branch="false" hits="0" number="109"/>
-                        <line branch="false" hits="0" number="110"/>
-                        <line branch="false" hits="0" number="111"/>
-                        <line branch="false" hits="0" number="112"/>
-                        <line branch="false" hits="0" number="113"/>
-                        <line branch="false" hits="0" number="115"/>
-                        <line branch="false" hits="0" number="116"/>
-                        <line branch="false" hits="0" number="117"/>
-                        <line branch="false" hits="0" number="118"/>
-                        <line branch="false" hits="0" number="119"/>
-                        <line branch="false" hits="0" number="120"/>
-                        <line branch="false" hits="0" number="122"/>
-                        <line branch="false" hits="0" number="123"/>
-                        <line branch="false" hits="0" number="124"/>
-                        <line branch="false" hits="0" number="125"/>
-                        <line branch="false" hits="0" number="126"/>
-                        <line branch="false" hits="0" number="128"/>
-                        <line branch="false" hits="0" number="129"/>
-                        <line branch="false" hits="0" number="130"/>
-                        <line branch="false" hits="0" number="131"/>
-                        <line branch="false" hits="0" number="132"/>
-                        <line branch="false" hits="0" number="133"/>
-                        <line branch="false" hits="0" number="134"/>
-                        <line branch="false" hits="0" number="136"/>
-                        <line branch="false" hits="0" number="137"/>
-                        <line branch="false" hits="0" number="138"/>
-                        <line branch="false" hits="0" number="139"/>
-                        <line branch="false" hits="0" number="140"/>
-                        <line branch="false" hits="0" number="141"/>
-                        <line branch="false" hits="0" number="142"/>
-                        <line branch="false" hits="0" number="144"/>
-                        <line branch="false" hits="0" number="145"/>
-                        <line branch="false" hits="0" number="147"/>
-                        <line branch="false" hits="0" number="148"/>
-                        <line branch="false" hits="0" number="149"/>
-                        <line branch="false" hits="0" number="150"/>
-                        <line branch="false" hits="0" number="151"/>
-                        <line branch="false" hits="0" number="152"/>
-                        <line branch="false" hits="0" number="154"/>
-                        <line branch="false" hits="0" number="155"/>
-                        <line branch="false" hits="0" number="156"/>
-                        <line branch="false" hits="0" number="157"/>
-                        <line branch="false" hits="0" number="158"/>
-                        <line branch="false" hits="0" number="159"/>
-                        <line branch="false" hits="0" number="162"/>
-                        <line branch="false" hits="0" number="164"/>
-                        <line branch="false" hits="0" number="165"/>
-                        <line branch="false" hits="0" number="166"/>
-                        <line branch="false" hits="0" number="168"/>
-                        <line branch="false" hits="0" number="169"/>
-                        <line branch="false" hits="0" number="170"/>
-                        <line branch="false" hits="0" number="172"/>
-                        <line branch="false" hits="0" number="173"/>
-                        <line branch="false" hits="0" number="174"/>
-                        <line branch="false" hits="0" number="175"/>
-                        <line branch="false" hits="0" number="176"/>
-                        <line branch="false" hits="0" number="178"/>
-                        <line branch="false" hits="0" number="180"/>
-                        <line branch="false" hits="0" number="181"/>
-                        <line branch="false" hits="0" number="183"/>
-                        <line branch="false" hits="0" number="184"/>
-                        <line branch="false" hits="0" number="187"/>
-                        <line branch="false" hits="0" number="209"/>
-                        <line branch="false" hits="0" number="210"/>
-                        <line branch="false" hits="0" number="211"/>
-                        <line branch="false" hits="0" number="212"/>
-                        <line branch="false" hits="0" number="213"/>
-                        <line branch="false" hits="0" number="214"/>
-                        <line branch="false" hits="0" number="215"/>
-                        <line branch="false" hits="0" number="223"/>
-                        <line branch="false" hits="0" number="224"/>
-                        <line branch="false" hits="0" number="225"/>
-                        <line branch="false" hits="2" number="233"/>
-                        <line branch="false" hits="2" number="234"/>
-                        <line branch="false" hits="2" number="235"/>
-                        <line branch="false" hits="0" number="242"/>
-                        <line branch="false" hits="0" number="243"/>
-                        <line branch="false" hits="0" number="244"/>
-                        <line branch="false" hits="3" number="252"/>
-                        <line branch="false" hits="3" number="253"/>
-                        <line branch="false" hits="3" number="254"/>
-                        <line branch="false" hits="49" number="255"/>
-                        <line branch="false" hits="49" number="256"/>
-                        <line branch="false" hits="49" number="257"/>
-                        <line branch="false" hits="49" number="258"/>
-                        <line branch="false" hits="49" number="259"/>
-                        <line branch="false" hits="49" number="260"/>
-                        <line branch="false" hits="49" number="261"/>
-                        <line branch="false" hits="49" number="262"/>
-                        <line branch="false" hits="3" number="263"/>
-                        <line branch="false" hits="0" number="266"/>
-                        <line branch="false" hits="0" number="267"/>
-                        <line branch="false" hits="0" number="268"/>
-                        <line branch="false" hits="3" number="275"/>
-                        <line branch="false" hits="3" number="276"/>
-                        <line branch="false" hits="3" number="277"/>
-                        <line branch="false" hits="3" number="278"/>
-                        <line branch="false" hits="3" number="279"/>
-                        <line branch="false" hits="3" number="280"/>
-                        <line branch="false" hits="3" number="281"/>
-                        <line branch="false" hits="3" number="282"/>
-                        <line branch="false" hits="3" number="283"/>
-                        <line branch="false" hits="3" number="284"/>
-                        <line branch="false" hits="3" number="285"/>
-                        <line branch="false" hits="3" number="286"/>
-                        <line branch="false" hits="3" number="287"/>
-                        <line branch="false" hits="3" number="288"/>
-                        <line branch="false" hits="3" number="289"/>
-                        <line branch="false" hits="3" number="291"/>
-                        <line branch="false" hits="3" number="292"/>
-                        <line branch="false" hits="3" number="294"/>
-                        <line branch="false" hits="3" number="295"/>
-                        <line branch="false" hits="3" number="296"/>
-                        <line branch="false" hits="0" number="317"/>
-                        <line branch="false" hits="0" number="318"/>
-                        <line branch="false" hits="0" number="319"/>
-                        <line branch="false" hits="5" number="331"/>
-                        <line branch="false" hits="5" number="332"/>
-                        <line branch="false" hits="3" number="333"/>
-                        <line branch="false" hits="3" number="334"/>
-                        <line branch="false" hits="5" number="335"/>
-                        <line branch="false" hits="0" number="338"/>
-                        <line branch="false" hits="0" number="339"/>
-                        <line branch="false" hits="0" number="340"/>
-                        <line branch="false" hits="9" number="351"/>
-                        <line branch="false" hits="9" number="352"/>
-                        <line branch="false" hits="9" number="353"/>
-                        <line branch="false" hits="9" number="354"/>
-                        <line branch="false" hits="8241" number="355"/>
-                        <line branch="false" hits="9" number="356"/>
-                        <line branch="false" hits="9" number="357"/>
-                        <line branch="false" hits="0" number="358"/>
-                        <line branch="false" hits="0" number="359"/>
-                        <line branch="false" hits="9" number="361"/>
-                        <line branch="false" hits="4" number="372"/>
-                        <line branch="false" hits="4" number="373"/>
-                        <line branch="false" hits="4" number="374"/>
-                        <line branch="false" hits="4" number="375"/>
-                        <line branch="false" hits="4" number="376"/>
-                        <line branch="false" hits="0" number="387"/>
-                        <line branch="false" hits="0" number="388"/>
-                        <line branch="false" hits="0" number="389"/>
-                        <line branch="false" hits="1" number="401"/>
-                        <line branch="false" hits="1" number="403"/>
-                        <line branch="false" hits="1" number="404"/>
-                        <line branch="false" hits="1" number="405"/>
-                        <line branch="false" hits="1" number="406"/>
-                        <line branch="false" hits="2048" number="407"/>
-                        <line branch="false" hits="1" number="408"/>
-                        <line branch="false" hits="1" number="409"/>
-                        <line branch="false" hits="0" number="410"/>
-                        <line branch="false" hits="0" number="411"/>
-                        <line branch="false" hits="1" number="413"/>
-                        <line branch="false" hits="0" number="425"/>
-                        <line branch="false" hits="0" number="427"/>
-                        <line branch="false" hits="0" number="428"/>
-                        <line branch="false" hits="0" number="430"/>
-                        <line branch="false" hits="0" number="433"/>
-                        <line branch="false" hits="0" number="434"/>
-                        <line branch="false" hits="0" number="435"/>
-                        <line branch="false" hits="0" number="438"/>
-                        <line branch="false" hits="0" number="439"/>
-                        <line branch="false" hits="0" number="440"/>
-                        <line branch="false" hits="8" number="453"/>
-                        <line branch="false" hits="8" number="455"/>
-                        <line branch="false" hits="10" number="457"/>
-                        <line branch="false" hits="10" number="458"/>
-                        <line branch="false" hits="10" number="459"/>
-                        <line branch="false" hits="10" number="460"/>
-                        <line branch="false" hits="8" number="461"/>
-                        <line branch="false" hits="2" number="462"/>
-                        <line branch="false" hits="8" number="464"/>
-                        <line branch="false" hits="8" number="465"/>
-                        <line branch="false" hits="0" number="471"/>
-                        <line branch="false" hits="0" number="472"/>
-                        <line branch="false" hits="0" number="473"/>
-                        <line branch="false" hits="2" number="486"/>
-                        <line branch="false" hits="4" number="488"/>
-                        <line branch="false" hits="4" number="489"/>
-                        <line branch="false" hits="2" number="491"/>
-                        <line branch="false" hits="2" number="494"/>
-                        <line branch="false" hits="2" number="498"/>
-                        <line branch="false" hits="0" number="512"/>
-                        <line branch="false" hits="0" number="513"/>
-                        <line branch="false" hits="0" number="514"/>
-                        <line branch="false" hits="1" number="529"/>
-                        <line branch="false" hits="1" number="533"/>
-                        <line branch="false" hits="1" number="534"/>
-                        <line branch="false" hits="0" number="543"/>
-                        <line branch="false" hits="0" number="544"/>
-                        <line branch="false" hits="0" number="545"/>
-                        <line branch="false" hits="14" number="558"/>
-                        <line branch="false" hits="14" number="559"/>
-                        <line branch="false" hits="14" number="560"/>
-                        <line branch="false" hits="14" number="561"/>
-                        <line branch="false" hits="14" number="562"/>
-                        <line branch="false" hits="14" number="563"/>
-                        <line branch="false" hits="14" number="564"/>
-                        <line branch="false" hits="14" number="565"/>
-                        <line branch="false" hits="14" number="566"/>
-                        <line branch="false" hits="14" number="567"/>
-                    </lines>
-                </class>
-            </classes>
-        </package>
         <package line-rate="0.4745011086474501" branch-rate="0" name="src" complexity="0">
             <classes>
+                <class branch-rate="0" complexity="0" filename="src\main.rs" line-rate="0" name="src.main.rs">
+                    <methods>
+                        <method name="csshw::main::{closure#0}" signature="" complexity="0" line-rate="0" branch-rate="0">
+                            <lines>
+                                <line hits="0" number="31" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw::main" signature="" complexity="0" line-rate="0" branch-rate="0">
+                            <lines>
+                                <line hits="0" number="31" branch="false"/>
+                            </lines>
+                        </method>
+                    </methods>
+                    <lines>
+                        <line branch="false" hits="0" number="31"/>
+                        <line branch="false" hits="0" number="32"/>
+                        <line branch="false" hits="0" number="33"/>
+                    </lines>
+                </class>
                 <class branch-rate="0" complexity="0" filename="src\lib.rs" line-rate="0.51440329218107" name="src.lib.rs">
                     <methods>
                         <method name="csshw_lib::init_logger_with_fs::&lt;csshw_lib::MockFileSystem&gt;" signature="" complexity="0" line-rate="1" branch-rate="1">
@@ -1799,25 +1818,6 @@
                         <line branch="false" hits="3" number="596"/>
                     </lines>
                 </class>
-                <class branch-rate="0" complexity="0" filename="src\main.rs" line-rate="0" name="src.main.rs">
-                    <methods>
-                        <method name="csshw::main::{closure#0}" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="31" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw::main" signature="" complexity="0" line-rate="0" branch-rate="0">
-                            <lines>
-                                <line hits="0" number="31" branch="false"/>
-                            </lines>
-                        </method>
-                    </methods>
-                    <lines>
-                        <line branch="false" hits="0" number="31"/>
-                        <line branch="false" hits="0" number="32"/>
-                        <line branch="false" hits="0" number="33"/>
-                    </lines>
-                </class>
                 <class branch-rate="0" complexity="0" filename="src\cli.rs" line-rate="0.43414634146341463" name="src.cli.rs">
                     <methods>
                         <method name="csshw_lib::cli::run_interactive_mode::&lt;csshw_lib::cli::MockEntrypoint&gt;" signature="" complexity="0" line-rate="0" branch-rate="0">
@@ -2132,97 +2132,6 @@
                         <line branch="false" hits="1" number="424"/>
                         <line branch="false" hits="1" number="426"/>
                         <line branch="false" hits="3" number="429"/>
-                    </lines>
-                </class>
-            </classes>
-        </package>
-        <package line-rate="1" branch-rate="0" name="src.serde" complexity="0">
-            <classes>
-                <class branch-rate="0" complexity="0" filename="src\serde\deserialization.rs" line-rate="1" name="src.serde.deserialization.rs">
-                    <methods>
-                        <method name="csshw_lib::serde::deserialization::deserialize_input_record_0" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="1" number="46" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::serde::deserialization::deserialize_key_event_record" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="2" number="24" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::serde::deserialization::deserialize_key_event_record_0" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="1" number="11" branch="false"/>
-                            </lines>
-                        </method>
-                    </methods>
-                    <lines>
-                        <line branch="false" hits="1" number="11"/>
-                        <line branch="false" hits="1" number="12"/>
-                        <line branch="false" hits="1" number="13"/>
-                        <line branch="false" hits="1" number="14"/>
-                        <line branch="false" hits="1" number="15"/>
-                        <line branch="false" hits="2" number="24"/>
-                        <line branch="false" hits="2" number="25"/>
-                        <line branch="false" hits="2" number="26"/>
-                        <line branch="false" hits="2" number="27"/>
-                        <line branch="false" hits="2" number="28"/>
-                        <line branch="false" hits="2" number="29"/>
-                        <line branch="false" hits="2" number="30"/>
-                        <line branch="false" hits="2" number="31"/>
-                        <line branch="false" hits="2" number="32"/>
-                        <line branch="false" hits="2" number="33"/>
-                        <line branch="false" hits="2" number="34"/>
-                        <line branch="false" hits="2" number="35"/>
-                        <line branch="false" hits="2" number="36"/>
-                        <line branch="false" hits="2" number="37"/>
-                        <line branch="false" hits="2" number="38"/>
-                        <line branch="false" hits="2" number="39"/>
-                        <line branch="false" hits="2" number="40"/>
-                        <line branch="false" hits="2" number="41"/>
-                        <line branch="false" hits="1" number="46"/>
-                        <line branch="false" hits="1" number="47"/>
-                        <line branch="false" hits="1" number="48"/>
-                        <line branch="false" hits="1" number="49"/>
-                        <line branch="false" hits="1" number="50"/>
-                        <line branch="false" hits="1" number="51"/>
-                    </lines>
-                </class>
-                <class branch-rate="0" complexity="0" filename="src\serde\serialization.rs" line-rate="1" name="src.serde.serialization.rs">
-                    <methods>
-                        <method name="csshw_lib::serde::serialization::serialize_input_record_0" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="1" number="43" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::serde::serialization::serialize_key_event_record" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="2" number="16" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::serde::serialization::serialize_key_event_record_0" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="1" number="8" branch="false"/>
-                            </lines>
-                        </method>
-                    </methods>
-                    <lines>
-                        <line branch="false" hits="1" number="8"/>
-                        <line branch="false" hits="1" number="9"/>
-                        <line branch="false" hits="1" number="10"/>
-                        <line branch="false" hits="2" number="16"/>
-                        <line branch="false" hits="2" number="17"/>
-                        <line branch="false" hits="2" number="20"/>
-                        <line branch="false" hits="2" number="23"/>
-                        <line branch="false" hits="2" number="26"/>
-                        <line branch="false" hits="2" number="29"/>
-                        <line branch="false" hits="2" number="32"/>
-                        <line branch="false" hits="2" number="35"/>
-                        <line branch="false" hits="2" number="37"/>
-                        <line branch="false" hits="2" number="38"/>
-                        <line branch="false" hits="1" number="43"/>
-                        <line branch="false" hits="1" number="44"/>
-                        <line branch="false" hits="1" number="45"/>
                     </lines>
                 </class>
             </classes>
@@ -2545,6 +2454,97 @@
                         <line branch="false" hits="0" number="456"/>
                         <line branch="false" hits="0" number="459"/>
                         <line branch="false" hits="0" number="460"/>
+                    </lines>
+                </class>
+            </classes>
+        </package>
+        <package line-rate="1" branch-rate="0" name="src.serde" complexity="0">
+            <classes>
+                <class branch-rate="0" complexity="0" filename="src\serde\deserialization.rs" line-rate="1" name="src.serde.deserialization.rs">
+                    <methods>
+                        <method name="csshw_lib::serde::deserialization::deserialize_input_record_0" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="46" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::serde::deserialization::deserialize_key_event_record" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="2" number="24" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::serde::deserialization::deserialize_key_event_record_0" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="11" branch="false"/>
+                            </lines>
+                        </method>
+                    </methods>
+                    <lines>
+                        <line branch="false" hits="1" number="11"/>
+                        <line branch="false" hits="1" number="12"/>
+                        <line branch="false" hits="1" number="13"/>
+                        <line branch="false" hits="1" number="14"/>
+                        <line branch="false" hits="1" number="15"/>
+                        <line branch="false" hits="2" number="24"/>
+                        <line branch="false" hits="2" number="25"/>
+                        <line branch="false" hits="2" number="26"/>
+                        <line branch="false" hits="2" number="27"/>
+                        <line branch="false" hits="2" number="28"/>
+                        <line branch="false" hits="2" number="29"/>
+                        <line branch="false" hits="2" number="30"/>
+                        <line branch="false" hits="2" number="31"/>
+                        <line branch="false" hits="2" number="32"/>
+                        <line branch="false" hits="2" number="33"/>
+                        <line branch="false" hits="2" number="34"/>
+                        <line branch="false" hits="2" number="35"/>
+                        <line branch="false" hits="2" number="36"/>
+                        <line branch="false" hits="2" number="37"/>
+                        <line branch="false" hits="2" number="38"/>
+                        <line branch="false" hits="2" number="39"/>
+                        <line branch="false" hits="2" number="40"/>
+                        <line branch="false" hits="2" number="41"/>
+                        <line branch="false" hits="1" number="46"/>
+                        <line branch="false" hits="1" number="47"/>
+                        <line branch="false" hits="1" number="48"/>
+                        <line branch="false" hits="1" number="49"/>
+                        <line branch="false" hits="1" number="50"/>
+                        <line branch="false" hits="1" number="51"/>
+                    </lines>
+                </class>
+                <class branch-rate="0" complexity="0" filename="src\serde\serialization.rs" line-rate="1" name="src.serde.serialization.rs">
+                    <methods>
+                        <method name="csshw_lib::serde::serialization::serialize_input_record_0" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="43" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::serde::serialization::serialize_key_event_record" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="2" number="16" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::serde::serialization::serialize_key_event_record_0" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="8" branch="false"/>
+                            </lines>
+                        </method>
+                    </methods>
+                    <lines>
+                        <line branch="false" hits="1" number="8"/>
+                        <line branch="false" hits="1" number="9"/>
+                        <line branch="false" hits="1" number="10"/>
+                        <line branch="false" hits="2" number="16"/>
+                        <line branch="false" hits="2" number="17"/>
+                        <line branch="false" hits="2" number="20"/>
+                        <line branch="false" hits="2" number="23"/>
+                        <line branch="false" hits="2" number="26"/>
+                        <line branch="false" hits="2" number="29"/>
+                        <line branch="false" hits="2" number="32"/>
+                        <line branch="false" hits="2" number="35"/>
+                        <line branch="false" hits="2" number="37"/>
+                        <line branch="false" hits="2" number="38"/>
+                        <line branch="false" hits="1" number="43"/>
+                        <line branch="false" hits="1" number="44"/>
+                        <line branch="false" hits="1" number="45"/>
                     </lines>
                 </class>
             </classes>
