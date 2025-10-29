@@ -724,4 +724,272 @@ mod gui_launch_detection_test {
         let result = is_launched_from_gui_with_api(&mock_console);
         assert!(!result);
     }
+
+    /// Tests is_launched_from_gui_with_api with boundary conditions for cursor position.
+    /// Validates proper handling of edge cases in cursor position detection.
+    #[test]
+    fn test_is_launched_from_gui_boundary_conditions() {
+        let test_cases = vec![
+            (0, 1, false),  // Y moved
+            (1, 0, false),  // X moved
+            (0, 0, true),   // Both at origin
+            (-1, 0, false), // Negative X (shouldn't happen but test anyway)
+            (0, -1, false), // Negative Y (shouldn't happen but test anyway)
+        ];
+
+        for (x, y, expected) in test_cases {
+            let mut mock_console = MockConsoleApi::new();
+
+            mock_console
+                .expect_get_std_handle()
+                .times(1)
+                .returning(|| return Ok(HANDLE(0x999 as *mut std::ffi::c_void)));
+
+            mock_console
+                .expect_get_console_screen_buffer_info()
+                .times(1)
+                .returning(move |_| {
+                    let mut csbi = CONSOLE_SCREEN_BUFFER_INFO::default();
+                    csbi.dwCursorPosition.X = x;
+                    csbi.dwCursorPosition.Y = y;
+                    return Ok(csbi);
+                });
+
+            let result = is_launched_from_gui_with_api(&mock_console);
+            assert_eq!(result, expected, "Failed for cursor position ({x}, {y})");
+        }
+    }
+}
+
+/// Additional test module for lib.rs functions to improve coverage.
+mod lib_additional_test {
+    use super::*;
+
+    /// Test module for additional registry operations
+    mod registry_operations_test {
+        use super::*;
+
+        #[test]
+        fn test_windows_settings_guard_registry_write_failure() {
+            // Test when registry write operations fail
+            let mut mock_registry = MockRegistry::new();
+
+            mock_registry
+                .expect_get_registry_string_value()
+                .with(
+                    eq(DEFAULT_TERMINAL_APP_REGISTRY_PATH),
+                    eq(DELEGATION_CONSOLE),
+                )
+                .times(1)
+                .returning(|_, _| return Some("some-other-terminal".to_string()));
+
+            mock_registry
+                .expect_get_registry_string_value()
+                .with(
+                    eq(DEFAULT_TERMINAL_APP_REGISTRY_PATH),
+                    eq(DELEGATION_TERMINAL),
+                )
+                .times(1)
+                .returning(|_, _| return Some("some-other-terminal".to_string()));
+
+            // Set up expectations for setting new values (fail)
+            mock_registry
+                .expect_set_registry_string_value()
+                .with(
+                    eq(DEFAULT_TERMINAL_APP_REGISTRY_PATH),
+                    eq(DELEGATION_CONSOLE),
+                    eq(CLSID_CONHOST),
+                )
+                .times(1)
+                .returning(|_, _, _| return false);
+
+            mock_registry
+                .expect_set_registry_string_value()
+                .with(
+                    eq(DEFAULT_TERMINAL_APP_REGISTRY_PATH),
+                    eq(DELEGATION_TERMINAL),
+                    eq(CLSID_CONHOST),
+                )
+                .times(1)
+                .returning(|_, _, _| return false);
+
+            let guard =
+                WindowsSettingsDefaultTerminalApplicationGuard::new_with_registry(mock_registry);
+            // Guard should handle write failures gracefully
+            drop(guard);
+        }
+
+        #[test]
+        fn test_default_registry_implementation() {
+            // Test that DefaultRegistry can be created
+            use crate::DefaultRegistry;
+            let _registry = DefaultRegistry;
+        }
+    }
+
+    /// Test module for additional command line building tests
+    mod command_line_additional_test {
+        use crate::build_command_line;
+
+        #[test]
+        fn test_build_command_line_unicode_args() {
+            // Test command line building with unicode arguments
+            let application = "test.exe";
+            let args = vec![
+                "arg1".to_string(),
+                "ärg2".to_string(), // German umlaut
+                "αργ3".to_string(), // Greek letters
+                "🦀".to_string(),   // Emoji
+            ];
+
+            let result = build_command_line(application, &args);
+
+            // Should be null-terminated
+            assert_eq!(result[result.len() - 1], 0);
+
+            // Should contain quoted application name
+            let result_string = String::from_utf16_lossy(&result[..result.len() - 1]);
+            assert!(result_string.starts_with("\"test.exe\""));
+            assert!(result_string.contains("\"arg1\""));
+            assert!(result_string.contains("\"ärg2\""));
+            assert!(result_string.contains("\"αργ3\""));
+            assert!(result_string.contains("\"🦀\""));
+        }
+
+        #[test]
+        fn test_build_command_line_special_characters() {
+            // Test with arguments containing special characters
+            let application = "test.exe";
+            let args = vec![
+                "arg with spaces".to_string(),
+                "arg\"with\"quotes".to_string(),
+                "arg\\with\\backslashes".to_string(),
+                "arg\nwith\nnewlines".to_string(),
+            ];
+
+            let result = build_command_line(application, &args);
+            let result_string = String::from_utf16_lossy(&result[..result.len() - 1]);
+
+            // All arguments should be quoted
+            assert!(result_string.contains("\"arg with spaces\""));
+            assert!(result_string.contains("\"arg\"with\"quotes\""));
+            assert!(result_string.contains("\"arg\\with\\backslashes\""));
+            assert!(result_string.contains("\"arg\nwith\nnewlines\""));
+        }
+    }
+
+    /// Test module for additional process creation tests
+    mod process_creation_additional_test {
+        use super::*;
+
+        #[test]
+        fn test_spawn_console_process_with_complex_args() {
+            // Test with complex arguments containing special characters
+            let mut mock_api = MockWindowsApi::new();
+
+            let args = vec![
+                "-o".to_string(),
+                "StrictHostKeyChecking=no".to_string(),
+                "user@host.com".to_string(),
+            ];
+            mock_api
+                .expect_create_process_with_args()
+                .with(eq("ssh.exe"), eq(args.clone()))
+                .times(1)
+                .returning(|_, _| {
+                    return Some(PROCESS_INFORMATION {
+                        hProcess: windows::Win32::Foundation::HANDLE(0x2468 as *mut c_void),
+                        hThread: windows::Win32::Foundation::HANDLE(0x1357 as *mut c_void),
+                        dwProcessId: 5000,
+                        dwThreadId: 6000,
+                    });
+                });
+
+            let result = spawn_console_process_with_api(&mock_api, "ssh.exe", args);
+
+            assert!(result.is_some());
+            let process_info = result.unwrap();
+            assert_eq!(process_info.dwProcessId, 5000);
+            assert_eq!(process_info.dwThreadId, 6000);
+        }
+
+        #[test]
+        fn test_create_process_with_empty_command_line() {
+            // Test with minimal command line
+            let mut mock_api = MockWindowsApi::new();
+
+            mock_api
+                .expect_create_process_raw()
+                .times(1)
+                .returning(|_, _, _, _| return Ok(()));
+
+            let command_line = vec![0]; // Just null terminator
+            let result = create_process_with_command_line_api(&mock_api, "test.exe", &command_line);
+
+            assert!(result.is_some());
+        }
+    }
+
+    /// Test module for additional logger tests
+    mod logger_additional_test {
+        use super::*;
+
+        #[test]
+        fn test_init_logger_name_variations() {
+            // Test with different logger names
+            let names = vec![
+                "daemon",
+                "client_host1",
+                "test-logger",
+                "logger_with_underscores",
+                "UPPERCASE",
+                "123numeric",
+            ];
+
+            for name in names {
+                let mut mock_fs = MockFileSystem::new();
+
+                mock_fs
+                    .expect_create_directory()
+                    .with(eq("logs"))
+                    .times(1)
+                    .returning(|_| return true);
+
+                mock_fs
+                    .expect_create_log_file()
+                    .with(function({
+                        let expected_name = name.to_string();
+                        move |filename: &str| {
+                            return filename.starts_with("logs/")
+                                && filename.contains(&expected_name)
+                                && filename.ends_with(".log");
+                        }
+                    }))
+                    .times(1)
+                    .returning(|_| return true);
+
+                init_logger_with_fs(&mock_fs, name);
+            }
+        }
+
+        #[test]
+        fn test_init_logger_both_operations_fail() {
+            // Test when both directory and file creation fail
+            let mut mock_fs = MockFileSystem::new();
+
+            mock_fs
+                .expect_create_directory()
+                .with(eq("logs"))
+                .times(1)
+                .returning(|_| return false);
+
+            mock_fs
+                .expect_create_log_file()
+                .times(1)
+                .returning(|_| return false);
+
+            init_logger_with_fs(&mock_fs, "test_logger");
+            // Should handle gracefully without panicking
+        }
+    }
 }
