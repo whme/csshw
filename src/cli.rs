@@ -83,6 +83,7 @@ enum Commands {
 ///
 /// Used to implement the entrypoint functions of the different
 /// subcommands
+#[derive(Debug)]
 pub struct MainEntrypoint;
 
 /// Trait for Args operations to enable mocking in tests
@@ -203,12 +204,25 @@ impl Entrypoint for MainEntrypoint {
 
 /// Display the interactive mode prompt and instructions
 fn show_interactive_prompt() {
-    println!("\n=== Interactive Mode ===");
-    println!("Enter your {PKG_NAME} arguments (or press Enter to exit):");
-    println!("Example: -u myuser host1 host2 host3");
-    println!("Example: --help");
-    print!("> ");
-    std::io::Write::flush(&mut std::io::stdout()).unwrap();
+    show_interactive_prompt_to_writer(&mut std::io::stdout());
+}
+
+/// Display the interactive mode prompt and instructions to a specific writer
+///
+/// # Arguments
+///
+/// * `writer` - The writer to output the prompt to
+fn show_interactive_prompt_to_writer<W: std::io::Write>(writer: &mut W) {
+    writeln!(writer, "\n=== Interactive Mode ===").unwrap();
+    writeln!(
+        writer,
+        "Enter your {PKG_NAME} arguments (or press Enter to exit):"
+    )
+    .unwrap();
+    writeln!(writer, "Example: -u myuser host1 host2 host3").unwrap();
+    writeln!(writer, "Example: --help").unwrap();
+    write!(writer, "> ").unwrap();
+    writer.flush().unwrap();
 }
 
 /// Read user input from stdin
