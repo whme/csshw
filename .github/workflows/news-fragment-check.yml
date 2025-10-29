@@ -86,4 +86,5 @@ jobs:
 
             For more information about news fragments, see: https://github.com/nekitdev/changelogging
 
-            exit -1
+      - if: steps.check.outputs.status == 'failed'
+        run: exit 1
