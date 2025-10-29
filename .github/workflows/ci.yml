@@ -1,30 +1,50 @@
 #
 #   csshw CI
 #
-# Only runs on the main branch on pushes.
-# For pull requests, see ci-coverage.yml which includes coverage reporting.
-# Uses the shared CI workflow without coverage collection.
+# Runs on the main branch on pushes with full coverage collection.
+# For pull requests, see ci-coverage.yml which includes coverage reporting with diff analysis.
+# Uses the shared CI workflow.
 
 name: CI
 
 on:
   push:
     branches: [ "main" ]
-    paths:
-      # NOTE: Keep this list in sync with ci-coverage.yml
-      - .cargo/**
-      - .github/workflows/ci-coverage.yml
-      - .github/workflows/ci.yml
-      - .github/workflows/_shared-ci.yml
-      - src/**
-      - build.rs
-      - Cargo.toml
-      - clippy.toml
-      - Makefile.toml
-      - rustfmt.toml
 
 jobs:
   ci:
     uses: ./.github/workflows/_shared-ci.yml
-    with:
-      run_coverage: false
+
+  coverage-report:
+    needs: ci
+    if: always() && needs.ci.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Download Coverage XML Data
+      uses: actions/download-artifact@v4
+      with:
+        name: coverage-xml-data
+        path: coverage-data/
+
+    - name: Generate Code Coverage Summary
+      uses: insightsengineering/coverage-action@v3
+      with:
+        # Path to the Cobertura XML report.
+        path: coverage-data/coverage.xml
+        # Fail the workflow if the minimum code coverage
+        # requirements are not satisfied.
+        fail: false
+        # Publish the rendered output as a PR comment
+        # Note: This will be disabled for main branch pushes as there's no PR context
+        publish: false
+        # Create a coverage diff report.
+        diff: false
+        # Failure modes for coverage regression detection:
+        # Fail if any changed file has more uncovered lines (pycobertura exit code 2)
+        uncovered-statements-increase-failure: false
+        # Fail if new uncovered statements are introduced despite overall improvement (pycobertura exit code 3)
+        new-uncovered-statements-failure: false
+        # Fail if the overall coverage percentage decreases (more forgiving approach)
+        coverage-rate-reduction-failure: false
