@@ -1,11 +1,11 @@
 #
-#   csshw CI
+#   csshw Post-Submit CI
 #
 # Runs on the main branch on pushes with full coverage collection.
-# For pull requests, see ci-coverage.yml which includes coverage reporting with diff analysis.
+# For pull requests, see pre-submit.yml which includes coverage reporting.
 # Uses the shared CI workflow.
 
-name: CI
+name: Post-Submit CI
 
 on:
   push:
@@ -17,7 +17,6 @@ jobs:
 
   coverage-report:
     needs: ci
-    if: always() && needs.ci.result == 'success'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5

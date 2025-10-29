@@ -1,10 +1,10 @@
 #
-#   csshw CI with Coverage
+#   csshw Pre-Submit CI
 #
 # Runs CI workflows based on changed files in pull requests.
 # Uses paths-filter to determine which jobs need to run.
 
-name: CI
+name: Pre-Submit CI
 
 on:
   pull_request:
@@ -32,8 +32,8 @@ jobs:
               - 'Makefile.toml'
               - 'rustfmt.toml'
             workflows:
-              - '.github/workflows/ci-coverage.yml'
-              - '.github/workflows/ci.yml'
+              - '.github/workflows/pre-submit.yml'
+              - '.github/workflows/post-submit.yml'
               - '.github/workflows/_shared-ci.yml'
 
   ci:
