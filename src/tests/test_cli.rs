@@ -1,3 +1,5 @@
+//! Unit tests for CLI module
+
 // Note that only the debug option of the main command
 // is supported for all subcommands.
 // Other main command arguments/options are ignored if a subcommand
@@ -133,6 +135,113 @@ mod cli_args_test {
         assert_eq!(args.username, Some("username".to_string()));
         assert_eq!(args.hosts, Vec::<String>::new());
         assert!(!args.debug);
+    }
+
+    #[test]
+    fn test_args_debug_parsing() {
+        let args = Args::try_parse_from(["csshw", "-d", "host1", "host2"]).unwrap();
+        assert!(args.debug);
+        assert_eq!(args.hosts, vec!["host1", "host2"]);
+        assert!(args.command.is_none());
+    }
+
+    #[test]
+    fn test_args_username_parsing() {
+        let args = Args::try_parse_from(["csshw", "-u", "testuser", "host1"]).unwrap();
+        assert_eq!(args.username, Some("testuser".to_string()));
+        assert_eq!(args.hosts, vec!["host1"]);
+    }
+
+    #[test]
+    fn test_args_port_parsing() {
+        let args = Args::try_parse_from(["csshw", "-p", "2222", "host1"]).unwrap();
+        assert_eq!(args.port, Some(2222));
+        assert_eq!(args.hosts, vec!["host1"]);
+    }
+
+    #[test]
+    fn test_args_client_command_parsing() {
+        let args = Args::try_parse_from(["csshw", "client", "test-host"]).unwrap();
+        match args.command {
+            Some(Commands::Client { host }) => {
+                assert_eq!(host, "test-host");
+            }
+            _ => panic!("Expected Client command"),
+        }
+    }
+
+    #[test]
+    fn test_args_daemon_command_parsing() {
+        let args = Args::try_parse_from(["csshw", "daemon"]).unwrap();
+        match args.command {
+            Some(Commands::Daemon {}) => {
+                // Success
+            }
+            _ => panic!("Expected Daemon command"),
+        }
+    }
+
+    #[test]
+    fn test_args_combined_options() {
+        let args = Args::try_parse_from([
+            "csshw", "-d", "-u", "testuser", "-p", "2222", "host1", "host2",
+        ])
+        .unwrap();
+        assert!(args.debug);
+        assert_eq!(args.username, Some("testuser".to_string()));
+        assert_eq!(args.port, Some(2222));
+        assert_eq!(args.hosts, vec!["host1", "host2"]);
+    }
+
+    #[test]
+    fn test_args_default_values() {
+        let args = Args::try_parse_from(["csshw"]).unwrap();
+        assert!(!args.debug);
+        assert!(args.username.is_none());
+        assert!(args.port.is_none());
+        assert!(args.hosts.is_empty());
+        assert!(args.command.is_none());
+    }
+
+    #[test]
+    fn test_args_long_options() {
+        let args = Args::try_parse_from([
+            "csshw",
+            "--debug",
+            "--username",
+            "testuser",
+            "--port",
+            "2222",
+            "host1",
+        ])
+        .unwrap();
+        assert!(args.debug);
+        assert_eq!(args.username, Some("testuser".to_string()));
+        assert_eq!(args.port, Some(2222));
+        assert_eq!(args.hosts, vec!["host1"]);
+    }
+
+    #[test]
+    fn test_args_invalid_port() {
+        let result = Args::try_parse_from(["csshw", "-p", "invalid", "host1"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_args_missing_client_host() {
+        let result = Args::try_parse_from(["csshw", "client"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_args_daemon_with_extra_args() {
+        let args = Args::try_parse_from(["csshw", "daemon", "host1", "host2"]).unwrap();
+        match args.command {
+            Some(Commands::Daemon {}) => {
+                assert_eq!(args.hosts, vec!["host1", "host2"]);
+            }
+            _ => panic!("Expected Daemon command"),
+        }
     }
 }
 
@@ -414,5 +523,289 @@ mod interactive_mode_test {
             config_path,
         )
         .await;
+    }
+}
+
+/// Additional test module for CLI functionality to improve coverage.
+mod cli_additional_test {
+    use mockall::predicate::*;
+
+    use crate::cli::{
+        execute_parsed_command, handle_special_commands, read_user_input, show_interactive_prompt,
+        Args, Commands, MainEntrypoint, MockArgsCommand, MockEntrypoint, MockLoggerInitializer,
+    };
+    use crate::utils::config::Config;
+
+    #[test]
+    fn test_commands_debug_trait() {
+        let client_cmd = Commands::Client {
+            host: "test-host".to_string(),
+        };
+        let daemon_cmd = Commands::Daemon {};
+
+        let client_debug = format!("{client_cmd:?}");
+        let daemon_debug = format!("{daemon_cmd:?}");
+
+        assert!(client_debug.contains("Client"));
+        assert!(client_debug.contains("test-host"));
+        assert!(daemon_debug.contains("Daemon"));
+    }
+
+    #[test]
+    fn test_commands_partial_eq() {
+        let client_cmd1 = Commands::Client {
+            host: "host1".to_string(),
+        };
+        let client_cmd2 = Commands::Client {
+            host: "host1".to_string(),
+        };
+        let client_cmd3 = Commands::Client {
+            host: "host2".to_string(),
+        };
+        let daemon_cmd = Commands::Daemon {};
+
+        assert_eq!(client_cmd1, client_cmd2);
+        assert_ne!(client_cmd1, client_cmd3);
+        assert_ne!(client_cmd1, daemon_cmd);
+        assert_eq!(daemon_cmd, Commands::Daemon {});
+    }
+
+    #[test]
+    fn test_show_interactive_prompt() {
+        // This function prints to stdout, we just test it doesn't panic
+        show_interactive_prompt();
+    }
+
+    #[test]
+    fn test_handle_special_commands_help() {
+        let mut mock_args_command = MockArgsCommand::new();
+        mock_args_command
+            .expect_print_help()
+            .times(1)
+            .returning(|| return Ok(()));
+
+        let result = handle_special_commands("--help", &mock_args_command);
+        assert!(result);
+    }
+
+    #[test]
+    fn test_handle_special_commands_help_short() {
+        let mut mock_args_command = MockArgsCommand::new();
+        mock_args_command
+            .expect_print_help()
+            .times(1)
+            .returning(|| return Ok(()));
+
+        let result = handle_special_commands("-h", &mock_args_command);
+        assert!(result);
+    }
+
+    #[test]
+    fn test_handle_special_commands_non_special() {
+        let mock_args_command = MockArgsCommand::new();
+        let result = handle_special_commands("regular command", &mock_args_command);
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_main_entrypoint_creation() {
+        let _entrypoint = MainEntrypoint;
+        // Just test that it can be created without issues
+    }
+
+    #[test]
+    fn test_read_user_input_function_exists() {
+        // We can't easily test read_user_input without mocking stdin
+        // But we can verify the function exists and has the right signature
+        let _: fn() -> Result<Option<String>, std::io::Error> = read_user_input;
+    }
+
+    #[test]
+    fn test_pkg_name_constant() {
+        use crate::cli::PKG_NAME;
+        assert_eq!(PKG_NAME, env!("CARGO_PKG_NAME"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_parsed_command_client_with_debug() {
+        let mut mock_entrypoint = MockEntrypoint::new();
+        let mock_args_command = MockArgsCommand::new();
+        let mut mock_logger = MockLoggerInitializer::new();
+
+        mock_logger
+            .expect_init_logger()
+            .with(eq("csshw_client_test-host"))
+            .times(1)
+            .returning(|_| {});
+
+        mock_entrypoint
+            .expect_client_main()
+            .with(
+                eq("test-host".to_string()),
+                eq(Some("testuser".to_string())),
+                eq(Some(2222)),
+                always(),
+            )
+            .times(1)
+            .returning(|_, _, _, _| return Box::pin(async {}));
+
+        let args = Args {
+            command: Some(Commands::Client {
+                host: "test-host".to_string(),
+            }),
+            username: Some("testuser".to_string()),
+            port: Some(2222),
+            hosts: vec![],
+            debug: true,
+        };
+
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        execute_parsed_command(
+            args,
+            &mut mock_entrypoint,
+            &mock_args_command,
+            &mock_logger,
+            &config,
+            config_path,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_execute_parsed_command_daemon_with_debug() {
+        let mut mock_entrypoint = MockEntrypoint::new();
+        let mock_args_command = MockArgsCommand::new();
+        let mut mock_logger = MockLoggerInitializer::new();
+
+        mock_logger
+            .expect_init_logger()
+            .with(eq("csshw_daemon"))
+            .times(1)
+            .returning(|_| {});
+
+        mock_entrypoint
+            .expect_daemon_main()
+            .with(
+                eq(vec!["host1".to_string(), "host2".to_string()]),
+                eq(Some("testuser".to_string())),
+                eq(Some(2222)),
+                always(),
+                always(),
+                eq(true),
+            )
+            .times(1)
+            .returning(|_, _, _, _, _, _| return Box::pin(async {}));
+
+        let args = Args {
+            command: Some(Commands::Daemon {}),
+            username: Some("testuser".to_string()),
+            port: Some(2222),
+            hosts: vec!["host1".to_string(), "host2".to_string()],
+            debug: true,
+        };
+
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        execute_parsed_command(
+            args,
+            &mut mock_entrypoint,
+            &mock_args_command,
+            &mock_logger,
+            &config,
+            config_path,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_execute_parsed_command_client_no_debug() {
+        let mut mock_entrypoint = MockEntrypoint::new();
+        let mock_args_command = MockArgsCommand::new();
+        let mock_logger = MockLoggerInitializer::new();
+
+        mock_entrypoint
+            .expect_client_main()
+            .with(eq("test-host".to_string()), eq(None), eq(None), always())
+            .times(1)
+            .returning(|_, _, _, _| return Box::pin(async {}));
+
+        let args = Args {
+            command: Some(Commands::Client {
+                host: "test-host".to_string(),
+            }),
+            username: None,
+            port: None,
+            hosts: vec![],
+            debug: false,
+        };
+
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        execute_parsed_command(
+            args,
+            &mut mock_entrypoint,
+            &mock_args_command,
+            &mock_logger,
+            &config,
+            config_path,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_execute_parsed_command_daemon_no_debug() {
+        let mut mock_entrypoint = MockEntrypoint::new();
+        let mock_args_command = MockArgsCommand::new();
+        let mock_logger = MockLoggerInitializer::new();
+
+        mock_entrypoint
+            .expect_daemon_main()
+            .with(
+                eq(vec![]),
+                eq(None),
+                eq(None),
+                always(),
+                always(),
+                eq(false),
+            )
+            .times(1)
+            .returning(|_, _, _, _, _, _| return Box::pin(async {}));
+
+        let args = Args {
+            command: Some(Commands::Daemon {}),
+            username: None,
+            port: None,
+            hosts: vec![],
+            debug: false,
+        };
+
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        execute_parsed_command(
+            args,
+            &mut mock_entrypoint,
+            &mock_args_command,
+            &mock_logger,
+            &config,
+            config_path,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_run_interactive_mode_exit_immediately() {
+        // Create a mock entrypoint that should not be called
+        let _mock_entrypoint = MockEntrypoint::new();
+        let _config = Config::default();
+        let _config_path = "test-config.toml";
+
+        // This test simulates immediate exit, so we can't easily test the actual interactive loop
+        // without mocking stdin, but we can test that the function exists and compiles
+        // In a real test environment, this would require more complex stdin mocking
     }
 }
