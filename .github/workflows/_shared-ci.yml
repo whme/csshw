@@ -86,11 +86,10 @@ jobs:
         crate: cargo-llvm-cov
         version: '^0.6'
 
-    - name: Run tests with coverage
+    - name: Run tests with coverage (including test code)
       run: |
-        # Run tests with coverage - Total coverage
         cargo llvm-cov clean --workspace
-        cargo llvm-cov --all-features --workspace --cobertura --output-path coverage.xml
+        cargo llvm-cov --all-features --workspace --tests --include-build-script --cobertura --output-path coverage.xml
 
     - name: Upload Coverage XML Data
       uses: &upload-artifact-action
