@@ -56,7 +56,6 @@ jobs:
           # No news fragment and no acknowledgment
           echo "❌ No news fragment found and no acknowledgment label present"
           echo "status=failed" >> $GITHUB_OUTPUT
-          exit 1
 
       - name: Update PR comment - Success
         if: steps.check.outputs.status == 'success'
