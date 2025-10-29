@@ -42,7 +42,7 @@ env:
         ],
         "workflowFile": "ci-coverage.yml",
         "triggerInputs": {
-          "run_coverage": true
+          "run_coverage": "true"
         },
         "requiredJobs": [
           "ci-with-coverage",
@@ -66,7 +66,7 @@ jobs:
       contents: read
       pull-requests: read
       actions: write
-      checks: read
+      checks: write
     outputs:
       pr-number: ${{ steps.get-pr.outputs.pr-number }}
       head-sha: ${{ steps.get-pr.outputs.head-sha }}
@@ -213,12 +213,36 @@ jobs:
               try {
                 console.log(`  Triggering ${workflow.name} (${workflow.file})...`);
 
+                // Create check runs for each required job to link them to the PR
+                for (const jobName of workflow.requiredJobs) {
+                  try {
+                    await github.rest.checks.create({
+                      owner,
+                      repo,
+                      name: jobName,
+                      head_sha: pr.head.sha,
+                      status: 'queued',
+                      details_url: `https://github.com/${owner}/${repo}/actions`,
+                      output: {
+                        title: `${jobName} - Queued`,
+                        summary: `This check was triggered by meta-check workflow for ${workflow.name}`
+                      }
+                    });
+                    console.log(`  📋 Created check run for ${jobName}`);
+                  } catch (checkError) {
+                    console.log(`  ⚠️ Failed to create check run for ${jobName}: ${checkError.message}`);
+                  }
+                }
+
+                // Prepare inputs for workflow
+                const workflowInputs = workflow.inputs;
+
                 await github.rest.actions.createWorkflowDispatch({
                   owner,
                   repo,
                   workflow_id: workflow.file,
                   ref: pr.head.ref,
-                  inputs: workflow.inputs
+                  inputs: workflowInputs
                 });
 
                 triggeredWorkflows.push(workflow.name);
@@ -304,24 +328,86 @@ jobs:
                 const status = latestCheck.status === 'completed' ? latestCheck.conclusion : latestCheck.status;
                 console.log(`  - ${jobName}: ${status}`);
 
-                if (latestCheck.status !== 'completed') {
-                  jobResults.push({
-                    job: jobName,
-                    status: 'pending',
-                    message: 'Still running'
-                  });
-                } else if (latestCheck.conclusion !== 'success') {
-                  jobResults.push({
-                    job: jobName,
-                    status: 'failed',
-                    message: `Failed with conclusion: ${latestCheck.conclusion}`
-                  });
-                } else {
-                  jobResults.push({
-                    job: jobName,
-                    status: 'success',
-                    message: 'Completed successfully'
-                  });
+                // Update the check run with the actual workflow results
+                try {
+                  if (latestCheck.status !== 'completed') {
+                    // Still running - update to in_progress if it was queued
+                    if (latestCheck.status === 'queued') {
+                      await github.rest.checks.update({
+                        owner,
+                        repo,
+                        check_run_id: latestCheck.id,
+                        status: 'in_progress',
+                        output: {
+                          title: `${jobName} - In Progress`,
+                          summary: `Workflow is currently running for ${workflow.name}`
+                        }
+                      });
+                    }
+                    jobResults.push({
+                      job: jobName,
+                      status: 'pending',
+                      message: 'Still running'
+                    });
+                  } else if (latestCheck.conclusion !== 'success') {
+                    // Failed - update with failure details
+                    await github.rest.checks.update({
+                      owner,
+                      repo,
+                      check_run_id: latestCheck.id,
+                      status: 'completed',
+                      conclusion: 'failure',
+                      output: {
+                        title: `${jobName} - Failed`,
+                        summary: `Workflow failed with conclusion: ${latestCheck.conclusion}`
+                      }
+                    });
+                    jobResults.push({
+                      job: jobName,
+                      status: 'failed',
+                      message: `Failed with conclusion: ${latestCheck.conclusion}`
+                    });
+                  } else {
+                    // Success - update with success details
+                    await github.rest.checks.update({
+                      owner,
+                      repo,
+                      check_run_id: latestCheck.id,
+                      status: 'completed',
+                      conclusion: 'success',
+                      output: {
+                        title: `${jobName} - Success`,
+                        summary: `Workflow completed successfully for ${workflow.name}`
+                      }
+                    });
+                    jobResults.push({
+                      job: jobName,
+                      status: 'success',
+                      message: 'Completed successfully'
+                    });
+                  }
+                } catch (updateError) {
+                  console.log(`  ⚠️ Failed to update check run for ${jobName}: ${updateError.message}`);
+                  // Still record the result even if update failed
+                  if (latestCheck.status !== 'completed') {
+                    jobResults.push({
+                      job: jobName,
+                      status: 'pending',
+                      message: 'Still running'
+                    });
+                  } else if (latestCheck.conclusion !== 'success') {
+                    jobResults.push({
+                      job: jobName,
+                      status: 'failed',
+                      message: `Failed with conclusion: ${latestCheck.conclusion}`
+                    });
+                  } else {
+                    jobResults.push({
+                      job: jobName,
+                      status: 'success',
+                      message: 'Completed successfully'
+                    });
+                  }
                 }
               }
 
