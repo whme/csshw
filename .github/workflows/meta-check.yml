@@ -1,0 +1,380 @@
+#
+#   Meta-Check Workflow
+#
+# This workflow dynamically triggers and enforces CI requirements based on which files changed in a pull request.
+# It's designed to be the only check required by branch protection, triggering relevant CI workflows
+# and ensuring they pass before allowing merges.
+
+name: Meta-Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+  # Re-evaluate when triggered CI workflows complete
+  workflow_run:
+    workflows: ["CI", "News Fragment Check"]
+    types: [completed]
+
+env:
+  # Configuration for workflow requirements
+  # Format: JSON object with workflow names as keys and configuration objects as values
+  # Each configuration object should have:
+  #   - patterns: Array of regex patterns (as strings) that trigger this workflow
+  #   - workflowFile: The workflow file to trigger (must support workflow_dispatch)
+  #   - triggerInputs: Optional inputs to pass when triggering the workflow
+  #   - requiredJobs: Array of job names from the workflow that must complete successfully
+  WORKFLOW_REQUIREMENTS: |
+    {
+      "CI": {
+        "patterns": [
+          "^\\.cargo/",
+          "^src/",
+          "^build\\.rs$",
+          "^Cargo\\.toml$",
+          "^clippy\\.toml$",
+          "^Makefile\\.toml$",
+          "^rustfmt\\.toml$",
+          "^\\.github/workflows/ci-coverage\\.yml$",
+          "^\\.github/workflows/ci\\.yml$",
+          "^\\.github/workflows/_shared-ci\\.yml$"
+        ],
+        "workflowFile": "ci-coverage.yml",
+        "triggerInputs": {
+          "run_coverage": true
+        },
+        "requiredJobs": [
+          "ci-with-coverage",
+          "coverage-report"
+        ]
+      },
+      "News Fragment Check": {
+        "patterns": [".*"],
+        "workflowFile": "news-fragment-check.yml",
+        "triggerInputs": {},
+        "requiredJobs": [
+          "news-fragment-check"
+        ]
+      }
+    }
+
+jobs:
+  meta-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
+      checks: read
+    outputs:
+      pr-number: ${{ steps.get-pr.outputs.pr-number }}
+      head-sha: ${{ steps.get-pr.outputs.head-sha }}
+      required-workflows: ${{ steps.determine-workflows.outputs.required-workflows }}
+    steps:
+      - name: Get Pull Request Information
+        id: get-pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            let prNumber;
+            let headSha;
+
+            if (context.eventName === 'pull_request') {
+              prNumber = context.payload.pull_request.number;
+              headSha = context.payload.pull_request.head.sha;
+              console.log(`🔍 PR Event: #${prNumber} (${headSha})`);
+            } else if (context.eventName === 'workflow_run') {
+              const workflowRun = context.payload.workflow_run;
+              headSha = workflowRun.head_sha;
+
+              console.log(`🔄 Workflow Run Event: ${workflowRun.name} (${workflowRun.conclusion})`);
+
+              // Get PRs for this head SHA
+              const { data: prs } = await github.rest.pulls.list({
+                owner,
+                repo,
+                state: 'open',
+                head: `${owner}:${workflowRun.head_branch}`,
+              });
+
+              const pr = prs.find(p => p.head.sha === headSha);
+              if (!pr) {
+                console.log('❌ No open PR found for this workflow run');
+                process.exit(1);
+              }
+
+              prNumber = pr.number;
+              console.log(`📋 Found associated PR #${prNumber}`);
+            } else {
+              console.log('❌ Unexpected event type');
+              process.exit(1);
+            }
+
+            core.setOutput('pr-number', prNumber);
+            core.setOutput('head-sha', headSha);
+
+      - name: Determine Required Workflows
+        id: determine-workflows
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = ${{ steps.get-pr.outputs.pr-number }};
+
+            // Get changed files for the PR
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner,
+              repo,
+              pull_request_number: prNumber,
+            });
+
+            const changedFiles = files.map(f => f.filename);
+            console.log(`📁 Changed files (${changedFiles.length}):`);
+            changedFiles.forEach(file => console.log(`  - ${file}`));
+
+            // Load workflow requirements from environment variable
+            const workflowRequirementsRaw = process.env.WORKFLOW_REQUIREMENTS;
+            if (!workflowRequirementsRaw) {
+              console.log('❌ WORKFLOW_REQUIREMENTS environment variable not set');
+              process.exit(1);
+            }
+
+            let workflowRequirementsConfig;
+            try {
+              workflowRequirementsConfig = JSON.parse(workflowRequirementsRaw);
+            } catch (error) {
+              console.log('❌ Failed to parse WORKFLOW_REQUIREMENTS as JSON:', error.message);
+              process.exit(1);
+            }
+
+            // Convert string patterns to RegExp objects and determine required workflows
+            const requiredWorkflows = [];
+
+            for (const [workflowName, config] of Object.entries(workflowRequirementsConfig)) {
+              const patterns = config.patterns.map(pattern => new RegExp(pattern));
+              const isRequired = patterns.some(pattern =>
+                changedFiles.some(file => pattern.test(file))
+              );
+
+              if (isRequired) {
+                requiredWorkflows.push({
+                  name: workflowName,
+                  file: config.workflowFile,
+                  inputs: config.triggerInputs || {},
+                  requiredJobs: config.requiredJobs || []
+                });
+              }
+            }
+
+            console.log(`\n🎯 Required workflows (${requiredWorkflows.length}):`);
+            requiredWorkflows.forEach(wf => console.log(`  - ${wf.name}`));
+
+            core.setOutput('required-workflows', JSON.stringify(requiredWorkflows));
+
+      - name: Trigger Workflows (PR Events)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = ${{ steps.get-pr.outputs.pr-number }};
+            const requiredWorkflows = JSON.parse('${{ steps.determine-workflows.outputs.required-workflows }}');
+
+            if (requiredWorkflows.length === 0) {
+              console.log('✅ No CI workflows required for these changes');
+              console.log('Meta-check: SUCCESS');
+              return;
+            }
+
+            // Get PR details for the ref
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_request_number: prNumber,
+            });
+
+            console.log('\n🚀 Triggering required workflows...');
+            const triggeredWorkflows = [];
+
+            for (const workflow of requiredWorkflows) {
+              try {
+                console.log(`  Triggering ${workflow.name} (${workflow.file})...`);
+
+                await github.rest.actions.createWorkflowDispatch({
+                  owner,
+                  repo,
+                  workflow_id: workflow.file,
+                  ref: pr.head.ref,
+                  inputs: workflow.inputs
+                });
+
+                triggeredWorkflows.push(workflow.name);
+                console.log(`  ✅ Successfully triggered ${workflow.name}`);
+              } catch (error) {
+                console.log(`  ❌ Failed to trigger ${workflow.name}: ${error.message}`);
+              }
+            }
+
+            console.log(`\n📤 Triggered ${triggeredWorkflows.length}/${requiredWorkflows.length} workflows`);
+
+            // Always fail when we trigger workflows - this blocks the PR until workflows complete
+            console.log('❌ Meta-check: FAILURE (workflows triggered, waiting for completion)');
+            process.exit(1);
+
+      - name: Evaluate Workflow Status (Workflow Run Events)
+        if: github.event_name == 'workflow_run'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const headSha = '${{ steps.get-pr.outputs.head-sha }}';
+            const requiredWorkflows = JSON.parse('${{ steps.determine-workflows.outputs.required-workflows }}');
+
+            if (requiredWorkflows.length === 0) {
+              console.log('✅ No CI workflows required for these changes');
+              console.log('Meta-check: SUCCESS');
+              return;
+            }
+
+            console.log('\n📊 Evaluating workflow completion status...');
+
+            // Get check runs for the PR head SHA
+            const { data: checkRuns } = await github.rest.checks.listForRef({
+              owner,
+              repo,
+              ref: headSha,
+              per_page: 100
+            });
+
+            console.log(`\n🔍 Found ${checkRuns.check_runs.length} check runs for ${headSha}`);
+
+            // Evaluate each required workflow
+            const results = [];
+
+            for (const workflow of requiredWorkflows) {
+              console.log(`\n📊 ${workflow.name}:`);
+              console.log(`  Required jobs: ${workflow.requiredJobs.join(', ')}`);
+
+              if (workflow.requiredJobs.length === 0) {
+                console.log(`  ⚠️ No required jobs specified for ${workflow.name}`);
+                results.push({
+                  workflow: workflow.name,
+                  status: 'failed',
+                  message: 'No required jobs specified'
+                });
+                continue;
+              }
+
+              // Find check runs for the required jobs of this workflow
+              const jobResults = [];
+
+              for (const jobName of workflow.requiredJobs) {
+                const jobChecks = checkRuns.check_runs.filter(check =>
+                  check.name === jobName
+                );
+
+                if (jobChecks.length === 0) {
+                  console.log(`  ❌ ${jobName}: No check runs found`);
+                  jobResults.push({
+                    job: jobName,
+                    status: 'missing',
+                    message: 'No check runs found'
+                  });
+                  continue;
+                }
+
+                // Get the latest check run for this job
+                const latestCheck = jobChecks.sort((a, b) =>
+                  new Date(b.started_at) - new Date(a.started_at)
+                )[0];
+
+                const status = latestCheck.status === 'completed' ? latestCheck.conclusion : latestCheck.status;
+                console.log(`  - ${jobName}: ${status}`);
+
+                if (latestCheck.status !== 'completed') {
+                  jobResults.push({
+                    job: jobName,
+                    status: 'pending',
+                    message: 'Still running'
+                  });
+                } else if (latestCheck.conclusion !== 'success') {
+                  jobResults.push({
+                    job: jobName,
+                    status: 'failed',
+                    message: `Failed with conclusion: ${latestCheck.conclusion}`
+                  });
+                } else {
+                  jobResults.push({
+                    job: jobName,
+                    status: 'success',
+                    message: 'Completed successfully'
+                  });
+                }
+              }
+
+              // Evaluate overall workflow status based on job results
+              const failedJobs = jobResults.filter(r => r.status === 'failed');
+              const pendingJobs = jobResults.filter(r => r.status === 'pending');
+              const missingJobs = jobResults.filter(r => r.status === 'missing');
+
+              if (missingJobs.length > 0) {
+                results.push({
+                  workflow: workflow.name,
+                  status: 'missing',
+                  message: `${missingJobs.length} job(s) not found: ${missingJobs.map(j => j.job).join(', ')}`
+                });
+              } else if (pendingJobs.length > 0) {
+                results.push({
+                  workflow: workflow.name,
+                  status: 'pending',
+                  message: `${pendingJobs.length} job(s) still running: ${pendingJobs.map(j => j.job).join(', ')}`
+                });
+              } else if (failedJobs.length > 0) {
+                results.push({
+                  workflow: workflow.name,
+                  status: 'failed',
+                  message: `${failedJobs.length} job(s) failed: ${failedJobs.map(j => j.job).join(', ')}`
+                });
+              } else {
+                results.push({
+                  workflow: workflow.name,
+                  status: 'success',
+                  message: 'All required jobs completed successfully'
+                });
+              }
+            }
+
+            // Evaluate overall result
+            const failedResults = results.filter(r => r.status === 'failed');
+            const pendingResults = results.filter(r => r.status === 'pending');
+            const missingResults = results.filter(r => r.status === 'missing');
+
+            console.log('\n📋 Summary:');
+            results.forEach(result => {
+              const icon = result.status === 'success' ? '✅' : '❌';
+              console.log(`  ${icon} ${result.workflow}: ${result.message}`);
+            });
+
+            // Only succeed if ALL required workflows have completed successfully
+            if (missingResults.length > 0 || pendingResults.length > 0 || failedResults.length > 0) {
+              console.log('\n❌ Meta-check: FAILURE');
+
+              const reasons = [];
+              if (missingResults.length > 0) {
+                reasons.push(`${missingResults.length} workflow(s) not found`);
+              }
+              if (pendingResults.length > 0) {
+                reasons.push(`${pendingResults.length} workflow(s) still running`);
+              }
+              if (failedResults.length > 0) {
+                reasons.push(`${failedResults.length} workflow(s) failed`);
+              }
+
+              console.log(`Reason: ${reasons.join(', ')}`);
+              process.exit(1);
+            } else {
+              console.log('\n✅ Meta-check: SUCCESS');
+              console.log('All required workflows have completed successfully!');
+            }

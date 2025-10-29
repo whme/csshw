@@ -8,26 +8,20 @@
 name: CI
 
 on:
-  pull_request:
-    branches: [ "main" ]
-    paths:
-      # NOTE: Keep this list in sync with ci.yml
-      - .cargo/**
-      - .github/workflows/ci-coverage.yml
-      - .github/workflows/ci.yml
-      - .github/workflows/_shared-ci.yml
-      - src/**
-      - build.rs
-      - Cargo.toml
-      - clippy.toml
-      - Makefile.toml
-      - rustfmt.toml
+  # Triggered by meta-check workflow
+  workflow_dispatch:
+    inputs:
+      run_coverage:
+        description: 'Whether to run tests with coverage collection'
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   ci-with-coverage:
     uses: ./.github/workflows/_shared-ci.yml
     with:
-      run_coverage: true
+      run_coverage: ${{ inputs.run_coverage || true }}
 
   coverage-report:
     runs-on: ubuntu-latest

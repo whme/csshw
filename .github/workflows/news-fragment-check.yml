@@ -7,9 +7,8 @@
 name: News Fragment Check
 
 on:
-  pull_request:
-    types: [opened, synchronize, labeled, unlabeled]
-    branches: [main]
+  # Triggered by meta-check workflow
+  workflow_dispatch:
 
 env:
   OVERRIDE_LABEL: 'no-news-fragment-needed'
