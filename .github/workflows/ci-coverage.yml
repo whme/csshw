@@ -101,7 +101,7 @@ jobs:
         coverage-rate-reduction-failure: false
 
   coverage-report-skipped:
-    needs: [detect-changes, ci-if-src-changed]
+    needs: [detect-changes, ci]
     if: always() && (needs.detect-changes.outputs.src == 'false' && needs.detect-changes.outputs.workflows == 'false')
     runs-on: ubuntu-latest
     steps:
