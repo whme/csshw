@@ -121,13 +121,13 @@ jobs:
         with:
           script: |
             const { owner, repo } = context.repo;
-            const prNumber = ${{ steps.get-pr.outputs.pr-number }};
+            const prNumber = '${{ steps.get-pr.outputs.pr-number }}';
 
             // Get changed files for the PR
             const { data: files } = await github.rest.pulls.listFiles({
               owner,
               repo,
-              pull_request_number: prNumber,
+              pull_request_number: parseInt(prNumber),
             });
 
             const changedFiles = files.map(f => f.filename);
@@ -179,7 +179,7 @@ jobs:
         with:
           script: |
             const { owner, repo } = context.repo;
-            const prNumber = ${{ steps.get-pr.outputs.pr-number }};
+            const prNumber = '${{ steps.get-pr.outputs.pr-number }}';
             const requiredWorkflows = JSON.parse('${{ steps.determine-workflows.outputs.required-workflows }}');
 
             if (requiredWorkflows.length === 0) {
@@ -192,7 +192,7 @@ jobs:
             const { data: pr } = await github.rest.pulls.get({
               owner,
               repo,
-              pull_request_number: prNumber,
+              pull_request_number: parseInt(prNumber),
             });
 
             console.log('\n🚀 Triggering required workflows...');
