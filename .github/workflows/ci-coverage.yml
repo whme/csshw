@@ -92,7 +92,7 @@ jobs:
         coverage-rate-reduction-failure: false
 
   ci-summary:
-    needs: [detect-changes, coverage-report]
+    needs: [detect-changes, ci, coverage-report]
     if: always()
     runs-on: *runner
     steps:
