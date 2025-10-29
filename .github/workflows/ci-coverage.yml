@@ -12,7 +12,8 @@ on:
 
 jobs:
   detect-changes:
-    runs-on: ubuntu-latest
+    runs-on: &runner
+      ubuntu-latest
     outputs:
       src: ${{ steps.changes.outputs.src }}
       workflows: ${{ steps.changes.outputs.workflows }}
@@ -45,7 +46,7 @@ jobs:
   coverage-report:
     needs: ci
     if: always() && needs.ci.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: *runner
     steps:
     - uses: actions/checkout@v5
 
@@ -89,3 +90,27 @@ jobs:
         new-uncovered-statements-failure: false
         # Fail if the overall coverage percentage decreases (more forgiving approach)
         coverage-rate-reduction-failure: false
+
+  ci-summary:
+    needs: [detect-changes, coverage-report]
+    if: always()
+    runs-on: *runner
+    steps:
+      - run: |
+          needs_json='${{ toJSON(needs) }}'
+          failed=0
+          echo "Job results:"
+          for job in $(jq -r 'keys[]' <<< "$needs_json"); do
+            result=$(jq -r --arg job "$job" '.[$job].result' <<< "$needs_json")
+            echo "- $job: $result"
+            if [[ ! "$result" =~ ^(success|skipped)$ ]]; then
+              failed=1
+            fi
+          done
+
+          if [[ $failed -eq 1 ]]; then
+            echo "❌ One or more jobs failed or were cancelled!"
+            exit 1
+          else
+            echo "✅ All jobs succeeded or were skipped."
+          fi
