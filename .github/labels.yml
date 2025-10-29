@@ -1,0 +1,6 @@
+# GitHub Labels Configuration
+# This file defines the labels used in the repository for automated workflows
+
+- name: "no-news-fragment-needed"
+  color: "7bb344"
+  description: "Indicates that this PR does not require a news fragment"
