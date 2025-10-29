@@ -136,7 +136,7 @@ jobs:
             const { data: files } = await github.rest.pulls.listFiles({
               owner,
               repo,
-              pull_request_number: prNumber,
+              pull_number: prNumber,
             });
 
             const changedFiles = files.map(f => f.filename);
@@ -203,7 +203,7 @@ jobs:
             const { data: pr } = await github.rest.pulls.get({
               owner,
               repo,
-              pull_request_number: prNumber,
+              pull_number: prNumber,
             });
 
             console.log('\n🚀 Triggering required workflows...');
