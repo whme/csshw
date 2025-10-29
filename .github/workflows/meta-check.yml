@@ -121,13 +121,22 @@ jobs:
         with:
           script: |
             const { owner, repo } = context.repo;
-            const prNumber = '${{ steps.get-pr.outputs.pr-number }}';
+
+            // Get PR number from context or step output
+            let prNumber;
+            if (context.eventName === 'pull_request') {
+              prNumber = context.payload.pull_request.number;
+            } else {
+              prNumber = parseInt('${{ steps.get-pr.outputs.pr-number }}');
+            }
+
+            console.log(`📋 Using PR number: ${prNumber}`);
 
             // Get changed files for the PR
             const { data: files } = await github.rest.pulls.listFiles({
               owner,
               repo,
-              pull_request_number: parseInt(prNumber),
+              pull_request_number: prNumber,
             });
 
             const changedFiles = files.map(f => f.filename);
@@ -179,8 +188,10 @@ jobs:
         with:
           script: |
             const { owner, repo } = context.repo;
-            const prNumber = '${{ steps.get-pr.outputs.pr-number }}';
+            const prNumber = context.payload.pull_request.number;
             const requiredWorkflows = JSON.parse('${{ steps.determine-workflows.outputs.required-workflows }}');
+
+            console.log(`📋 Using PR number: ${prNumber}`);
 
             if (requiredWorkflows.length === 0) {
               console.log('✅ No CI workflows required for these changes');
@@ -192,7 +203,7 @@ jobs:
             const { data: pr } = await github.rest.pulls.get({
               owner,
               repo,
-              pull_request_number: parseInt(prNumber),
+              pull_request_number: prNumber,
             });
 
             console.log('\n🚀 Triggering required workflows...');
