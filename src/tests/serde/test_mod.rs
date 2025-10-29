@@ -1,3 +1,5 @@
+//! Unit tests for the serde module.
+
 use windows::Win32::{
     Foundation::BOOL,
     System::Console::{INPUT_RECORD_0, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0},

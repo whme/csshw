@@ -15,5 +15,5 @@ pub mod serialization;
 pub const SERIALIZED_INPUT_RECORD_0_LENGTH: usize = 13;
 
 #[cfg(test)]
-#[path = "../tests/test_serde.rs"]
-mod test_serde;
+#[path = "../tests/serde/test_mod.rs"]
+mod test_mod;
