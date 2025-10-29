@@ -1,0 +1,49 @@
+#
+#   csshw Post-Submit CI
+#
+# Runs on the main branch on pushes with full coverage collection.
+# For pull requests, see pre-submit.yml which includes coverage reporting.
+# Uses the shared CI workflow.
+
+name: Post-Submit CI
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  ci:
+    uses: ./.github/workflows/_shared-ci.yml
+
+  coverage-report:
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Download Coverage XML Data
+      uses: actions/download-artifact@v4
+      with:
+        name: coverage-xml-data
+        path: coverage-data/
+
+    - name: Generate Code Coverage Summary
+      uses: insightsengineering/coverage-action@v3
+      with:
+        # Path to the Cobertura XML report.
+        path: coverage-data/coverage.xml
+        # Fail the workflow if the minimum code coverage
+        # requirements are not satisfied.
+        fail: false
+        # Publish the rendered output as a PR comment
+        # Note: This will be disabled for main branch pushes as there's no PR context
+        publish: false
+        # Create a coverage diff report.
+        diff: false
+        # Failure modes for coverage regression detection:
+        # Fail if any changed file has more uncovered lines (pycobertura exit code 2)
+        uncovered-statements-increase-failure: false
+        # Fail if new uncovered statements are introduced despite overall improvement (pycobertura exit code 3)
+        new-uncovered-statements-failure: false
+        # Fail if the overall coverage percentage decreases (more forgiving approach)
+        coverage-rate-reduction-failure: false

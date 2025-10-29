@@ -1,10 +1,10 @@
 #
-#   csshw CI with Coverage
+#   csshw Pre-Submit CI
 #
 # Runs CI workflows based on changed files in pull requests.
 # Uses paths-filter to determine which jobs need to run.
 
-name: CI
+name: Pre-Submit CI
 
 on:
   pull_request:
@@ -32,16 +32,14 @@ jobs:
               - 'Makefile.toml'
               - 'rustfmt.toml'
             workflows:
-              - '.github/workflows/ci-coverage.yml'
-              - '.github/workflows/ci.yml'
+              - '.github/workflows/pre-submit.yml'
+              - '.github/workflows/post-submit.yml'
               - '.github/workflows/_shared-ci.yml'
 
   ci:
     needs: detect-changes
     if: needs.detect-changes.outputs.src == 'true' || needs.detect-changes.outputs.workflows == 'true'
     uses: ./.github/workflows/_shared-ci.yml
-    with:
-      run_coverage: true
 
   coverage-report:
     needs: ci
@@ -72,14 +70,6 @@ jobs:
         publish: true
         # Create a coverage diff report.
         diff: false
-        # Branch to diff against.
-        # Compare the current coverage to the coverage
-        # determined on this branch.
-        diff-branch: main
-        # This is where the coverage reports for the
-        # `diff-branch` are stored.
-        # Branch is created if it doesn't already exist'.
-        diff-storage: _xml_coverage_reports
         # A custom title that can be added to the code
         # coverage summary in the PR comment.
         coverage-summary-title: "Code Coverage Summary"

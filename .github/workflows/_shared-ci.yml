@@ -9,12 +9,6 @@ name: Shared CI Logic
 
 on:
   workflow_call:
-    inputs:
-      run_coverage:
-        description: 'Whether to run tests with coverage collection'
-        required: false
-        type: boolean
-        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -85,30 +79,20 @@ jobs:
     - uses: *build-cache
       with: *build-cache-paths
 
-    # Install cargo-llvm-cov if coverage is requested
     - name: Install cargo-llvm-cov
-      if: inputs.run_coverage
       uses: &cargo-install-action
         baptiste0928/cargo-install@v3
       with:
         crate: cargo-llvm-cov
         version: '^0.6'
 
-    # Run tests with coverage if requested
     - name: Run tests with coverage
-      if: inputs.run_coverage
       run: |
         # Run tests with coverage - Total coverage
         cargo llvm-cov clean --workspace
         cargo llvm-cov --all-features --workspace --cobertura --output-path coverage.xml
 
-    # Run regular tests if coverage is not requested
-    - name: Run tests (regular)
-      if: '!inputs.run_coverage'
-      run: cargo tests
-
     - name: Upload Coverage XML Data
-      if: inputs.run_coverage
       uses: &upload-artifact-action
         actions/upload-artifact@v4
       with:
