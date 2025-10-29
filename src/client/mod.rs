@@ -12,15 +12,14 @@ use std::time::Duration;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::utils::config::ClientConfig;
-use crate::utils::{get_console_input_buffer, get_console_title, set_console_title};
+use crate::utils::{get_console_title, set_console_title, DefaultWindowsApi, WindowsApi};
 use ssh2_config::{ParseRule, SshConfig};
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::process::{Child, Command};
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
-use windows::Win32::Foundation::GetLastError;
 use windows::Win32::System::Console::{
-    GenerateConsoleCtrlEvent, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT,
-    KEY_EVENT_RECORD, LEFT_ALT_PRESSED, RIGHT_ALT_PRESSED, SHIFT_PRESSED,
+    GenerateConsoleCtrlEvent, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT, KEY_EVENT_RECORD,
+    LEFT_ALT_PRESSED, RIGHT_ALT_PRESSED, SHIFT_PRESSED,
 };
 
 use crate::{
@@ -62,27 +61,28 @@ enum ReadWriteResult {
 ///
 /// * `input_record` - The [INPUT_RECORD_0].`KeyEvent` input record to write.
 fn write_console_input(input_record: INPUT_RECORD_0) {
+    return write_console_input_with_api(&DefaultWindowsApi, input_record);
+}
+
+/// Write the given [INPUT_RECORD_0] to the console input buffer using the provided API.
+///
+/// # Arguments
+///
+/// * `api` - The Windows API implementation to use.
+/// * `input_record` - The [INPUT_RECORD_0].`KeyEvent` input record to write.
+fn write_console_input_with_api(api: &dyn WindowsApi, input_record: INPUT_RECORD_0) {
     let buffer: [INPUT_RECORD; 1] = [INPUT_RECORD {
         EventType: KEY_EVENT as u16,
         Event: input_record,
     }];
-    let mut nb_of_events_written: u32 = 0;
-    match unsafe {
-        WriteConsoleInputW(
-            get_console_input_buffer(),
-            &buffer,
-            &mut nb_of_events_written,
-        )
-    } {
-        Ok(_) => {
+    match api.write_console_input(&buffer) {
+        Ok(nb_of_events_written) => {
             if nb_of_events_written == 0 {
-                error!("Failed to write console input");
-                error!("{:?}", unsafe { GetLastError() });
+                error!("Failed to write console input - no events written");
             }
         }
-        Err(_) => {
-            error!("Failed to write console input");
-            error!("{:?}", unsafe { GetLastError() });
+        Err(e) => {
+            error!("Failed to write console input: {}", e);
         }
     };
 }

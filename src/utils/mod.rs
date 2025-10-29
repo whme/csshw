@@ -84,6 +84,9 @@ pub trait WindowsApi {
 
     /// Sets DWM window attribute for border color.
     fn set_dwm_border_color(&self, color: &COLORREF) -> windows::core::Result<()>;
+
+    /// Writes console input records to the console input buffer.
+    fn write_console_input(&self, buffer: &[INPUT_RECORD]) -> windows::core::Result<u32>;
 }
 
 /// Default implementation of WindowsApi that calls actual Windows APIs.
@@ -184,6 +187,18 @@ impl WindowsApi for DefaultWindowsApi {
                 mem::size_of::<COLORREF>() as u32,
             )
         };
+    }
+
+    fn write_console_input(&self, buffer: &[INPUT_RECORD]) -> windows::core::Result<u32> {
+        let mut number_written = 0u32;
+        unsafe {
+            windows::Win32::System::Console::WriteConsoleInputW(
+                GetStdHandle(STD_INPUT_HANDLE)?,
+                buffer,
+                &mut number_written,
+            )?
+        };
+        return Ok(number_written);
     }
 }
 
