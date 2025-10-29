@@ -4,6 +4,8 @@
 # Ensures PRs either include news fragments or explicitly acknowledge they don't need them.
 # Runs on PR events and label changes.
 
+name: News Fragment Check
+
 on:
   pull_request:
     types: [opened, synchronize, labeled, unlabeled]
