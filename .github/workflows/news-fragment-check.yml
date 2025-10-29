@@ -1,0 +1,87 @@
+#
+#   News Fragment Check
+#
+# Ensures PRs either include news fragments or explicitly acknowledge they don't need them.
+# Runs on PR events and label changes.
+
+name: News Fragment Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, labeled, unlabeled]
+    branches: [main]
+
+env:
+  OVERRIDE_LABEL: 'no-news-fragment-needed'
+  NEWS_FRAGMENT_PATTERN: '^news/.*\.(feature|bugfix|security|deprecation|removal)\.md$'
+
+jobs:
+  news-fragment-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for news fragments
+        id: check
+        run: |
+          echo "🔍 Checking for news fragments in PR..."
+
+          # Check if PR adds any news fragments
+          FRAGMENTS=$(git diff --name-only --diff-filter=A origin/main...HEAD | \
+            grep -E '${{ env.NEWS_FRAGMENT_PATTERN }}' || true)
+
+          if [ -n "$FRAGMENTS" ]; then
+            echo "✅ News fragment(s) found:"
+            echo "$FRAGMENTS" | sed 's/^/  - /'
+            echo ""
+            echo "News fragment check passed!"
+            echo "status=success" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Check for override label
+          if [[ "${{ contains(github.event.pull_request.labels.*.name, env.OVERRIDE_LABEL) }}" == "true" ]]; then
+            echo "✅ No news fragment needed (acknowledged via '${{ env.OVERRIDE_LABEL }}' label)"
+            echo ""
+            echo "News fragment check passed!"
+            echo "status=success" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # No news fragment and no acknowledgment
+          echo "❌ No news fragment found and no acknowledgment label present"
+          echo "status=failed" >> $GITHUB_OUTPUT
+
+      - name: Update PR comment - Success
+        if: steps.check.outputs.status == 'success'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: news-fragment-check
+          message: |
+            🤖 **News Fragment Check**
+
+            ✅ **Success!** This PR meets the news fragment requirements.
+
+      - name: Update PR comment - Missing news fragment
+        if: steps.check.outputs.status == 'failed'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: news-fragment-check
+          message: |
+            🤖 **News Fragment Check**
+
+            ❌ This PR appears to be missing a news fragment.
+
+            **If this change affects users** (new features, bug fixes, security fixes):
+            → Add a news fragment in the `news/` directory
+            → Example: `news/123.feature.md` or `news/~fix-issue.bugfix.md`
+
+            **If this change doesn't need a news fragment** (docs, CI, internal changes):
+            → Add the ![](https://img.shields.io/github/labels/${{ github.repository }}/${{ env.OVERRIDE_LABEL }}) label to this PR
+
+            For more information about news fragments, see: https://github.com/nekitdev/changelogging
