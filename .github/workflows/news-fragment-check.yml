@@ -85,3 +85,5 @@ jobs:
             → Add the ![](https://img.shields.io/github/labels/${{ github.repository }}/${{ env.OVERRIDE_LABEL }}) label to this PR
 
             For more information about news fragments, see: https://github.com/nekitdev/changelogging
+
+            exit -1
