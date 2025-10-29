@@ -606,3 +606,295 @@ mod console_input_test {
         );
     }
 }
+
+/// Additional test module for utils/mod.rs to improve coverage.
+mod utils_mod_additional_test {
+    use mockall::predicate::*;
+    use windows::Win32::Foundation::{COLORREF, HWND};
+    use windows::Win32::System::Console::{
+        CONSOLE_CHARACTER_ATTRIBUTES, CONSOLE_SCREEN_BUFFER_INFO, COORD, INPUT_RECORD,
+        INPUT_RECORD_0, KEY_EVENT_RECORD, SMALL_RECT,
+    };
+
+    use crate::utils::{
+        arrange_console_with_api, get_window_title_with_api, DefaultWindowsApi, MockWindowsApi,
+        KEY_EVENT,
+    };
+
+    #[test]
+    fn test_arrange_console_with_api() {
+        let mut mock_api = MockWindowsApi::new();
+
+        mock_api
+            .expect_arrange_console()
+            .with(eq(100), eq(200), eq(800), eq(600))
+            .times(1)
+            .returning(|_, _, _, _| return Ok(()));
+
+        arrange_console_with_api(&mock_api, 100, 200, 800, 600);
+    }
+
+    #[test]
+    fn test_get_window_title_with_api() {
+        let mock_api = MockWindowsApi::new();
+        let hwnd = HWND(std::ptr::null_mut());
+
+        // This function doesn't use the API mock for individual HWND operations
+        // It uses direct Windows API calls, so we just test it doesn't panic
+        let _result = get_window_title_with_api(&mock_api, &hwnd);
+    }
+
+    #[test]
+    fn test_default_windows_api_creation() {
+        let _api = DefaultWindowsApi;
+        // Just test that it can be created without issues
+    }
+
+    #[test]
+    fn test_key_event_constant() {
+        assert_eq!(KEY_EVENT, 1u16);
+    }
+
+    #[test]
+    fn test_read_console_input_with_api_retry_logic() {
+        use crate::utils::read_console_input_with_api;
+
+        let mut mock_api = MockWindowsApi::new();
+        let input_record = INPUT_RECORD {
+            EventType: 1, // KEY_EVENT
+            Event: INPUT_RECORD_0 {
+                KeyEvent: KEY_EVENT_RECORD {
+                    bKeyDown: windows::Win32::Foundation::BOOL(1),
+                    wRepeatCount: 1,
+                    wVirtualKeyCode: 65, // 'A'
+                    wVirtualScanCode: 30,
+                    uChar: windows::Win32::System::Console::KEY_EVENT_RECORD_0 { UnicodeChar: 65 },
+                    dwControlKeyState: 0,
+                },
+            },
+        };
+
+        mock_api
+            .expect_read_console_input()
+            .times(2)
+            .returning(move |buffer| {
+                static mut CALL_COUNT: usize = 0;
+                unsafe {
+                    CALL_COUNT += 1;
+                    if CALL_COUNT == 1 {
+                        // First call returns 0 events read
+                        return Ok(0);
+                    } else {
+                        // Second call returns 1 event
+                        buffer[0] = input_record;
+                        return Ok(1);
+                    }
+                }
+            });
+
+        let result = read_console_input_with_api(&mock_api);
+        assert_eq!(result.EventType, 1);
+    }
+
+    #[test]
+    fn test_is_windows_10_with_api_boundary_cases() {
+        use crate::utils::is_windows_10_with_api;
+
+        // Test exact boundary case - Windows 11 first build
+        let mut mock_api = MockWindowsApi::new();
+        mock_api
+            .expect_get_os_version()
+            .times(1)
+            .returning(|| return "10.0.22000".to_string());
+
+        let result = is_windows_10_with_api(&mock_api);
+        assert!(!result); // Should be Windows 11
+
+        // Test just before boundary
+        let mut mock_api2 = MockWindowsApi::new();
+        mock_api2
+            .expect_get_os_version()
+            .times(1)
+            .returning(|| return "10.0.21999".to_string());
+
+        let result2 = is_windows_10_with_api(&mock_api2);
+        assert!(result2); // Should be Windows 10
+    }
+
+    #[test]
+    fn test_keyboard_input_filtering() {
+        use crate::utils::read_keyboard_input_with_api;
+
+        let mut mock_api = MockWindowsApi::new();
+        let key_input_record = INPUT_RECORD {
+            EventType: 1, // KEY_EVENT
+            Event: INPUT_RECORD_0 {
+                KeyEvent: KEY_EVENT_RECORD {
+                    bKeyDown: windows::Win32::Foundation::BOOL(1),
+                    wRepeatCount: 1,
+                    wVirtualKeyCode: 65, // 'A'
+                    wVirtualScanCode: 30,
+                    uChar: windows::Win32::System::Console::KEY_EVENT_RECORD_0 { UnicodeChar: 65 },
+                    dwControlKeyState: 0,
+                },
+            },
+        };
+
+        let non_key_input_record = INPUT_RECORD {
+            EventType: 2, // MOUSE_EVENT
+            Event: INPUT_RECORD_0 {
+                KeyEvent: KEY_EVENT_RECORD::default(),
+            },
+        };
+
+        mock_api
+            .expect_read_console_input()
+            .times(2)
+            .returning(move |buffer| {
+                static mut CALL_COUNT: usize = 0;
+                unsafe {
+                    CALL_COUNT += 1;
+                    if CALL_COUNT == 1 {
+                        buffer[0] = non_key_input_record; // First call returns non-key event
+                    } else {
+                        buffer[0] = key_input_record; // Second call returns key event
+                    }
+                }
+                return Ok(1);
+            });
+
+        let result = read_keyboard_input_with_api(&mock_api);
+        unsafe {
+            assert_eq!(result.KeyEvent.wVirtualKeyCode, 65);
+        }
+    }
+
+    #[test]
+    fn test_console_color_buffer_filling() {
+        use crate::utils::set_console_color_with_api;
+
+        let mut mock_api = MockWindowsApi::new();
+        let color = CONSOLE_CHARACTER_ATTRIBUTES(7);
+        let buffer_info = CONSOLE_SCREEN_BUFFER_INFO {
+            dwSize: COORD { X: 80, Y: 25 },
+            dwCursorPosition: COORD { X: 0, Y: 0 },
+            wAttributes: CONSOLE_CHARACTER_ATTRIBUTES(7),
+            srWindow: SMALL_RECT {
+                Left: 0,
+                Top: 0,
+                Right: 79,
+                Bottom: 24,
+            },
+            dwMaximumWindowSize: COORD { X: 80, Y: 25 },
+        };
+
+        mock_api
+            .expect_set_console_text_attribute()
+            .with(eq(color))
+            .times(1)
+            .returning(|_| return Ok(()));
+
+        mock_api
+            .expect_get_console_screen_buffer_info()
+            .times(1)
+            .returning(move || return Ok(buffer_info));
+
+        mock_api
+            .expect_fill_console_output_attribute()
+            .times(25) // Once for each row
+            .returning(|_, _, _| return Ok(80));
+
+        set_console_color_with_api(&mock_api, color);
+    }
+
+    #[test]
+    fn test_clear_screen_scroll_operation() {
+        use crate::utils::clear_screen_with_api;
+
+        let mut mock_api = MockWindowsApi::new();
+        let buffer_info = CONSOLE_SCREEN_BUFFER_INFO {
+            dwSize: COORD { X: 80, Y: 25 },
+            dwCursorPosition: COORD { X: 10, Y: 5 },
+            wAttributes: CONSOLE_CHARACTER_ATTRIBUTES(7),
+            srWindow: SMALL_RECT {
+                Left: 0,
+                Top: 0,
+                Right: 79,
+                Bottom: 24,
+            },
+            dwMaximumWindowSize: COORD { X: 80, Y: 25 },
+        };
+
+        mock_api
+            .expect_get_console_screen_buffer_info()
+            .times(1)
+            .returning(move || return Ok(buffer_info));
+
+        mock_api
+            .expect_scroll_console_screen_buffer()
+            .times(1)
+            .returning(|_, _, _| return Ok(()));
+
+        mock_api
+            .expect_set_console_cursor_position()
+            .with(eq(COORD { X: 0, Y: 0 }))
+            .times(1)
+            .returning(|_| return Ok(()));
+
+        clear_screen_with_api(&mock_api);
+    }
+
+    #[test]
+    fn test_console_title_unicode_handling() {
+        use crate::utils::get_console_title_with_api;
+
+        let mut mock_api = MockWindowsApi::new();
+        let test_title = "Test 🦀 Rust 中文 Тест";
+        let utf16_title: Vec<u16> = test_title.encode_utf16().collect();
+
+        mock_api
+            .expect_get_console_title_utf16()
+            .times(1)
+            .returning(move |buffer| {
+                let copy_len = std::cmp::min(utf16_title.len(), buffer.len() - 1);
+                buffer[..copy_len].copy_from_slice(&utf16_title[..copy_len]);
+                buffer[copy_len] = 0; // Null terminator
+                return copy_len as i32;
+            });
+
+        let result = get_console_title_with_api(&mock_api);
+        assert_eq!(result, test_title);
+    }
+
+    #[test]
+    fn test_border_color_windows_version_detection() {
+        use crate::utils::set_console_border_color_with_api;
+
+        // Test Windows 11 behavior
+        let mut mock_api = MockWindowsApi::new();
+        let color = COLORREF(0x00FF0000); // Red
+
+        mock_api
+            .expect_get_os_version()
+            .times(1)
+            .returning(|| return "10.0.22000".to_string()); // Windows 11
+
+        mock_api
+            .expect_set_dwm_border_color()
+            .with(eq(color))
+            .times(1)
+            .returning(|_| return Ok(()));
+
+        set_console_border_color_with_api(&mock_api, color);
+
+        // Test Windows 10 behavior (no DWM call)
+        let mut mock_api2 = MockWindowsApi::new();
+        mock_api2
+            .expect_get_os_version()
+            .times(1)
+            .returning(|| return "10.0.19041".to_string()); // Windows 10
+
+        // Should not call set_dwm_border_color for Windows 10
+        set_console_border_color_with_api(&mock_api2, color);
+    }
+}

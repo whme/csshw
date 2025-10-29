@@ -52,3 +52,7 @@ impl StringRepr for INPUT_RECORD_0 {
         return unsafe { self.KeyEvent }.string_repr();
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/utils/test_debug.rs"]
+mod test_utils_debug;
