@@ -383,7 +383,7 @@ pub fn init_logger_with_fs<F: FileSystem>(fs: &F, name: &str) {
 /// * `true` - Application was launched from GUI (Explorer, double-click, etc.)
 /// * `false` - Application was launched from existing console (command line)
 pub fn is_launched_from_gui<W: WindowsApi>(windows_api: &W) -> bool {
-    match windows_api.get_std_handle_console() {
+    match windows_api.get_stdout_handle() {
         Ok(handle) => {
             match windows_api.get_console_screen_buffer_info_with_handle(handle) {
                 Ok(csbi) => {
@@ -397,7 +397,7 @@ pub fn is_launched_from_gui<W: WindowsApi>(windows_api: &W) -> bool {
             }
         }
         Err(err) => {
-            warn!("GetStdHandle failed: {:?}", err);
+            warn!("Failed to get stdout handle: {:?}", err);
             return false;
         }
     }

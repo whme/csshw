@@ -132,7 +132,7 @@ mod console_title_test {
             .collect();
 
         mock_api
-            .expect_get_console_title_utf16()
+            .expect_get_console_title()
             .with(mockall::predicate::always())
             .times(1)
             .returning(move |buffer: &mut [u16]| {
@@ -152,7 +152,7 @@ mod console_title_test {
         let mut mock_api = MockWindowsApi::new();
 
         mock_api
-            .expect_get_console_title_utf16()
+            .expect_get_console_title()
             .with(mockall::predicate::always())
             .times(1)
             .returning(|_| return 0);
@@ -174,7 +174,7 @@ mod console_title_test {
             .collect();
 
         mock_api
-            .expect_get_console_title_utf16()
+            .expect_get_console_title()
             .with(mockall::predicate::always())
             .times(1)
             .returning(move |buffer: &mut [u16]| {
@@ -403,7 +403,7 @@ mod console_border_color_test {
             .times(1)
             .return_const("10.0.19045".to_string());
 
-        api.expect_set_dwm_border_color()
+        api.expect_set_console_border_color()
             .with(mockall::predicate::eq(test_color))
             .times(0);
 
@@ -421,7 +421,7 @@ mod console_border_color_test {
             .times(1)
             .return_const("10.0.22000".to_string());
 
-        api.expect_set_dwm_border_color()
+        api.expect_set_console_border_color()
             .with(mockall::predicate::eq(test_color))
             .times(1)
             .returning(|_| return Ok(()));
@@ -440,7 +440,7 @@ mod console_border_color_test {
             .times(1)
             .return_const("10.0.22000".to_string());
 
-        api.expect_set_dwm_border_color()
+        api.expect_set_console_border_color()
             .with(mockall::predicate::eq(test_color))
             .times(1)
             .returning(|_| return Err(windows::core::Error::from_win32()));
@@ -451,7 +451,7 @@ mod console_border_color_test {
 
         assert!(
             result.is_err(),
-            "Should panic when set_dwm_border_color fails"
+            "Should panic when set_console_border_color fails"
         );
     }
 }

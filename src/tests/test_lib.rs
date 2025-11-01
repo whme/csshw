@@ -589,7 +589,7 @@ mod gui_launch_detection_test {
         let mut mock_windows_api = MockWindowsApi::new();
 
         mock_windows_api
-            .expect_get_std_handle_console()
+            .expect_get_stdout_handle()
             .times(1)
             .returning(|| return Ok(HANDLE(0x1234 as *mut std::ffi::c_void)));
 
@@ -614,7 +614,7 @@ mod gui_launch_detection_test {
         let mut mock_windows_api = MockWindowsApi::new();
 
         mock_windows_api
-            .expect_get_std_handle_console()
+            .expect_get_stdout_handle()
             .times(1)
             .returning(|| return Ok(HANDLE(0x1234 as *mut std::ffi::c_void)));
 
@@ -639,7 +639,7 @@ mod gui_launch_detection_test {
         let mut mock_windows_api = MockWindowsApi::new();
 
         mock_windows_api
-            .expect_get_std_handle_console()
+            .expect_get_stdout_handle()
             .times(1)
             .returning(|| return Err(windows::core::Error::from_win32()));
 
@@ -654,7 +654,7 @@ mod gui_launch_detection_test {
         let mut mock_windows_api = MockWindowsApi::new();
 
         mock_windows_api
-            .expect_get_std_handle_console()
+            .expect_get_stdout_handle()
             .times(1)
             .returning(|| return Ok(HANDLE(0x1234 as *mut std::ffi::c_void)));
 

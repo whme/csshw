@@ -13,10 +13,10 @@
 use log::error;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStrExt;
-use std::{mem, ptr, thread, time};
+use std::{mem, ptr};
 
 use windows::core::{HSTRING, PCWSTR};
-use windows::Win32::Foundation::{BOOL, COLORREF, FALSE, HANDLE, HWND, LPARAM, RECT, TRUE};
+use windows::Win32::Foundation::{BOOL, COLORREF, FALSE, HANDLE, HWND, LPARAM, TRUE};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
 use windows::Win32::System::Console::{
     FillConsoleOutputAttribute, GetConsoleScreenBufferInfo, GetConsoleWindow, GetStdHandle,
@@ -32,8 +32,7 @@ use windows::Win32::System::Threading::{
     CreateProcessW, CREATE_NEW_CONSOLE, PROCESS_INFORMATION, STARTUPINFOW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, MoveWindow,
-    SetWindowTextW,
+    EnumWindows, GetWindowTextW, GetWindowThreadProcessId, MoveWindow, SetWindowTextW,
 };
 
 #[cfg(test)]
@@ -68,7 +67,7 @@ pub trait WindowsApi: Send + Sync {
     /// # Returns
     ///
     /// Number of characters copied to the buffer
-    fn get_console_title_utf16(&self, buffer: &mut [u16]) -> i32;
+    fn get_console_title(&self, buffer: &mut [u16]) -> i32;
 
     /// Gets OS version string.
     ///
@@ -191,7 +190,7 @@ pub trait WindowsApi: Send + Sync {
     /// # Returns
     ///
     /// Result indicating success or failure of the operation
-    fn set_dwm_border_color(&self, color: &COLORREF) -> windows::core::Result<()>;
+    fn set_console_border_color(&self, color: &COLORREF) -> windows::core::Result<()>;
 
     /// Writes input records to the console input buffer.
     ///
@@ -237,7 +236,7 @@ pub trait WindowsApi: Send + Sync {
     /// # Returns
     ///
     /// Handle to standard output or error
-    fn get_std_handle_console(&self) -> windows::core::Result<HANDLE>;
+    fn get_stdout_handle(&self) -> windows::core::Result<HANDLE>;
 
     /// Get console screen buffer information
     ///
@@ -331,7 +330,7 @@ impl WindowsApi for DefaultWindowsApi {
         return unsafe { SetWindowTextW(GetConsoleWindow(), &HSTRING::from(title)) };
     }
 
-    fn get_console_title_utf16(&self, buffer: &mut [u16]) -> i32 {
+    fn get_console_title(&self, buffer: &mut [u16]) -> i32 {
         return unsafe { GetWindowTextW(GetConsoleWindow(), buffer) };
     }
 
@@ -353,12 +352,12 @@ impl WindowsApi for DefaultWindowsApi {
         &self,
         attributes: CONSOLE_CHARACTER_ATTRIBUTES,
     ) -> windows::core::Result<()> {
-        return unsafe { SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE)?, attributes) };
+        return unsafe { SetConsoleTextAttribute(self.get_stdout_handle()?, attributes) };
     }
 
     fn get_console_screen_buffer_info(&self) -> windows::core::Result<CONSOLE_SCREEN_BUFFER_INFO> {
         let mut buffer_info = CONSOLE_SCREEN_BUFFER_INFO::default();
-        unsafe { GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE)?, &mut buffer_info)? };
+        unsafe { GetConsoleScreenBufferInfo(self.get_stdout_handle()?, &mut buffer_info)? };
         return Ok(buffer_info);
     }
 
@@ -371,7 +370,7 @@ impl WindowsApi for DefaultWindowsApi {
         let mut number_written = 0u32;
         unsafe {
             FillConsoleOutputAttribute(
-                GetStdHandle(STD_OUTPUT_HANDLE)?,
+                self.get_stdout_handle()?,
                 attribute,
                 length,
                 coord,
@@ -389,7 +388,7 @@ impl WindowsApi for DefaultWindowsApi {
     ) -> windows::core::Result<()> {
         return unsafe {
             ScrollConsoleScreenBufferW(
-                GetStdHandle(STD_OUTPUT_HANDLE)?,
+                self.get_stdout_handle()?,
                 &scroll_rect,
                 None,
                 scroll_target,
@@ -399,7 +398,7 @@ impl WindowsApi for DefaultWindowsApi {
     }
 
     fn set_console_cursor_position(&self, position: COORD) -> windows::core::Result<()> {
-        return unsafe { SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE)?, position) };
+        return unsafe { SetConsoleCursorPosition(self.get_stdout_handle()?, position) };
     }
 
     fn get_std_handle(&self, handle_type: STD_HANDLE) -> windows::core::Result<HANDLE> {
@@ -408,11 +407,17 @@ impl WindowsApi for DefaultWindowsApi {
 
     fn read_console_input(&self, buffer: &mut [INPUT_RECORD]) -> windows::core::Result<u32> {
         let mut number_read = 0u32;
-        unsafe { ReadConsoleInputW(GetStdHandle(STD_INPUT_HANDLE)?, buffer, &mut number_read)? };
+        unsafe {
+            ReadConsoleInputW(
+                self.get_std_handle(STD_INPUT_HANDLE)?,
+                buffer,
+                &mut number_read,
+            )?
+        };
         return Ok(number_read);
     }
 
-    fn set_dwm_border_color(&self, color: &COLORREF) -> windows::core::Result<()> {
+    fn set_console_border_color(&self, color: &COLORREF) -> windows::core::Result<()> {
         return unsafe {
             DwmSetWindowAttribute(
                 GetConsoleWindow(),
@@ -452,8 +457,8 @@ impl WindowsApi for DefaultWindowsApi {
         };
     }
 
-    fn get_std_handle_console(&self) -> windows::core::Result<HANDLE> {
-        return unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
+    fn get_stdout_handle(&self) -> windows::core::Result<HANDLE> {
+        return self.get_std_handle(STD_OUTPUT_HANDLE);
     }
 
     fn get_console_screen_buffer_info_with_handle(
@@ -585,27 +590,6 @@ pub fn build_command_line(application: &str, args: &[String]) -> Vec<u16> {
     return cmd;
 }
 
-/// Continously prints the window rectangle of the current console window.
-///
-/// Intended use for debugging only.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::print_console_rect;
-///
-/// // This will run indefinitely, printing console rectangle every 100ms
-/// print_console_rect();
-/// ```
-pub fn print_console_rect() {
-    loop {
-        let mut window_rect = RECT::default();
-        unsafe { GetWindowRect(GetConsoleWindow(), ptr::addr_of_mut!(window_rect)).unwrap() };
-        println!("{window_rect:?}");
-        thread::sleep(time::Duration::from_millis(100));
-    }
-}
-
 /// Sets the back- and foreground color of the current console window using the provided API.
 ///
 /// # Arguments
@@ -691,7 +675,7 @@ pub fn clear_screen(api: &dyn WindowsApi) {
 /// [1]: https://learn.microsoft.com/en-us/windows/win32/gdi/colorref
 pub fn set_console_border_color(api: &dyn WindowsApi, color: COLORREF) {
     if !is_windows_10(api) {
-        api.set_dwm_border_color(&color).unwrap();
+        api.set_console_border_color(&color).unwrap();
     }
 }
 
@@ -746,43 +730,8 @@ pub fn utf16_buffer_to_string(buffer: &[u16]) -> String {
 /// ```
 pub fn get_console_title(api: &dyn WindowsApi) -> String {
     let mut title: [u16; MAX_WINDOW_TITLE_LENGTH] = [0; MAX_WINDOW_TITLE_LENGTH];
-    api.get_console_title_utf16(&mut title);
+    api.get_console_title(&mut title);
     return utf16_buffer_to_string(&title);
-}
-
-/// Returns the title of the window represented by the given window handle using the provided API.
-///
-/// # Arguments
-///
-/// * `api` - The Windows API implementation to use.
-/// * `handle` - Reference to a window handle for which to retrieve the window title.
-///
-/// # Returns
-///
-/// The title of the window.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::{get_window_title, DEFAULT_WINDOWS_API};
-/// use windows::Win32::Foundation::HWND;
-///
-/// let hwnd = HWND(std::ptr::null_mut()); // Example handle
-/// let title = get_window_title(&DEFAULT_WINDOWS_API, &hwnd);
-/// println!("Window title: {}", title);
-/// ```
-pub fn get_window_title(_api: &dyn WindowsApi, handle: &HWND) -> String {
-    // For individual HWND, we use the direct Windows API since the trait is console-focused
-    let mut title: [u16; MAX_WINDOW_TITLE_LENGTH] = [0; MAX_WINDOW_TITLE_LENGTH];
-    unsafe { GetWindowTextW(*handle, &mut title) };
-    let vec: Vec<u16> = title
-        .into_iter()
-        .filter(|val| return *val != 0u16)
-        .collect();
-    return String::from_utf16(&vec).unwrap_or_else(|err| {
-        error!("{}", err);
-        panic!("Failed to get window title, invalid utf16")
-    });
 }
 
 /// Returns a [HANDLE] to the requested [STD_HANDLE] of the current process.
