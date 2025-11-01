@@ -18,21 +18,31 @@ use std::{mem, ptr};
 use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::Foundation::{BOOL, COLORREF, FALSE, HANDLE, HWND, LPARAM, TRUE};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
+use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 use windows::Win32::System::Console::{
     FillConsoleOutputAttribute, GetConsoleScreenBufferInfo, GetConsoleWindow, GetStdHandle,
     ReadConsoleInputW, SetConsoleTextAttribute, CONSOLE_CHARACTER_ATTRIBUTES,
     CONSOLE_SCREEN_BUFFER_INFO, COORD, INPUT_RECORD, INPUT_RECORD_0, STD_HANDLE, STD_INPUT_HANDLE,
     STD_OUTPUT_HANDLE,
 };
+use windows::Win32::System::Console::{GetConsoleMode, SetConsoleMode, CONSOLE_MODE};
 use windows::Win32::System::Console::{
     ScrollConsoleScreenBufferW, SetConsoleCursorPosition, CHAR_INFO, KEY_EVENT as KEY_EVENT_U32,
     SMALL_RECT,
 };
+use windows::Win32::System::Threading::PROCESS_ACCESS_RIGHTS;
 use windows::Win32::System::Threading::{
     CreateProcessW, CREATE_NEW_CONSOLE, PROCESS_INFORMATION, STARTUPINFOW,
 };
+use windows::Win32::System::Threading::{GetExitCodeProcess, OpenProcess};
+use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetWindowTextW, GetWindowThreadProcessId, MoveWindow, SetWindowTextW,
+    SYSTEM_METRICS_INDEX,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetForegroundWindow, GetWindowPlacement, SetForegroundWindow, ShowWindow, SHOW_WINDOW_CMD,
+    WINDOWPLACEMENT,
 };
 
 #[cfg(test)]
@@ -317,6 +327,177 @@ pub trait WindowsApi: Send + Sync {
     ///
     /// Window handle for the process
     fn get_window_handle_for_process(&self, process_id: u32) -> HWND;
+
+    /// Gets the console window handle.
+    ///
+    /// # Returns
+    ///
+    /// Handle to the console window
+    fn get_console_window(&self) -> HWND;
+
+    /// Gets the foreground window handle.
+    ///
+    /// # Returns
+    ///
+    /// Handle to the foreground window
+    fn get_foreground_window(&self) -> HWND;
+
+    /// Sets the foreground window.
+    ///
+    /// # Arguments
+    ///
+    /// * `hwnd` - Handle to the window to set as foreground
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or failure of the operation
+    fn set_foreground_window(&self, hwnd: HWND) -> windows::core::Result<()>;
+
+    /// Gets console mode for the specified handle.
+    ///
+    /// # Arguments
+    ///
+    /// * `handle` - Handle to the console input buffer
+    ///
+    /// # Returns
+    ///
+    /// Console mode or error
+    fn get_console_mode(&self, handle: HANDLE) -> windows::core::Result<CONSOLE_MODE>;
+
+    /// Sets console mode for the specified handle.
+    ///
+    /// # Arguments
+    ///
+    /// * `handle` - Handle to the console input buffer
+    /// * `mode` - Console mode to set
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or failure of the operation
+    fn set_console_mode(&self, handle: HANDLE, mode: CONSOLE_MODE) -> windows::core::Result<()>;
+
+    /// Gets the exit code of the specified process.
+    ///
+    /// # Arguments
+    ///
+    /// * `handle` - Handle to the process
+    ///
+    /// # Returns
+    ///
+    /// Exit code or error
+    fn get_exit_code(&self, handle: HANDLE) -> windows::core::Result<u32>;
+
+    /// Moves and resizes a window.
+    ///
+    /// # Arguments
+    ///
+    /// * `hwnd` - Handle to the window
+    /// * `x` - New x position
+    /// * `y` - New y position
+    /// * `width` - New width
+    /// * `height` - New height
+    /// * `repaint` - Whether to repaint the window
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or failure of the operation
+    fn move_window(
+        &self,
+        hwnd: HWND,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        repaint: bool,
+    ) -> windows::core::Result<()>;
+
+    /// Gets window placement information.
+    ///
+    /// # Arguments
+    ///
+    /// * `hwnd` - Handle to the window
+    ///
+    /// # Returns
+    ///
+    /// Window placement information or error
+    fn get_window_placement(&self, hwnd: HWND) -> windows::core::Result<WINDOWPLACEMENT>;
+
+    /// Shows a window in the specified state.
+    ///
+    /// # Arguments
+    ///
+    /// * `hwnd` - Handle to the window
+    /// * `cmd_show` - Show command
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or failure of the operation
+    fn show_window(&self, hwnd: HWND, cmd_show: SHOW_WINDOW_CMD) -> windows::core::Result<bool>;
+
+    /// Focuses a window using UI Automation.
+    ///
+    /// # Arguments
+    ///
+    /// * `hwnd` - Handle to the window to focus
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or failure of the operation
+    fn focus_window_with_automation(&self, hwnd: HWND) -> windows::core::Result<()>;
+
+    /// Checks if a window handle is valid.
+    ///
+    /// # Arguments
+    ///
+    /// * `hwnd` - Handle to the window to check
+    ///
+    /// # Returns
+    ///
+    /// True if the window is valid, false otherwise
+    fn is_window(&self, hwnd: HWND) -> bool;
+
+    /// Opens a process with the specified access rights.
+    ///
+    /// # Arguments
+    ///
+    /// * `access` - Access rights for the process handle
+    /// * `inherit` - Whether the handle can be inherited
+    /// * `process_id` - Process ID to open
+    ///
+    /// # Returns
+    ///
+    /// Process handle or error
+    fn open_process(
+        &self,
+        access: u32,
+        inherit: bool,
+        process_id: u32,
+    ) -> windows::core::Result<HANDLE>;
+
+    /// Initializes the COM library for use by the calling thread.
+    ///
+    /// # Arguments
+    ///
+    /// * `coinit` - Initialization options for the COM library
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or failure of the operation
+    fn initialize_com_library(
+        &self,
+        coinit: windows::Win32::System::Com::COINIT,
+    ) -> windows::core::Result<()>;
+
+    /// Gets system metrics information.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - System metric index to retrieve
+    ///
+    /// # Returns
+    ///
+    /// The requested system metric value
+    fn get_system_metrics(&self, index: SYSTEM_METRICS_INDEX) -> i32;
 }
 
 /// Default implementation of WindowsApi that calls actual Windows APIs.
@@ -536,6 +717,102 @@ impl WindowsApi for DefaultWindowsApi {
                 ptr::addr_of_mut!(*process_info),
             )
         };
+    }
+
+    fn get_console_window(&self) -> HWND {
+        return unsafe { GetConsoleWindow() };
+    }
+
+    fn get_foreground_window(&self) -> HWND {
+        return unsafe { GetForegroundWindow() };
+    }
+
+    fn set_foreground_window(&self, hwnd: HWND) -> windows::core::Result<()> {
+        let result = unsafe { SetForegroundWindow(hwnd) };
+        if result.as_bool() {
+            return Ok(());
+        } else {
+            return Err(windows::core::Error::from_win32());
+        }
+    }
+
+    fn get_console_mode(&self, handle: HANDLE) -> windows::core::Result<CONSOLE_MODE> {
+        let mut mode = CONSOLE_MODE(0u32);
+        unsafe { GetConsoleMode(handle, &mut mode)? };
+        return Ok(mode);
+    }
+
+    fn set_console_mode(&self, handle: HANDLE, mode: CONSOLE_MODE) -> windows::core::Result<()> {
+        return unsafe { SetConsoleMode(handle, mode) };
+    }
+
+    fn get_exit_code(&self, handle: HANDLE) -> windows::core::Result<u32> {
+        let mut exit_code: u32 = 0;
+        unsafe { GetExitCodeProcess(handle, &mut exit_code)? };
+        return Ok(exit_code);
+    }
+
+    fn move_window(
+        &self,
+        hwnd: HWND,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        repaint: bool,
+    ) -> windows::core::Result<()> {
+        return unsafe { MoveWindow(hwnd, x, y, width, height, repaint) };
+    }
+
+    fn get_window_placement(&self, hwnd: HWND) -> windows::core::Result<WINDOWPLACEMENT> {
+        let mut placement: WINDOWPLACEMENT = WINDOWPLACEMENT {
+            length: mem::size_of::<WINDOWPLACEMENT>() as u32,
+            ..Default::default()
+        };
+        unsafe { GetWindowPlacement(hwnd, &mut placement)? };
+        return Ok(placement);
+    }
+
+    fn show_window(&self, hwnd: HWND, cmd_show: SHOW_WINDOW_CMD) -> windows::core::Result<bool> {
+        let result = unsafe { ShowWindow(hwnd, cmd_show) };
+        return Ok(result.as_bool());
+    }
+
+    fn focus_window_with_automation(&self, hwnd: HWND) -> windows::core::Result<()> {
+        let automation: IUIAutomation =
+            unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL)? };
+        let window = unsafe { automation.ElementFromHandle(hwnd)? };
+        unsafe { window.SetFocus()? };
+        return Ok(());
+    }
+
+    fn is_window(&self, hwnd: HWND) -> bool {
+        return unsafe { windows::Win32::UI::WindowsAndMessaging::IsWindow(Some(hwnd)).as_bool() };
+    }
+
+    fn open_process(
+        &self,
+        access: u32,
+        inherit: bool,
+        process_id: u32,
+    ) -> windows::core::Result<HANDLE> {
+        return unsafe { OpenProcess(PROCESS_ACCESS_RIGHTS(access), inherit, process_id) };
+    }
+
+    fn initialize_com_library(
+        &self,
+        coinit: windows::Win32::System::Com::COINIT,
+    ) -> windows::core::Result<()> {
+        let result = unsafe { windows::Win32::System::Com::CoInitializeEx(None, coinit) };
+        if result.is_ok() {
+            return Ok(());
+        } else {
+            return Err(windows::core::Error::from(result));
+        }
+    }
+
+    fn get_system_metrics(&self, index: SYSTEM_METRICS_INDEX) -> i32 {
+        return unsafe { windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(index) };
     }
 }
 
