@@ -90,7 +90,9 @@ jobs:
       run: |
         # Run tests with coverage - Total coverage
         cargo llvm-cov clean --workspace
-        cargo llvm-cov --all-features --workspace --cobertura --output-path coverage.xml
+        cargo llvm-cov --all-features --workspace --no-report
+        cargo llvm-cov report --cobertura --output-path coverage.xml
+        cargo llvm-cov report --html --output-path coverage_html
 
     - name: Upload Coverage XML Data
       uses: &upload-artifact-action
@@ -98,7 +100,14 @@ jobs:
       with:
         name: coverage-xml-data
         path: coverage.xml
-        retention-days: 2
+        retention-days: 1
+
+    - name: Upload Coverage HTML Report
+      uses: *upload-artifact-action
+      with:
+        name: coverage-html-report
+        path: coverage_html/
+        retention-days: 90
 
   tests-docs:
     runs-on: *runner-version

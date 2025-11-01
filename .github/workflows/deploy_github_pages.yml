@@ -1,0 +1,58 @@
+name: Deploy GitHub Pages
+
+on:
+  workflow_run:
+    workflows: ["Post-Submit CI"]
+    branches: [main]
+    types:
+      - completed
+
+jobs:
+  build-and-deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: windows-latest
+    permissions:
+      id-token: write
+      pages: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      RUST_VERSION: 1.88.0
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Configure correct rust version
+      run: rustup update $RUST_VERSION && rustup default $RUST_VERSION
+
+    - name: Build docs
+      run: cargo docs
+
+    - name: Download Coverage HTML Report
+      uses: actions/download-artifact@v4
+      with:
+        name: coverage-html-report
+        path: coverage_html/
+        run-id: ${{ github.event.workflow_run.id }}
+
+    - name: Create unified site structure
+      shell: bash
+      run: |
+        mkdir -p unified_site
+
+        mkdir -p unified_site/docs
+        cp -r target/doc/* unified_site/docs/
+
+        cp -r coverage_html unified_site/coverage
+
+        cp templates/github-pages-index.html unified_site/index.html
+
+    - name: Upload unified site
+      uses: actions/upload-pages-artifact@v3
+      with:
+        retention-days: 1
+        path: unified_site/
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
