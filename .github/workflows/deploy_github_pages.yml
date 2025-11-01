@@ -50,6 +50,8 @@ jobs:
         cp templates/github-pages-index.html unified_site/index.html
         cp res/csshw.ico unified_site/favicon.ico
 
+        echo "<meta http-equiv=\"refresh\" content=\"0; url=csshw_lib/index.html\">" > unified_site/docs/index.html
+
     - name: Upload unified site
       uses: actions/upload-pages-artifact@v3
       with:
