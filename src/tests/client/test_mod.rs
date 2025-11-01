@@ -15,7 +15,7 @@ use crate::client::{
 };
 use crate::serde::SERIALIZED_INPUT_RECORD_0_LENGTH;
 use crate::utils::config::ClientConfig;
-use crate::utils::MockWindowsApi;
+use crate::utils::windows::MockWindowsApi;
 
 // Test constants - consistent dummy values used throughout tests
 const TEST_USERNAME: &str = "testuser";

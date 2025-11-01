@@ -16,14 +16,16 @@ use std::{thread, time};
 use crate::get_console_window_handle;
 use crate::utils::config::{Cluster, DaemonConfig};
 use crate::utils::debug::StringRepr;
-use crate::utils::{clear_screen, set_console_color};
+use crate::utils::windows::{clear_screen, set_console_color};
 use crate::{
     serde::{serialization::serialize_input_record_0, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
     utils::{
-        arrange_console,
         constants::{PIPE_NAME, PKG_NAME},
-        get_console_input_buffer, read_keyboard_input, set_console_border_color, set_console_title,
+        windows::{
+            arrange_console, get_console_input_buffer, read_keyboard_input,
+            set_console_border_color, set_console_title,
+        },
     },
     WindowsSettingsDefaultTerminalApplicationGuard,
 };

@@ -24,7 +24,7 @@ pub mod daemon;
 pub mod serde;
 pub mod utils;
 
-use utils::{WindowsApi, DEFAULT_WINDOWS_API};
+use utils::windows::{WindowsApi, DEFAULT_WINDOWS_API};
 
 /// CLSID identifying `conhost.exe` in the registry.
 ///
