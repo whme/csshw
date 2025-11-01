@@ -12,9 +12,7 @@ use std::time::Duration;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::utils::config::ClientConfig;
-use crate::utils::windows::{
-    get_console_title_with_api, set_console_title_with_api, WindowsApi, DEFAULT_WINDOWS_API,
-};
+use crate::utils::windows::{get_console_title, WindowsApi, DEFAULT_WINDOWS_API};
 use ssh2_config::{ParseRule, SshConfig};
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::process::{Child, Command};
@@ -440,8 +438,11 @@ pub async fn main_with_api(
         async move {
             loop {
                 // Set the console title (child might overwrite it, so we have to keep checking it)
-                if console_title != get_console_title_with_api(api) {
-                    set_console_title_with_api(api, console_title.as_str());
+                if console_title != get_console_title(api) {
+                    api.set_console_title(console_title.as_str())
+                        .unwrap_or_else(|err| {
+                            error!("Failed to set console title: {}", err);
+                        });
                 }
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }

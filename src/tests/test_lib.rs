@@ -10,9 +10,8 @@ use windows::Win32::System::Threading::PROCESS_INFORMATION;
 
 use crate::utils::windows::MockWindowsApi;
 use crate::{
-    create_process_with_command_line_api, init_logger_with_fs, is_launched_from_gui_with_api,
-    spawn_console_process_with_api, MockFileSystem, MockRegistry,
-    WindowsSettingsDefaultTerminalApplicationGuard, CLSID_CONHOST,
+    create_process, init_logger_with_fs, is_launched_from_gui, spawn_console_process,
+    MockFileSystem, MockRegistry, WindowsSettingsDefaultTerminalApplicationGuard, CLSID_CONHOST,
     DEFAULT_TERMINAL_APP_REGISTRY_PATH, DELEGATION_CONSOLE, DELEGATION_TERMINAL,
 };
 
@@ -296,7 +295,7 @@ mod create_process_api_test {
             .times(1)
             .returning(|_, _, _, _| return Ok(()));
 
-        let result = create_process_with_command_line_api(&mock_api, application, &command_line);
+        let result = create_process(&mock_api, application, &command_line);
 
         assert!(result.is_some());
         let process_info = result.unwrap();
@@ -318,7 +317,7 @@ mod create_process_api_test {
             .times(1)
             .returning(|_, _, _, _| return Err(windows::core::Error::from_win32()));
 
-        let result = create_process_with_command_line_api(&mock_api, application, &command_line);
+        let result = create_process(&mock_api, application, &command_line);
 
         assert!(result.is_none());
     }
@@ -336,7 +335,7 @@ mod create_process_api_test {
             .times(1)
             .returning(|_, _, _, _| return Ok(()));
 
-        let result = create_process_with_command_line_api(&mock_api, application, &command_line);
+        let result = create_process(&mock_api, application, &command_line);
 
         assert!(result.is_some());
     }
@@ -372,7 +371,7 @@ mod spawn_process_test {
                 });
             });
 
-        let result = spawn_console_process_with_api(
+        let result = spawn_console_process(
             &mock_api,
             "cmd.exe",
             vec!["/c".to_string(), "echo".to_string(), "test".to_string()],
@@ -396,8 +395,7 @@ mod spawn_process_test {
             .times(1)
             .returning(|_, _| return None);
 
-        let result =
-            spawn_console_process_with_api(&mock_api, "nonexistent.exe", vec!["arg1".to_string()]);
+        let result = spawn_console_process(&mock_api, "nonexistent.exe", vec!["arg1".to_string()]);
 
         assert!(result.is_none());
     }
@@ -421,7 +419,7 @@ mod spawn_process_test {
                 });
             });
 
-        let result = spawn_console_process_with_api(&mock_api, "notepad.exe", vec![]);
+        let result = spawn_console_process(&mock_api, "notepad.exe", vec![]);
 
         assert!(result.is_some());
         let process_info = result.unwrap();
@@ -453,7 +451,7 @@ mod spawn_process_test {
                 });
             });
 
-        let result = spawn_console_process_with_api(&mock_api, "ssh.exe", args);
+        let result = spawn_console_process(&mock_api, "ssh.exe", args);
 
         assert!(result.is_some());
         let process_info = result.unwrap();
@@ -584,7 +582,7 @@ mod gui_launch_detection_test {
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO;
 
-    /// Tests is_launched_from_gui_with_api with cursor at origin (GUI launch).
+    /// Tests is_launched_from_gui with cursor at origin (GUI launch).
     /// Validates detection of GUI launch when console cursor is at (0,0).
     #[test]
     fn test_is_launched_from_gui_cursor_at_origin() {
@@ -605,11 +603,11 @@ mod gui_launch_detection_test {
                 return Ok(csbi);
             });
 
-        let result = is_launched_from_gui_with_api(&mock_windows_api);
+        let result = is_launched_from_gui(&mock_windows_api);
         assert!(result);
     }
 
-    /// Tests is_launched_from_gui_with_api with cursor not at origin (console launch).
+    /// Tests is_launched_from_gui with cursor not at origin (console launch).
     /// Validates detection of console launch when cursor has moved from (0,0).
     #[test]
     fn test_is_launched_from_gui_cursor_moved() {
@@ -630,11 +628,11 @@ mod gui_launch_detection_test {
                 return Ok(csbi);
             });
 
-        let result = is_launched_from_gui_with_api(&mock_windows_api);
+        let result = is_launched_from_gui(&mock_windows_api);
         assert!(!result);
     }
 
-    /// Tests is_launched_from_gui_with_api with GetStdHandle failure.
+    /// Tests is_launched_from_gui with GetStdHandle failure.
     /// Validates proper error handling when GetStdHandle fails.
     #[test]
     fn test_is_launched_from_gui_get_std_handle_failure() {
@@ -645,11 +643,11 @@ mod gui_launch_detection_test {
             .times(1)
             .returning(|| return Err(windows::core::Error::from_win32()));
 
-        let result = is_launched_from_gui_with_api(&mock_windows_api);
+        let result = is_launched_from_gui(&mock_windows_api);
         assert!(!result);
     }
 
-    /// Tests is_launched_from_gui_with_api with GetConsoleScreenBufferInfo failure.
+    /// Tests is_launched_from_gui with GetConsoleScreenBufferInfo failure.
     /// Validates proper error handling when GetConsoleScreenBufferInfo fails.
     #[test]
     fn test_is_launched_from_gui_get_console_info_failure() {
@@ -665,7 +663,7 @@ mod gui_launch_detection_test {
             .times(1)
             .returning(|_| return Err(windows::core::Error::from_win32()));
 
-        let result = is_launched_from_gui_with_api(&mock_windows_api);
+        let result = is_launched_from_gui(&mock_windows_api);
         assert!(!result);
     }
 }

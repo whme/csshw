@@ -16,7 +16,7 @@ use std::{thread, time};
 use crate::get_console_window_handle;
 use crate::utils::config::{Cluster, DaemonConfig};
 use crate::utils::debug::StringRepr;
-use crate::utils::windows::{clear_screen, set_console_color};
+use crate::utils::windows::{clear_screen, set_console_color, WindowsApi, DEFAULT_WINDOWS_API};
 use crate::{
     serde::{serialization::serialize_input_record_0, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
@@ -24,7 +24,7 @@ use crate::{
         constants::{PIPE_NAME, PKG_NAME},
         windows::{
             arrange_console, get_console_input_buffer, read_keyboard_input,
-            set_console_border_color, set_console_title,
+            set_console_border_color,
         },
     },
     WindowsSettingsDefaultTerminalApplicationGuard,
@@ -170,9 +170,14 @@ impl Daemon<'_> {
     /// Once all client windows have successfully started the daemon console window
     /// is moved to the foreground and receives focus.
     async fn launch(mut self) {
-        set_console_title(format!("{PKG_NAME} daemon").as_str());
-        set_console_color(CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color));
-        set_console_border_color(COLORREF(0x000000FF));
+        DEFAULT_WINDOWS_API
+            .set_console_title(format!("{PKG_NAME} daemon").as_str())
+            .unwrap();
+        set_console_color(
+            &DEFAULT_WINDOWS_API,
+            CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color),
+        );
+        set_console_border_color(&DEFAULT_WINDOWS_API, COLORREF(0x000000FF));
 
         toggle_processed_input_mode(); // Disable processed input mode
 
@@ -184,7 +189,10 @@ impl Daemon<'_> {
         self.arrange_daemon_console(&workspace_area);
 
         // Looks like on windows 10 re-arranging the console resets the console output buffer
-        set_console_color(CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color));
+        set_console_color(
+            &DEFAULT_WINDOWS_API,
+            CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color),
+        );
 
         let mut clients = Arc::new(Mutex::new(
             launch_clients(
@@ -263,7 +271,7 @@ impl Daemon<'_> {
         loop {
             self.handle_input_record(
                 &sender,
-                read_keyboard_input(),
+                read_keyboard_input(&DEFAULT_WINDOWS_API),
                 clients,
                 workspace_area,
                 &mut servers,
@@ -360,7 +368,7 @@ impl Daemon<'_> {
     ) {
         if self.control_mode_is_active(input_record) {
             if self.control_mode_state == ControlModeState::Initiated {
-                clear_screen();
+                clear_screen(&DEFAULT_WINDOWS_API);
                 println!("Control Mode (Esc to exit)");
                 println!("[c]reate window(s), [r]etile, copy active [h]ostname(s)");
                 self.control_mode_state = ControlModeState::Active;
@@ -385,7 +393,7 @@ impl Daemon<'_> {
                     // TODO: trigger input on selected windows
                 }
                 (VK_C, 0) => {
-                    clear_screen();
+                    clear_screen(&DEFAULT_WINDOWS_API);
                     // TODO: make ESC abort
                     println!("Hostname(s) or cluster tag(s): (leave empty to abort)");
                     toggle_processed_input_mode(); // As it was disabled before, this enables it again
@@ -506,7 +514,7 @@ impl Daemon<'_> {
 
     /// Clears the console screen and prints the default daemon instructions.
     fn print_instructions(&self) {
-        clear_screen();
+        clear_screen(&DEFAULT_WINDOWS_API);
         println!("Input to terminal: (Ctrl-A to enter control mode)");
     }
 
@@ -569,7 +577,7 @@ impl Daemon<'_> {
             self.config.height,
             workspace_area,
         );
-        arrange_console(x, y, width, height);
+        arrange_console(&DEFAULT_WINDOWS_API, x, y, width, height);
     }
 }
 
@@ -751,7 +759,12 @@ fn launch_client_console(
     client_args.push("client".to_string());
     client_args.extend(vec!["--".to_string(), actual_host.to_string()]);
 
-    let process_info = spawn_console_process(&format!("{PKG_NAME}.exe"), client_args);
+    let process_info = spawn_console_process(
+        &DEFAULT_WINDOWS_API,
+        &format!("{PKG_NAME}.exe"),
+        client_args,
+    )
+    .expect("Failed to create process");
     let client_window_handle = get_console_window_handle(process_info.dwProcessId);
     let process_handle = unsafe {
         OpenProcess(PROCESS_QUERY_INFORMATION, false, process_info.dwProcessId).unwrap_or_else(
