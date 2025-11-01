@@ -7,7 +7,7 @@
 use std::cmp::max;
 use std::collections::BTreeMap;
 use std::{
-    io, mem,
+    io,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -37,29 +37,17 @@ use tokio::{
     sync::broadcast::{self, Receiver, Sender},
     task::JoinHandle,
 };
-use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
-};
 use windows::Win32::System::Console::{
     CONSOLE_CHARACTER_ATTRIBUTES, INPUT_RECORD_0, LEFT_CTRL_PRESSED, RIGHT_CTRL_PRESSED,
 };
 
-use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     VIRTUAL_KEY, VK_A, VK_C, VK_E, VK_ESCAPE, VK_H, VK_R, VK_T,
 };
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowPlacement, IsWindow, MoveWindow, SetForegroundWindow, ShowWindow,
-    SW_RESTORE, SW_SHOWMINIMIZED, WINDOWPLACEMENT,
-};
+use windows::Win32::UI::WindowsAndMessaging::{SW_RESTORE, SW_SHOWMINIMIZED};
 use windows::Win32::{
     Foundation::{COLORREF, HANDLE, HWND, STILL_ACTIVE},
-    System::{
-        Console::{
-            GetConsoleMode, GetConsoleWindow, SetConsoleMode, CONSOLE_MODE, ENABLE_PROCESSED_INPUT,
-        },
-        Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_INFORMATION},
-    },
+    System::{Console::ENABLE_PROCESSED_INPUT, Threading::PROCESS_QUERY_INFORMATION},
 };
 
 use self::workspace::WorkspaceArea;
@@ -107,9 +95,9 @@ impl PartialEq for HWNDWrapper {
 ///
 /// The [HWND] is wrapped in a `HWNDWrapper` so that
 /// we can pass it inbetween threads.
-fn get_console_window_wrapper() -> HWNDWrapper {
+fn get_console_window_wrapper(api: &dyn WindowsApi) -> HWNDWrapper {
     return HWNDWrapper {
-        hwdn: unsafe { GetConsoleWindow() },
+        hwdn: api.get_console_window(),
     };
 }
 
@@ -117,9 +105,9 @@ fn get_console_window_wrapper() -> HWNDWrapper {
 ///
 /// The [HWND] is wrapped in a `HWNDWrapper` so that
 /// we can pass it inbetween threads.
-fn get_foreground_window_wrapper() -> HWNDWrapper {
+fn get_foreground_window_wrapper(api: &dyn WindowsApi) -> HWNDWrapper {
     return HWNDWrapper {
-        hwdn: unsafe { GetForegroundWindow() },
+        hwdn: api.get_foreground_window(),
     };
 }
 
@@ -182,7 +170,9 @@ impl Daemon<'_> {
         toggle_processed_input_mode(); // Disable processed input mode
 
         // Initialize the COM library so we can use UI automation
-        unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).unwrap() };
+        DEFAULT_WINDOWS_API
+            .initialize_com_library(windows::Win32::System::Com::COINIT_MULTITHREADED)
+            .unwrap();
 
         let workspace_area = workspace::get_workspace_area(self.config.height);
 
@@ -208,9 +198,9 @@ impl Daemon<'_> {
         ));
 
         // Now that all clients started, focus the daemon console again.
-        let daemon_console = unsafe { GetConsoleWindow() };
-        let _ = unsafe { SetForegroundWindow(daemon_console) };
-        focus_window(daemon_console);
+        let daemon_console = DEFAULT_WINDOWS_API.get_console_window();
+        let _ = DEFAULT_WINDOWS_API.set_foreground_window(daemon_console);
+        let _ = DEFAULT_WINDOWS_API.focus_window_with_automation(daemon_console);
 
         self.print_instructions();
         self.run(&mut clients, &workspace_area).await;
@@ -254,9 +244,10 @@ impl Daemon<'_> {
         tokio::spawn(async move {
             loop {
                 clients_clone.lock().unwrap().retain(|client| {
-                    let mut exit_code: u32 = 0;
-                    let _ = unsafe { GetExitCodeProcess(client.process_handle, &mut exit_code) };
-                    return exit_code == STILL_ACTIVE.0 as u32;
+                    match DEFAULT_WINDOWS_API.get_exit_code(client.process_handle) {
+                        Ok(exit_code) => return exit_code == STILL_ACTIVE.0 as u32,
+                        Err(_) => return false, // Process handle is invalid, remove client
+                    }
                 });
                 if clients_clone.lock().unwrap().is_empty() {
                     // All clients have exited, exit the daemon as well
@@ -433,15 +424,15 @@ impl Daemon<'_> {
                     self.rearrange_client_windows(&clients.lock().unwrap(), workspace_area);
                     self.arrange_daemon_console(workspace_area);
                     // Focus the daemon console again.
-                    let daemon_window = unsafe { GetConsoleWindow() };
-                    let _ = unsafe { SetForegroundWindow(daemon_window) };
-                    focus_window(daemon_window);
+                    let daemon_window = DEFAULT_WINDOWS_API.get_console_window();
+                    let _ = DEFAULT_WINDOWS_API.set_foreground_window(daemon_window);
+                    let _ = DEFAULT_WINDOWS_API.focus_window_with_automation(daemon_window);
                     self.quit_control_mode();
                 }
                 (VK_H, 0) => {
                     let mut active_hostnames: Vec<String> = vec![];
                     for client in clients.lock().unwrap().iter() {
-                        if unsafe { IsWindow(Some(client.window_handle)).as_bool() } {
+                        if DEFAULT_WINDOWS_API.is_window(client.window_handle) {
                             active_hostnames.push(client.hostname.clone());
                         }
                     }
@@ -542,10 +533,12 @@ impl Daemon<'_> {
     ) {
         let mut valid_clients = Vec::new();
         for client in clients.iter() {
-            let mut exit_code: u32 = 0;
-            let _ = unsafe { GetExitCodeProcess(client.process_handle, &mut exit_code) };
+            let exit_code = match DEFAULT_WINDOWS_API.get_exit_code(client.process_handle) {
+                Ok(code) => code,
+                Err(_) => continue, // Process handle is invalid, skip client
+            };
             if exit_code == STILL_ACTIVE.0 as u32
-                && unsafe { IsWindow(Some(client.window_handle)).as_bool() }
+                && DEFAULT_WINDOWS_API.is_window(client.window_handle)
             {
                 valid_clients.push(client);
             }
@@ -591,13 +584,9 @@ impl Daemon<'_> {
 /// <https://learn.microsoft.com/en-us/windows/console/ctrl-c-and-ctrl-break-signals>
 fn toggle_processed_input_mode() {
     let handle = get_console_input_buffer();
-    let mut mode = CONSOLE_MODE(0u32);
-    unsafe {
-        GetConsoleMode(handle, &mut mode).unwrap();
-    }
-    unsafe {
-        SetConsoleMode(handle, CONSOLE_MODE(mode.0 ^ ENABLE_PROCESSED_INPUT.0)).unwrap();
-    }
+    let mode = DEFAULT_WINDOWS_API.get_console_mode(handle).unwrap();
+    let new_mode = windows::Win32::System::Console::CONSOLE_MODE(mode.0 ^ ENABLE_PROCESSED_INPUT.0);
+    let _ = DEFAULT_WINDOWS_API.set_console_mode(handle, new_mode);
 }
 
 /// Resolve cluster tags into hostnames
@@ -766,16 +755,14 @@ fn launch_client_console(
     )
     .expect("Failed to create process");
     let client_window_handle = get_console_window_handle(process_info.dwProcessId);
-    let process_handle = unsafe {
-        OpenProcess(PROCESS_QUERY_INFORMATION, false, process_info.dwProcessId).unwrap_or_else(
-            |err| {
-                panic!(
-                    "Failed to open process handle for process {}: {}",
-                    process_info.dwProcessId, err
-                );
-            },
-        )
-    };
+    let process_handle = DEFAULT_WINDOWS_API
+        .open_process(PROCESS_QUERY_INFORMATION.0, false, process_info.dwProcessId)
+        .unwrap_or_else(|err| {
+            panic!(
+                "Failed to open process handle for process {}: {}",
+                process_info.dwProcessId, err
+            );
+        });
 
     arrange_client_window(
         &client_window_handle,
@@ -896,20 +883,22 @@ fn arrange_client_window(
         workspace_area,
         aspect_ratio_adjustment,
     );
-    unsafe {
-        // Since windows update 10.0.19041.5072 it can happen that a client windows rendering is broken
-        // after a move+resize. Why is unclear, but resizing again does solve the issue.
-        // We first make the window 1 pixel in each dimension too small and imediately fix it.
-        // To reduce overhead we do not repaint the window the first time.
-        MoveWindow(*handle, x, y, width - 1, height - 1, false).unwrap_or_else(|err| {
+    // Since windows update 10.0.19041.5072 it can happen that a client windows rendering is broken
+    // after a move+resize. Why is unclear, but resizing again does solve the issue.
+    // We first make the window 1 pixel in each dimension too small and imediately fix it.
+    // To reduce overhead we do not repaint the window the first time.
+    DEFAULT_WINDOWS_API
+        .move_window(*handle, x, y, width - 1, height - 1, false)
+        .unwrap_or_else(|err| {
             error!("{}", err);
             panic!("Failed to move window",)
         });
-        MoveWindow(*handle, x, y, width, height, true).unwrap_or_else(|err| {
+    DEFAULT_WINDOWS_API
+        .move_window(*handle, x, y, width, height, true)
+        .unwrap_or_else(|err| {
             error!("{}", err);
             panic!("Failed to move window",)
         });
-    }
 }
 
 /// Calculates the position and dimensions for a client window given its index,
@@ -1034,11 +1023,11 @@ fn get_console_rect(
 ///                                     background thread.
 fn ensure_client_z_order_in_sync_with_daemon(clients: Arc<Mutex<Vec<Client>>>) {
     tokio::spawn(async move {
-        let daemon_handle = get_console_window_wrapper();
-        let mut previous_foreground_window = get_foreground_window_wrapper();
+        let daemon_handle = get_console_window_wrapper(&DEFAULT_WINDOWS_API);
+        let mut previous_foreground_window = get_foreground_window_wrapper(&DEFAULT_WINDOWS_API);
         loop {
             tokio::time::sleep(Duration::from_millis(1)).await;
-            let foreground_window = get_foreground_window_wrapper();
+            let foreground_window = get_foreground_window_wrapper(&DEFAULT_WINDOWS_API);
             if previous_foreground_window == foreground_window {
                 continue;
             }
@@ -1074,30 +1063,18 @@ fn defer_windows(clients: &[Client], daemon_handle: &HWND) {
         window_handle: *daemon_handle,
         process_handle: HANDLE::default(),
     }]) {
-        // First restore if window is minimized
-        let mut placement: WINDOWPLACEMENT = WINDOWPLACEMENT {
-            length: mem::size_of::<WINDOWPLACEMENT>() as u32,
-            ..Default::default()
-        };
-        match unsafe { GetWindowPlacement(client.window_handle, &mut placement) } {
-            Ok(_) => {}
+        let placement = match DEFAULT_WINDOWS_API.get_window_placement(client.window_handle) {
+            Ok(placement) => placement,
             Err(_) => {
                 continue;
             }
-        }
+        };
+        // First restore if window is minimized
         if placement.showCmd == SW_SHOWMINIMIZED.0.try_into().unwrap() {
-            let _ = unsafe { ShowWindow(client.window_handle, SW_RESTORE) };
+            let _ = DEFAULT_WINDOWS_API.show_window(client.window_handle, SW_RESTORE);
         }
         // Then bring it to front using UI automation
-        focus_window(client.window_handle);
-    }
-}
-
-fn focus_window(handle: HWND) {
-    let automation: IUIAutomation =
-        unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL) }.unwrap();
-    if let Ok(window) = unsafe { automation.ElementFromHandle(handle) } {
-        unsafe { window.SetFocus() }.unwrap();
+        let _ = DEFAULT_WINDOWS_API.focus_window_with_automation(client.window_handle);
     }
 }
 
