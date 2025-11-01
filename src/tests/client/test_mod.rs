@@ -11,9 +11,11 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::client::{
     build_ssh_arguments, is_alt_shift_c_combination, is_keep_alive_packet, resolve_username,
+    write_console_input,
 };
 use crate::serde::SERIALIZED_INPUT_RECORD_0_LENGTH;
 use crate::utils::config::ClientConfig;
+use crate::utils::MockWindowsApi;
 
 // Test constants - consistent dummy values used throughout tests
 const TEST_USERNAME: &str = "testuser";
@@ -417,5 +419,100 @@ fn test_build_ssh_arguments() {
             "Failed test case: {}",
             test_case.description
         );
+    }
+}
+
+/// Test case structure for write_console_input function.
+struct WriteConsoleInputTestCase {
+    /// Whether the key is pressed down.
+    key_down: bool,
+    /// The repeat count for the key event.
+    repeat_count: u16,
+    /// The virtual key code.
+    virtual_key_code: u16,
+    /// The Unicode character.
+    unicode_char: u16,
+    /// The control key state flags.
+    control_key_state: u32,
+    /// The expected result from write_console_input API call.
+    api_result: Result<u32, windows::core::Error>,
+}
+
+#[test]
+fn test_write_console_input() {
+    let test_cases = [
+        // Test case 1: Successful write (1 event written)
+        WriteConsoleInputTestCase {
+            key_down: true,
+            repeat_count: 1,
+            virtual_key_code: VK_C.0,
+            unicode_char: b'c' as u16,
+            control_key_state: 0,
+            api_result: Ok(1),
+        },
+        // Test case 2: Zero events written (failure case)
+        WriteConsoleInputTestCase {
+            key_down: false, // Key up event
+            repeat_count: 2,
+            virtual_key_code: 0x41, // 'A' key
+            unicode_char: b'A' as u16,
+            control_key_state: SHIFT_PRESSED,
+            api_result: Ok(0),
+        },
+        // Test case 3: API error case
+        WriteConsoleInputTestCase {
+            key_down: false, // Key up event
+            repeat_count: 3,
+            virtual_key_code: 0x20, // Space key
+            unicode_char: b' ' as u16,
+            control_key_state: LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED,
+            api_result: Err(windows::core::Error::from_win32()),
+        },
+    ];
+
+    for test_case in test_cases {
+        // Create test input record with the specific parameters for this test case
+        let test_input_record = windows::Win32::System::Console::INPUT_RECORD_0 {
+            KeyEvent: KEY_EVENT_RECORD {
+                bKeyDown: test_case.key_down.into(),
+                wRepeatCount: test_case.repeat_count,
+                wVirtualKeyCode: test_case.virtual_key_code,
+                wVirtualScanCode: 0,
+                uChar: KEY_EVENT_RECORD_0 {
+                    UnicodeChar: test_case.unicode_char,
+                },
+                dwControlKeyState: test_case.control_key_state,
+            },
+        };
+
+        // Set up mock API with expectations specific to this test case
+        let mut mock_api = MockWindowsApi::new();
+        mock_api
+            .expect_write_console_input()
+            .times(1)
+            .withf(move |buffer, _| {
+                // Verify the buffer contains exactly one INPUT_RECORD with correct values
+                return buffer.len() == 1
+                    && buffer[0].EventType == windows::Win32::System::Console::KEY_EVENT as u16
+                    && unsafe { buffer[0].Event.KeyEvent.bKeyDown.as_bool() }
+                        == test_case.key_down
+                    && unsafe { buffer[0].Event.KeyEvent.wVirtualKeyCode }
+                        == test_case.virtual_key_code
+                    && unsafe { buffer[0].Event.KeyEvent.wRepeatCount } == test_case.repeat_count
+                    && unsafe { buffer[0].Event.KeyEvent.uChar.UnicodeChar }
+                        == test_case.unicode_char
+                    && unsafe { buffer[0].Event.KeyEvent.dwControlKeyState }
+                        == test_case.control_key_state;
+            })
+            .returning(move |_, number_written| match &test_case.api_result {
+                Ok(count) => {
+                    *number_written = *count;
+                    return Ok(());
+                }
+                Err(err) => return Err(err.clone()),
+            });
+
+        // Execute the function under test
+        write_console_input(&mock_api, test_input_record);
     }
 }

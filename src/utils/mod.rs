@@ -34,7 +34,7 @@ use self::constants::MAX_WINDOW_TITLE_LENGTH;
 
 /// Trait for Windows API operations to enable mocking in tests.
 #[cfg_attr(test, automock)]
-pub trait WindowsApi {
+pub trait WindowsApi: Send + Sync {
     /// Sets the console window title.
     fn set_console_title(&self, title: &str) -> windows::core::Result<()>;
 
@@ -84,6 +84,23 @@ pub trait WindowsApi {
 
     /// Sets DWM window attribute for border color.
     fn set_dwm_border_color(&self, color: &COLORREF) -> windows::core::Result<()>;
+
+    /// Writes input records to the console input buffer.
+    fn write_console_input(
+        &self,
+        buffer: &[INPUT_RECORD],
+        number_written: &mut u32,
+    ) -> windows::core::Result<()>;
+
+    /// Gets the last Windows error code.
+    fn get_last_error(&self) -> u32;
+
+    /// Generates a console control event.
+    fn generate_console_ctrl_event(
+        &self,
+        ctrl_event: u32,
+        process_group_id: u32,
+    ) -> windows::core::Result<()>;
 }
 
 /// Default implementation of WindowsApi that calls actual Windows APIs.
@@ -185,10 +202,39 @@ impl WindowsApi for DefaultWindowsApi {
             )
         };
     }
+
+    fn write_console_input(
+        &self,
+        buffer: &[INPUT_RECORD],
+        number_written: &mut u32,
+    ) -> windows::core::Result<()> {
+        unsafe {
+            windows::Win32::System::Console::WriteConsoleInputW(
+                GetStdHandle(STD_INPUT_HANDLE)?,
+                buffer,
+                number_written,
+            )?
+        };
+        return Ok(());
+    }
+
+    fn get_last_error(&self) -> u32 {
+        return unsafe { windows::Win32::Foundation::GetLastError().0 };
+    }
+
+    fn generate_console_ctrl_event(
+        &self,
+        ctrl_event: u32,
+        process_group_id: u32,
+    ) -> windows::core::Result<()> {
+        return unsafe {
+            windows::Win32::System::Console::GenerateConsoleCtrlEvent(ctrl_event, process_group_id)
+        };
+    }
 }
 
 /// Global instance of the Windows API implementation.
-static DEFAULT_WINDOWS_API: DefaultWindowsApi = DefaultWindowsApi;
+pub static DEFAULT_WINDOWS_API: DefaultWindowsApi = DefaultWindowsApi;
 
 pub mod config;
 pub mod constants;

@@ -12,15 +12,14 @@ use std::time::Duration;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::utils::config::ClientConfig;
-use crate::utils::{get_console_input_buffer, get_console_title, set_console_title};
+use crate::utils::WindowsApi;
 use ssh2_config::{ParseRule, SshConfig};
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::process::{Child, Command};
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
-use windows::Win32::Foundation::GetLastError;
 use windows::Win32::System::Console::{
-    GenerateConsoleCtrlEvent, WriteConsoleInputW, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT,
-    KEY_EVENT_RECORD, LEFT_ALT_PRESSED, RIGHT_ALT_PRESSED, SHIFT_PRESSED,
+    INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT, KEY_EVENT_RECORD, LEFT_ALT_PRESSED, RIGHT_ALT_PRESSED,
+    SHIFT_PRESSED,
 };
 
 use crate::{
@@ -56,33 +55,28 @@ enum ReadWriteResult {
     Disconnect,
 }
 
-/// Write the given [INPUT_RECORD_0] to the console input buffer.
+/// Write the given [INPUT_RECORD_0] to the console input buffer using the provided API.
 ///
 /// # Arguments
 ///
+/// * `api` - The Windows API implementation to use.
 /// * `input_record` - The [INPUT_RECORD_0].`KeyEvent` input record to write.
-fn write_console_input(input_record: INPUT_RECORD_0) {
+fn write_console_input(api: &dyn WindowsApi, input_record: INPUT_RECORD_0) {
     let buffer: [INPUT_RECORD; 1] = [INPUT_RECORD {
         EventType: KEY_EVENT as u16,
         Event: input_record,
     }];
-    let mut nb_of_events_written: u32 = 0;
-    match unsafe {
-        WriteConsoleInputW(
-            get_console_input_buffer(),
-            &buffer,
-            &mut nb_of_events_written,
-        )
-    } {
+    let mut nb_of_events_written = 0u32;
+    match api.write_console_input(&buffer, &mut nb_of_events_written) {
         Ok(_) => {
             if nb_of_events_written == 0 {
                 error!("Failed to write console input");
-                error!("{:?}", unsafe { GetLastError() });
+                error!("{:?}", api.get_last_error());
             }
         }
         Err(_) => {
             error!("Failed to write console input");
-            error!("{:?}", unsafe { GetLastError() });
+            error!("{:?}", api.get_last_error());
         }
     };
 }
@@ -190,7 +184,7 @@ async fn launch_ssh_process(
     return child;
 }
 
-/// Read all available [INPUT_RECORD_0] from the named pipe and write them to the console input buffer.
+/// Read all available [INPUT_RECORD_0] from the named pipe and write them to the console input buffer using the provided API.
 ///
 /// This function also extracts the [KEY_EVENT_RECORD]s, making them available to the caller via
 /// `ReadWriteResult::Success` and handles incomple reads from the named pipe via the internal buffer.
@@ -200,6 +194,7 @@ async fn launch_ssh_process(
 ///
 /// # Arguments
 ///
+/// * `api`                 - The Windows API implementation to use.
 /// * `named_pipe_client`   - The [Windows named pipe][1] client that has successfully connected to
 ///                           the named pipe created by the daemon.
 /// * `internal_buffer`     - Vector containing incomplete `SERIALIZED_INPUT_RECORD_0` sequences
@@ -211,6 +206,7 @@ async fn launch_ssh_process(
 ///
 /// [1]: https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipes
 async fn read_write_loop(
+    api: &dyn WindowsApi,
     named_pipe_client: &NamedPipeClient,
     internal_buffer: &mut Vec<u8>,
 ) -> ReadWriteResult {
@@ -232,7 +228,7 @@ async fn read_write_loop(
                     continue;
                 };
                 let input_record = deserialize_input_record_0(serialzied_input_record);
-                write_console_input(input_record);
+                write_console_input(api, input_record);
                 key_event_records.push(unsafe { input_record.KeyEvent });
             }
             return ReadWriteResult::Success {
@@ -310,8 +306,9 @@ fn replace_argument_placeholders(
 ///
 /// # Arguments
 ///
+/// * `api` - The Windows API implementation to use.
 /// * `child` - Handle to the running SSH process.
-async fn run(child: &mut Child) {
+async fn run(api: &dyn WindowsApi, child: &mut Child) {
     // Many clients trying to open the pipe at the same time can cause
     // a file not found error, so keep trying until we managed to open it
     let named_pipe_client: NamedPipeClient = loop {
@@ -335,7 +332,7 @@ async fn run(child: &mut Child) {
                 panic!("Named client pipe is not ready to be read",)
             });
 
-        match read_write_loop(&named_pipe_client, &mut internal_buffer).await {
+        match read_write_loop(api, &named_pipe_client, &mut internal_buffer).await {
             ReadWriteResult::Success {
                 remainder,
                 key_event_records,
@@ -386,7 +383,7 @@ async fn run(child: &mut Child) {
     }
 }
 
-/// The entrypoint for the `client` subcommand.
+/// The entrypoint for the `client` subcommand with API dependency injection.
 ///
 /// Spawns a tokio background thread to ensure the console window title is not replaced
 /// by the name of the child process once its launched.
@@ -395,13 +392,15 @@ async fn run(child: &mut Child) {
 ///
 /// # Arguments
 ///
+/// * `api`         - The Windows API implementation to use.
 /// * `host`        - The name of the host to connect to, optionally with `:port` suffix.
 /// * `username`    - The username to be used.
 ///                   Will try to resolve the correct username from the ssh config
 ///                   if none is given.
 /// * `cli_port`    - Optional port from CLI option. Inline port takes precedence.
 /// * `config`      - A reference to the `ClientConfig`.
-pub async fn main(
+pub async fn main_with_api(
+    api: &dyn WindowsApi,
     host: String,
     username: Option<String>,
     cli_port: Option<u16>,
@@ -433,30 +432,71 @@ pub async fn main(
         host.to_string()
     };
     let username_host_title = format!("{resolved_username}@{title_host}");
-    tokio::spawn(async move {
-        loop {
-            // Set the console title (child might overwrite it, so we have to keep checking it)
-            let console_title = format!("{PKG_NAME} - {username_host_title}");
-            if console_title != get_console_title() {
-                set_console_title(console_title.as_str());
+    let console_title = format!("{PKG_NAME} - {username_host_title}");
+    let title_task = {
+        let console_title = console_title.clone();
+        async move {
+            loop {
+                // Set the console title (child might overwrite it, so we have to keep checking it)
+                if console_title != crate::utils::get_console_title_with_api(api) {
+                    crate::utils::set_console_title_with_api(api, console_title.as_str());
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
             }
-            tokio::time::sleep(Duration::from_millis(5)).await;
         }
-    });
+    };
+    let child_task = async {
+        let mut child = launch_ssh_process(&resolved_username, host, port, config).await;
+        run(api, &mut child).await;
+        return child;
+    };
 
-    let mut child = launch_ssh_process(&resolved_username, host, port, config).await;
-
-    run(&mut child).await;
+    // Use tokio::select to run both tasks concurrently
+    let child = tokio::select! {
+        child = child_task => child,
+        _ = title_task => {
+            panic!("Title task should never complete");
+        }
+    };
 
     // Make sure the client and all its subprocesses
     // are aware they need to shutdown.
-    unsafe {
-        GenerateConsoleCtrlEvent(0, 0).unwrap_or_else(|err| {
-            error!("{}", err);
-            panic!("Failed to send `ctrl + c` to remaining client windows",)
-        });
-    }
+    api.generate_console_ctrl_event(0, 0).unwrap_or_else(|err| {
+        error!("{}", err);
+        panic!("Failed to send `ctrl + c` to remaining client windows",)
+    });
     drop(child);
+}
+
+/// The entrypoint for the `client` subcommand.
+///
+/// Spawns a tokio background thread to ensure the console window title is not replaced
+/// by the name of the child process once its launched.
+/// Starts the SSH process as child process.
+/// Executes the main run loop.
+///
+/// # Arguments
+///
+/// * `host`        - The name of the host to connect to, optionally with `:port` suffix.
+/// * `username`    - The username to be used.
+///                   Will try to resolve the correct username from the ssh config
+///                   if none is given.
+/// * `cli_port`    - Optional port from CLI option. Inline port takes precedence.
+/// * `config`      - A reference to the `ClientConfig`.
+pub async fn main(
+    host: String,
+    username: Option<String>,
+    cli_port: Option<u16>,
+    config: &ClientConfig,
+) {
+    return main_with_api(
+        &crate::utils::DEFAULT_WINDOWS_API,
+        host,
+        username,
+        cli_port,
+        config,
+    )
+    .await;
 }
 
 #[cfg(test)]
