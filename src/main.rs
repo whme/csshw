@@ -25,9 +25,10 @@
 
 use clap::Parser as _;
 use csshw_lib::cli::{self, Args, MainEntrypoint};
+use csshw_lib::utils::windows::DefaultWindowsApi;
 
 /// The main entrypoint of the binary
 #[tokio::main]
 async fn main() {
-    cli::main(Args::parse(), MainEntrypoint).await;
+    cli::main(&DefaultWindowsApi, Args::parse(), MainEntrypoint).await;
 }

@@ -12,7 +12,7 @@ use std::time::Duration;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::utils::config::ClientConfig;
-use crate::utils::windows::{get_console_title, WindowsApi, DEFAULT_WINDOWS_API};
+use crate::utils::windows::{get_console_title, WindowsApi};
 use ssh2_config::{ParseRule, SshConfig};
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::process::{Child, Command};
@@ -399,7 +399,7 @@ async fn run(api: &dyn WindowsApi, child: &mut Child) {
 ///                   if none is given.
 /// * `cli_port`    - Optional port from CLI option. Inline port takes precedence.
 /// * `config`      - A reference to the `ClientConfig`.
-pub async fn main_with_api(
+pub async fn main(
     api: &dyn WindowsApi,
     host: String,
     username: Option<String>,
@@ -469,30 +469,6 @@ pub async fn main_with_api(
         panic!("Failed to send `ctrl + c` to remaining client windows",)
     });
     drop(child);
-}
-
-/// The entrypoint for the `client` subcommand.
-///
-/// Spawns a tokio background thread to ensure the console window title is not replaced
-/// by the name of the child process once its launched.
-/// Starts the SSH process as child process.
-/// Executes the main run loop.
-///
-/// # Arguments
-///
-/// * `host`        - The name of the host to connect to, optionally with `:port` suffix.
-/// * `username`    - The username to be used.
-///                   Will try to resolve the correct username from the ssh config
-///                   if none is given.
-/// * `cli_port`    - Optional port from CLI option. Inline port takes precedence.
-/// * `config`      - A reference to the `ClientConfig`.
-pub async fn main(
-    host: String,
-    username: Option<String>,
-    cli_port: Option<u16>,
-    config: &ClientConfig,
-) {
-    return main_with_api(&DEFAULT_WINDOWS_API, host, username, cli_port, config).await;
 }
 
 #[cfg(test)]
