@@ -5,7 +5,7 @@
   <a href="https://github.com/whme/csshw/releases/latest"><img src="https://img.shields.io/github/v/release/whme/csshw.svg"></a>
   <a href="https://github.com/whme/csshw/releases"><img src="https://img.shields.io/github/downloads/whme/csshw/total"></a><br>
   <a href="https://github.com/whme/csshw/actions/workflows/post-submit.yml"><img src="https://github.com/whme/csshw/actions/workflows/post-submit.yml/badge.svg"></a>
-  <a href="https://github.com/whme/csshw/actions/workflows/deploy_docs.yml"><img src="https://github.com/whme/csshw/actions/workflows/deploy_docs.yml/badge.svg"></a>
+  <a href="https://github.com/whme/csshw/actions/workflows/deploy_github_pages.yml"><img src="https://github.com/whme/csshw/actions/workflows/deploy_github_pages.yml/badge.svg"></a>
   <!--TODO: Add link to coverage once coverage data looks better: https://github.com/insightsengineering/coverage-action/issues/28#issuecomment-1743910648 -->
 </p>
 
