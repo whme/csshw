@@ -8,7 +8,7 @@ use std::ffi::c_void;
 use mockall::predicate::*;
 use windows::Win32::System::Threading::PROCESS_INFORMATION;
 
-use crate::utils::MockWindowsApi;
+use crate::utils::windows::MockWindowsApi;
 use crate::{
     create_process_with_command_line_api, init_logger_with_fs, is_launched_from_gui_with_api,
     spawn_console_process_with_api, MockFileSystem, MockRegistry,
