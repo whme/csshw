@@ -46,6 +46,7 @@ jobs:
         cp -r coverage_html unified_site/coverage
 
         cp templates/github-pages-index.html unified_site/index.html
+        cp res/csshw.ico unified_site/favicon.ico
 
     - name: Upload unified site
       uses: actions/upload-pages-artifact@v3
