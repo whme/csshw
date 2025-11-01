@@ -8,10 +8,12 @@ use std::ffi::c_void;
 use mockall::predicate::*;
 use windows::Win32::System::Threading::PROCESS_INFORMATION;
 
+use crate::utils::MockWindowsApi;
 use crate::{
-    create_process_with_command_line_api, init_logger_with_fs, spawn_console_process_with_api,
-    MockFileSystem, MockRegistry, MockWindowsApi, WindowsSettingsDefaultTerminalApplicationGuard,
-    CLSID_CONHOST, DEFAULT_TERMINAL_APP_REGISTRY_PATH, DELEGATION_CONSOLE, DELEGATION_TERMINAL,
+    create_process_with_command_line_api, init_logger_with_fs, is_launched_from_gui_with_api,
+    spawn_console_process_with_api, MockFileSystem, MockRegistry,
+    WindowsSettingsDefaultTerminalApplicationGuard, CLSID_CONHOST,
+    DEFAULT_TERMINAL_APP_REGISTRY_PATH, DELEGATION_CONSOLE, DELEGATION_TERMINAL,
 };
 
 /// Test module for WindowsSettingsDefaultTerminalApplicationGuard functionality.
@@ -340,64 +342,6 @@ mod create_process_api_test {
     }
 }
 
-/// Test module for command line building functionality.
-mod command_line_test {
-    use crate::build_command_line;
-
-    /// Tests build_command_line with simple application and arguments.
-    /// Validates proper UTF-16 encoding and quoting.
-    #[test]
-    fn test_build_command_line_simple() {
-        let application = "cmd.exe";
-        let args = vec!["arg1".to_string(), "arg2".to_string()];
-
-        let result = build_command_line(application, &args);
-
-        // Also make sure its null terminated
-        assert_eq!(
-            result,
-            vec![
-                34, 99, 109, 100, 46, 101, 120, 101, 34, 32, 34, 97, 114, 103, 49, 34, 32, 34, 97,
-                114, 103, 50, 34, 0
-            ]
-        );
-    }
-
-    /// Tests build_command_line with no arguments.
-    /// Validates proper handling of applications without arguments.
-    #[test]
-    fn test_build_command_line_no_args() {
-        let application = "notepad.exe";
-        let args: Vec<String> = vec![];
-
-        let result = build_command_line(application, &args);
-
-        assert_eq!(
-            result,
-            vec![34, 110, 111, 116, 101, 112, 97, 100, 46, 101, 120, 101, 34, 0]
-        );
-    }
-
-    /// Tests build_command_line with arguments containing spaces.
-    /// Validates proper quoting of complex arguments.
-    #[test]
-    fn test_build_command_line_spaces() {
-        let application = "program.exe";
-        let args = vec!["arg with spaces".to_string(), "another arg".to_string()];
-
-        let result = build_command_line(application, &args);
-
-        assert_eq!(
-            result,
-            vec![
-                34, 112, 114, 111, 103, 114, 97, 109, 46, 101, 120, 101, 34, 32, 34, 97, 114, 103,
-                32, 119, 105, 116, 104, 32, 115, 112, 97, 99, 101, 115, 34, 32, 34, 97, 110, 111,
-                116, 104, 101, 114, 32, 97, 114, 103, 34, 0
-            ]
-        );
-    }
-}
-
 /// Test module for process spawning functionality.
 mod spawn_process_test {
     use super::*;
@@ -636,7 +580,7 @@ mod logger_test {
 
 /// Test module for GUI launch detection functionality.
 mod gui_launch_detection_test {
-    use crate::{is_launched_from_gui_with_api, MockConsoleApi};
+    use super::*;
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO;
 
@@ -644,15 +588,15 @@ mod gui_launch_detection_test {
     /// Validates detection of GUI launch when console cursor is at (0,0).
     #[test]
     fn test_is_launched_from_gui_cursor_at_origin() {
-        let mut mock_console = MockConsoleApi::new();
+        let mut mock_windows_api = MockWindowsApi::new();
 
-        mock_console
-            .expect_get_std_handle()
+        mock_windows_api
+            .expect_get_std_handle_console()
             .times(1)
             .returning(|| return Ok(HANDLE(0x1234 as *mut std::ffi::c_void)));
 
-        mock_console
-            .expect_get_console_screen_buffer_info()
+        mock_windows_api
+            .expect_get_console_screen_buffer_info_with_handle()
             .times(1)
             .returning(|_| {
                 let mut csbi = CONSOLE_SCREEN_BUFFER_INFO::default();
@@ -661,7 +605,7 @@ mod gui_launch_detection_test {
                 return Ok(csbi);
             });
 
-        let result = is_launched_from_gui_with_api(&mock_console);
+        let result = is_launched_from_gui_with_api(&mock_windows_api);
         assert!(result);
     }
 
@@ -669,15 +613,15 @@ mod gui_launch_detection_test {
     /// Validates detection of console launch when cursor has moved from (0,0).
     #[test]
     fn test_is_launched_from_gui_cursor_moved() {
-        let mut mock_console = MockConsoleApi::new();
+        let mut mock_windows_api = MockWindowsApi::new();
 
-        mock_console
-            .expect_get_std_handle()
+        mock_windows_api
+            .expect_get_std_handle_console()
             .times(1)
             .returning(|| return Ok(HANDLE(0x1234 as *mut std::ffi::c_void)));
 
-        mock_console
-            .expect_get_console_screen_buffer_info()
+        mock_windows_api
+            .expect_get_console_screen_buffer_info_with_handle()
             .times(1)
             .returning(|_| {
                 let mut csbi = CONSOLE_SCREEN_BUFFER_INFO::default();
@@ -686,7 +630,7 @@ mod gui_launch_detection_test {
                 return Ok(csbi);
             });
 
-        let result = is_launched_from_gui_with_api(&mock_console);
+        let result = is_launched_from_gui_with_api(&mock_windows_api);
         assert!(!result);
     }
 
@@ -694,14 +638,14 @@ mod gui_launch_detection_test {
     /// Validates proper error handling when GetStdHandle fails.
     #[test]
     fn test_is_launched_from_gui_get_std_handle_failure() {
-        let mut mock_console = MockConsoleApi::new();
+        let mut mock_windows_api = MockWindowsApi::new();
 
-        mock_console
-            .expect_get_std_handle()
+        mock_windows_api
+            .expect_get_std_handle_console()
             .times(1)
             .returning(|| return Err(windows::core::Error::from_win32()));
 
-        let result = is_launched_from_gui_with_api(&mock_console);
+        let result = is_launched_from_gui_with_api(&mock_windows_api);
         assert!(!result);
     }
 
@@ -709,19 +653,19 @@ mod gui_launch_detection_test {
     /// Validates proper error handling when GetConsoleScreenBufferInfo fails.
     #[test]
     fn test_is_launched_from_gui_get_console_info_failure() {
-        let mut mock_console = MockConsoleApi::new();
+        let mut mock_windows_api = MockWindowsApi::new();
 
-        mock_console
-            .expect_get_std_handle()
+        mock_windows_api
+            .expect_get_std_handle_console()
             .times(1)
             .returning(|| return Ok(HANDLE(0x1234 as *mut std::ffi::c_void)));
 
-        mock_console
-            .expect_get_console_screen_buffer_info()
+        mock_windows_api
+            .expect_get_console_screen_buffer_info_with_handle()
             .times(1)
             .returning(|_| return Err(windows::core::Error::from_win32()));
 
-        let result = is_launched_from_gui_with_api(&mock_console);
+        let result = is_launched_from_gui_with_api(&mock_windows_api);
         assert!(!result);
     }
 }
