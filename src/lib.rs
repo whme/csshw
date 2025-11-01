@@ -7,22 +7,16 @@
 
 use std::ffi::OsString;
 use std::fs::{create_dir, File};
-use std::{mem, ptr};
+use std::mem;
 
 use std::os::windows::ffi::OsStrExt;
 
 use log::warn;
 use registry::{value, Data, Hive, Security};
 use simplelog::{format_description, ConfigBuilder, LevelFilter, WriteLogger};
-use windows::core::{HSTRING, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{BOOL, FALSE, HWND, LPARAM, TRUE};
-use windows::Win32::System::Console::{
-    GetConsoleScreenBufferInfo, GetStdHandle, CONSOLE_SCREEN_BUFFER_INFO, STD_OUTPUT_HANDLE,
-};
-use windows::Win32::System::Threading::{
-    CreateProcessW, CREATE_NEW_CONSOLE, PROCESS_INFORMATION, STARTUPINFOW,
-};
-use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId};
+use windows::core::PWSTR;
+use windows::Win32::Foundation::HWND;
+use windows::Win32::System::Threading::{PROCESS_INFORMATION, STARTUPINFOW};
 
 #[cfg(test)]
 use mockall::automock;
@@ -32,6 +26,8 @@ pub mod client;
 pub mod daemon;
 pub mod serde;
 pub mod utils;
+
+use utils::{WindowsApi, DEFAULT_WINDOWS_API};
 
 /// CLSID identifying `conhost.exe` in the registry.
 ///
@@ -105,136 +101,6 @@ impl Registry for DefaultRegistry {
     }
 }
 
-/// Trait for console operations to enable mocking in tests
-#[cfg_attr(test, automock)]
-pub trait ConsoleApi {
-    /// Get standard output handle
-    fn get_std_handle(&self) -> windows::core::Result<windows::Win32::Foundation::HANDLE>;
-    /// Get console screen buffer information
-    fn get_console_screen_buffer_info(
-        &self,
-        handle: windows::Win32::Foundation::HANDLE,
-    ) -> windows::core::Result<CONSOLE_SCREEN_BUFFER_INFO>;
-}
-
-/// Default implementation of ConsoleApi trait that performs actual Windows console API calls
-pub struct WindowsConsoleAPI;
-
-impl ConsoleApi for WindowsConsoleAPI {
-    fn get_std_handle(&self) -> windows::core::Result<windows::Win32::Foundation::HANDLE> {
-        return unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
-    }
-
-    fn get_console_screen_buffer_info(
-        &self,
-        handle: windows::Win32::Foundation::HANDLE,
-    ) -> windows::core::Result<CONSOLE_SCREEN_BUFFER_INFO> {
-        let mut csbi = CONSOLE_SCREEN_BUFFER_INFO::default();
-        unsafe { GetConsoleScreenBufferInfo(handle, &mut csbi) }?;
-        return Ok(csbi);
-    }
-}
-
-/// Trait for Windows API operations to enable mocking in tests
-#[cfg_attr(test, automock)]
-pub trait WindowsApi {
-    /// Create a new process
-    fn create_process_with_args(
-        &self,
-        application: &str,
-        args: Vec<String>,
-    ) -> Option<PROCESS_INFORMATION>;
-    /// Get window handle for process ID
-    fn get_window_handle_for_process(&self, process_id: u32) -> HWND;
-    /// Low-level process creation API call
-    fn create_process_raw(
-        &self,
-        application: &str,
-        command_line: PWSTR,
-        startup_info: &mut STARTUPINFOW,
-        process_info: &mut PROCESS_INFORMATION,
-    ) -> windows::core::Result<()>;
-}
-
-/// Data structure for window search callback
-struct WindowSearchData {
-    /// The process ID we're searching for
-    target_process_id: u32,
-    /// Mutable reference to store the found window handle
-    found_handle: *mut Option<HWND>,
-}
-
-/// Default implementation of WindowsApi trait that performs actual Windows API calls
-pub struct DefaultWindowsApi;
-
-impl WindowsApi for DefaultWindowsApi {
-    fn create_process_with_args(
-        &self,
-        application: &str,
-        args: Vec<String>,
-    ) -> Option<PROCESS_INFORMATION> {
-        let command_line = build_command_line(application, &args);
-        return create_process_windows_api(application, &command_line);
-    }
-
-    fn create_process_raw(
-        &self,
-        application: &str,
-        command_line: PWSTR,
-        startup_info: &mut STARTUPINFOW,
-        process_info: &mut PROCESS_INFORMATION,
-    ) -> windows::core::Result<()> {
-        return unsafe {
-            CreateProcessW(
-                &HSTRING::from(application),
-                Some(command_line),
-                Some(ptr::null_mut()),
-                Some(ptr::null_mut()),
-                false,
-                CREATE_NEW_CONSOLE,
-                Some(ptr::null_mut()),
-                PCWSTR::null(),
-                ptr::addr_of_mut!(*startup_info),
-                ptr::addr_of_mut!(*process_info),
-            )
-        };
-    }
-
-    fn get_window_handle_for_process(&self, process_id: u32) -> HWND {
-        let mut found_handle = None;
-        let mut search_data = WindowSearchData {
-            target_process_id: process_id,
-            found_handle: &mut found_handle,
-        };
-
-        loop {
-            let _ = unsafe {
-                EnumWindows(
-                    Some(find_window_callback_with_capture),
-                    LPARAM(&mut search_data as *mut WindowSearchData as isize),
-                )
-            };
-            if let Some(handle) = found_handle {
-                return handle;
-            }
-        }
-    }
-}
-
-/// Callback function for finding windows by process ID with proper handle capture
-unsafe extern "system" fn find_window_callback_with_capture(hwnd: HWND, lparam: LPARAM) -> BOOL {
-    let search_data = &mut *(lparam.0 as *mut WindowSearchData);
-    let mut window_process_id: u32 = 0;
-    GetWindowThreadProcessId(hwnd, Some(&mut window_process_id));
-
-    if search_data.target_process_id == window_process_id {
-        // Store the found window handle
-        *search_data.found_handle = Some(hwnd);
-        return FALSE; // Stop enumeration
-    }
-    return TRUE; // Continue enumeration
-}
-
 /// Return the Window Handle [HWND] for the foreground window associated with the given `process_id`.
 ///
 /// If multiple foreground windows are associated with the given `process_id` it is undefined which [HWND] gets returned.
@@ -247,7 +113,7 @@ unsafe extern "system" fn find_window_callback_with_capture(hwnd: HWND, lparam: 
 ///
 /// The Window Handle [HWND] for the window associated with the given `process_id`.
 pub fn get_console_window_handle(process_id: u32) -> HWND {
-    return DefaultWindowsApi.get_window_handle_for_process(process_id);
+    return DEFAULT_WINDOWS_API.get_window_handle_for_process(process_id);
 }
 
 /// Build command line string for Windows process creation
@@ -326,7 +192,7 @@ pub fn create_process_windows_api(
     application: &str,
     command_line: &[u16],
 ) -> Option<PROCESS_INFORMATION> {
-    return create_process_with_command_line_api(&DefaultWindowsApi, application, command_line);
+    return create_process_with_command_line_api(&DEFAULT_WINDOWS_API, application, command_line);
 }
 
 /// Trait for file system operations to enable mocking in tests
@@ -482,7 +348,7 @@ impl<R: Registry> Drop for WindowsSettingsDefaultTerminalApplicationGuard<R> {
 ///
 /// [PROCESS_INFORMATION] of the spawned process.
 pub fn spawn_console_process(application: &str, args: Vec<String>) -> PROCESS_INFORMATION {
-    return spawn_console_process_with_api(&DefaultWindowsApi, application, args)
+    return spawn_console_process_with_api(&DEFAULT_WINDOWS_API, application, args)
         .expect("Failed to create process");
 }
 
@@ -555,16 +421,16 @@ pub fn init_logger_with_fs<F: FileSystem>(fs: &F, name: &str) {
 ///
 /// # Arguments
 ///
-/// * `console_api` - Console API operations implementation
+/// * `windows_api` - Windows API operations implementation
 ///
 /// # Returns
 ///
 /// * `true` - Application was launched from GUI (Explorer, double-click, etc.)
 /// * `false` - Application was launched from existing console (command line)
-pub fn is_launched_from_gui_with_api<C: ConsoleApi>(console_api: &C) -> bool {
-    match console_api.get_std_handle() {
+pub fn is_launched_from_gui_with_api<W: WindowsApi>(windows_api: &W) -> bool {
+    match windows_api.get_std_handle_console() {
         Ok(handle) => {
-            match console_api.get_console_screen_buffer_info(handle) {
+            match windows_api.get_console_screen_buffer_info_with_handle(handle) {
                 Ok(csbi) => {
                     // The cursor has not moved from the initial 0,0 position -> launched in separate console
                     return csbi.dwCursorPosition.X == 0 && csbi.dwCursorPosition.Y == 0;
@@ -592,7 +458,7 @@ pub fn is_launched_from_gui_with_api<C: ConsoleApi>(console_api: &C) -> bool {
 /// * `true` - Application was launched from GUI (Explorer, double-click, etc.)
 /// * `false` - Application was launched from existing console (command line)
 pub fn is_launched_from_gui() -> bool {
-    return is_launched_from_gui_with_api(&WindowsConsoleAPI);
+    return is_launched_from_gui_with_api(&DEFAULT_WINDOWS_API);
 }
 
 #[cfg(test)]

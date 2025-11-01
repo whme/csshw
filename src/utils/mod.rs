@@ -8,10 +8,12 @@
 )]
 
 use log::error;
+use std::ffi::OsString;
+use std::os::windows::ffi::OsStrExt;
 use std::{mem, ptr, thread, time};
 
-use windows::core::HSTRING;
-use windows::Win32::Foundation::{COLORREF, HANDLE, HWND, RECT};
+use windows::core::{HSTRING, PCWSTR};
+use windows::Win32::Foundation::{BOOL, COLORREF, FALSE, HANDLE, HWND, LPARAM, RECT, TRUE};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
 use windows::Win32::System::Console::{
     FillConsoleOutputAttribute, GetConsoleScreenBufferInfo, GetConsoleWindow, GetStdHandle,
@@ -23,8 +25,12 @@ use windows::Win32::System::Console::{
     ScrollConsoleScreenBufferW, SetConsoleCursorPosition, CHAR_INFO, KEY_EVENT as KEY_EVENT_U32,
     SMALL_RECT,
 };
+use windows::Win32::System::Threading::{
+    CreateProcessW, CREATE_NEW_CONSOLE, PROCESS_INFORMATION, STARTUPINFOW,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowRect, GetWindowTextW, MoveWindow, SetWindowTextW,
+    EnumWindows, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, MoveWindow,
+    SetWindowTextW,
 };
 
 #[cfg(test)]
@@ -101,6 +107,53 @@ pub trait WindowsApi: Send + Sync {
         ctrl_event: u32,
         process_group_id: u32,
     ) -> windows::core::Result<()>;
+
+    /// Get standard output handle
+    fn get_std_handle_console(&self) -> windows::core::Result<HANDLE>;
+
+    /// Get console screen buffer information
+    fn get_console_screen_buffer_info_with_handle(
+        &self,
+        handle: HANDLE,
+    ) -> windows::core::Result<CONSOLE_SCREEN_BUFFER_INFO>;
+
+    /// Create a new process
+    fn create_process_with_args(
+        &self,
+        application: &str,
+        args: Vec<String>,
+    ) -> Option<windows::Win32::System::Threading::PROCESS_INFORMATION> {
+        let command_line = build_command_line(application, &args);
+        let mut startupinfo = STARTUPINFOW {
+            cb: mem::size_of::<STARTUPINFOW>() as u32,
+            ..Default::default()
+        };
+        let mut process_information = PROCESS_INFORMATION::default();
+        let mut cmd_line = command_line;
+        let command_line_ptr = windows::core::PWSTR(cmd_line.as_mut_ptr());
+
+        match self.create_process_raw(
+            application,
+            command_line_ptr,
+            &mut startupinfo,
+            &mut process_information,
+        ) {
+            Ok(()) => return Some(process_information),
+            Err(_) => return None,
+        }
+    }
+
+    /// Low-level process creation API call
+    fn create_process_raw(
+        &self,
+        application: &str,
+        command_line: windows::core::PWSTR,
+        startup_info: &mut windows::Win32::System::Threading::STARTUPINFOW,
+        process_info: &mut windows::Win32::System::Threading::PROCESS_INFORMATION,
+    ) -> windows::core::Result<()>;
+
+    /// Get window handle for process ID
+    fn get_window_handle_for_process(&self, process_id: u32) -> HWND;
 }
 
 /// Default implementation of WindowsApi that calls actual Windows APIs.
@@ -231,10 +284,118 @@ impl WindowsApi for DefaultWindowsApi {
             windows::Win32::System::Console::GenerateConsoleCtrlEvent(ctrl_event, process_group_id)
         };
     }
+
+    fn get_std_handle_console(&self) -> windows::core::Result<HANDLE> {
+        return unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
+    }
+
+    fn get_console_screen_buffer_info_with_handle(
+        &self,
+        handle: HANDLE,
+    ) -> windows::core::Result<CONSOLE_SCREEN_BUFFER_INFO> {
+        let mut csbi = CONSOLE_SCREEN_BUFFER_INFO::default();
+        unsafe { GetConsoleScreenBufferInfo(handle, &mut csbi) }?;
+        return Ok(csbi);
+    }
+
+    fn get_window_handle_for_process(&self, process_id: u32) -> HWND {
+        /// Data structure for window search callback
+        struct WindowSearchData {
+            /// The process ID we're searching for
+            target_process_id: u32,
+            /// Mutable reference to store the found window handle
+            found_handle: *mut Option<HWND>,
+        }
+
+        /// Callback function for finding windows by process ID with proper handle capture
+        unsafe extern "system" fn find_window_callback_with_capture(
+            hwnd: HWND,
+            lparam: LPARAM,
+        ) -> BOOL {
+            let search_data = &mut *(lparam.0 as *mut WindowSearchData);
+            let mut window_process_id: u32 = 0;
+            GetWindowThreadProcessId(hwnd, Some(&mut window_process_id));
+
+            if search_data.target_process_id == window_process_id {
+                // Store the found window handle
+                *search_data.found_handle = Some(hwnd);
+                return FALSE; // Stop enumeration
+            }
+            return TRUE; // Continue enumeration
+        }
+
+        let mut found_handle = None;
+        let mut search_data = WindowSearchData {
+            target_process_id: process_id,
+            found_handle: &mut found_handle,
+        };
+
+        loop {
+            let _ = unsafe {
+                EnumWindows(
+                    Some(find_window_callback_with_capture),
+                    LPARAM(&mut search_data as *mut WindowSearchData as isize),
+                )
+            };
+            if let Some(handle) = found_handle {
+                return handle;
+            }
+        }
+    }
+
+    fn create_process_raw(
+        &self,
+        application: &str,
+        command_line: windows::core::PWSTR,
+        startup_info: &mut windows::Win32::System::Threading::STARTUPINFOW,
+        process_info: &mut windows::Win32::System::Threading::PROCESS_INFORMATION,
+    ) -> windows::core::Result<()> {
+        return unsafe {
+            CreateProcessW(
+                &HSTRING::from(application),
+                Some(command_line),
+                Some(ptr::null_mut()),
+                Some(ptr::null_mut()),
+                false,
+                CREATE_NEW_CONSOLE,
+                Some(ptr::null_mut()),
+                PCWSTR::null(),
+                ptr::addr_of_mut!(*startup_info),
+                ptr::addr_of_mut!(*process_info),
+            )
+        };
+    }
 }
 
 /// Global instance of the Windows API implementation.
 pub static DEFAULT_WINDOWS_API: DefaultWindowsApi = DefaultWindowsApi;
+
+/// Build command line string for Windows process creation
+///
+/// # Arguments
+///
+/// * `application` - Application name including file extension
+/// * `args` - List of arguments to the application
+///
+/// # Returns
+///
+/// UTF-16 encoded command line with proper quoting
+pub fn build_command_line(application: &str, args: &[String]) -> Vec<u16> {
+    let mut cmd: Vec<u16> = Vec::new();
+    cmd.push(b'"' as u16);
+    cmd.extend(OsString::from(application).encode_wide());
+    cmd.push(b'"' as u16);
+
+    for arg in args {
+        cmd.push(' ' as u16);
+        cmd.push(b'"' as u16);
+        cmd.extend(OsString::from(arg).encode_wide());
+        cmd.push(b'"' as u16);
+    }
+    cmd.push(0); // add null terminator
+
+    return cmd;
+}
 
 pub mod config;
 pub mod constants;
