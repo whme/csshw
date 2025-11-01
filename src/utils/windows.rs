@@ -13,10 +13,10 @@
 use log::error;
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStrExt;
-use std::{mem, ptr, thread, time};
+use std::{mem, ptr};
 
 use windows::core::{HSTRING, PCWSTR};
-use windows::Win32::Foundation::{BOOL, COLORREF, FALSE, HANDLE, HWND, LPARAM, RECT, TRUE};
+use windows::Win32::Foundation::{BOOL, COLORREF, FALSE, HANDLE, HWND, LPARAM, TRUE};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
 use windows::Win32::System::Console::{
     FillConsoleOutputAttribute, GetConsoleScreenBufferInfo, GetConsoleWindow, GetStdHandle,
@@ -32,8 +32,7 @@ use windows::Win32::System::Threading::{
     CreateProcessW, CREATE_NEW_CONSOLE, PROCESS_INFORMATION, STARTUPINFOW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, MoveWindow,
-    SetWindowTextW,
+    EnumWindows, GetWindowTextW, GetWindowThreadProcessId, MoveWindow, SetWindowTextW,
 };
 
 #[cfg(test)]
@@ -68,7 +67,7 @@ pub trait WindowsApi: Send + Sync {
     /// # Returns
     ///
     /// Number of characters copied to the buffer
-    fn get_console_title_utf16(&self, buffer: &mut [u16]) -> i32;
+    fn get_console_title(&self, buffer: &mut [u16]) -> i32;
 
     /// Gets OS version string.
     ///
@@ -191,7 +190,7 @@ pub trait WindowsApi: Send + Sync {
     /// # Returns
     ///
     /// Result indicating success or failure of the operation
-    fn set_dwm_border_color(&self, color: &COLORREF) -> windows::core::Result<()>;
+    fn set_console_border_color(&self, color: &COLORREF) -> windows::core::Result<()>;
 
     /// Writes input records to the console input buffer.
     ///
@@ -237,7 +236,7 @@ pub trait WindowsApi: Send + Sync {
     /// # Returns
     ///
     /// Handle to standard output or error
-    fn get_std_handle_console(&self) -> windows::core::Result<HANDLE>;
+    fn get_stdout_handle(&self) -> windows::core::Result<HANDLE>;
 
     /// Get console screen buffer information
     ///
@@ -331,7 +330,7 @@ impl WindowsApi for DefaultWindowsApi {
         return unsafe { SetWindowTextW(GetConsoleWindow(), &HSTRING::from(title)) };
     }
 
-    fn get_console_title_utf16(&self, buffer: &mut [u16]) -> i32 {
+    fn get_console_title(&self, buffer: &mut [u16]) -> i32 {
         return unsafe { GetWindowTextW(GetConsoleWindow(), buffer) };
     }
 
@@ -353,12 +352,12 @@ impl WindowsApi for DefaultWindowsApi {
         &self,
         attributes: CONSOLE_CHARACTER_ATTRIBUTES,
     ) -> windows::core::Result<()> {
-        return unsafe { SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE)?, attributes) };
+        return unsafe { SetConsoleTextAttribute(self.get_stdout_handle()?, attributes) };
     }
 
     fn get_console_screen_buffer_info(&self) -> windows::core::Result<CONSOLE_SCREEN_BUFFER_INFO> {
         let mut buffer_info = CONSOLE_SCREEN_BUFFER_INFO::default();
-        unsafe { GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE)?, &mut buffer_info)? };
+        unsafe { GetConsoleScreenBufferInfo(self.get_stdout_handle()?, &mut buffer_info)? };
         return Ok(buffer_info);
     }
 
@@ -371,7 +370,7 @@ impl WindowsApi for DefaultWindowsApi {
         let mut number_written = 0u32;
         unsafe {
             FillConsoleOutputAttribute(
-                GetStdHandle(STD_OUTPUT_HANDLE)?,
+                self.get_stdout_handle()?,
                 attribute,
                 length,
                 coord,
@@ -389,7 +388,7 @@ impl WindowsApi for DefaultWindowsApi {
     ) -> windows::core::Result<()> {
         return unsafe {
             ScrollConsoleScreenBufferW(
-                GetStdHandle(STD_OUTPUT_HANDLE)?,
+                self.get_stdout_handle()?,
                 &scroll_rect,
                 None,
                 scroll_target,
@@ -399,7 +398,7 @@ impl WindowsApi for DefaultWindowsApi {
     }
 
     fn set_console_cursor_position(&self, position: COORD) -> windows::core::Result<()> {
-        return unsafe { SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE)?, position) };
+        return unsafe { SetConsoleCursorPosition(self.get_stdout_handle()?, position) };
     }
 
     fn get_std_handle(&self, handle_type: STD_HANDLE) -> windows::core::Result<HANDLE> {
@@ -408,11 +407,17 @@ impl WindowsApi for DefaultWindowsApi {
 
     fn read_console_input(&self, buffer: &mut [INPUT_RECORD]) -> windows::core::Result<u32> {
         let mut number_read = 0u32;
-        unsafe { ReadConsoleInputW(GetStdHandle(STD_INPUT_HANDLE)?, buffer, &mut number_read)? };
+        unsafe {
+            ReadConsoleInputW(
+                self.get_std_handle(STD_INPUT_HANDLE)?,
+                buffer,
+                &mut number_read,
+            )?
+        };
         return Ok(number_read);
     }
 
-    fn set_dwm_border_color(&self, color: &COLORREF) -> windows::core::Result<()> {
+    fn set_console_border_color(&self, color: &COLORREF) -> windows::core::Result<()> {
         return unsafe {
             DwmSetWindowAttribute(
                 GetConsoleWindow(),
@@ -452,8 +457,8 @@ impl WindowsApi for DefaultWindowsApi {
         };
     }
 
-    fn get_std_handle_console(&self) -> windows::core::Result<HANDLE> {
-        return unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
+    fn get_stdout_handle(&self) -> windows::core::Result<HANDLE> {
+        return self.get_std_handle(STD_OUTPUT_HANDLE);
     }
 
     fn get_console_screen_buffer_info_with_handle(
@@ -585,80 +590,6 @@ pub fn build_command_line(application: &str, args: &[String]) -> Vec<u16> {
     return cmd;
 }
 
-/// Continously prints the window rectangle of the current console window.
-///
-/// Intended use for debugging only.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::print_console_rect;
-///
-/// // This will run indefinitely, printing console rectangle every 100ms
-/// print_console_rect();
-/// ```
-pub fn print_console_rect() {
-    loop {
-        let mut window_rect = RECT::default();
-        unsafe { GetWindowRect(GetConsoleWindow(), ptr::addr_of_mut!(window_rect)).unwrap() };
-        println!("{window_rect:?}");
-        thread::sleep(time::Duration::from_millis(100));
-    }
-}
-
-/// Sets the window title of the current console window.
-///
-/// # Arguments
-///
-/// * `title` - The string to be set as window title.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::set_console_title;
-///
-/// set_console_title("My Console Application");
-/// ```
-pub fn set_console_title(title: &str) {
-    return set_console_title_with_api(&DEFAULT_WINDOWS_API, title);
-}
-
-/// Sets the window title of the current console window using the provided API.
-///
-/// # Arguments
-///
-/// * `api` - The Windows API implementation to use.
-/// * `title` - The string to be set as window title.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::{set_console_title_with_api, DEFAULT_WINDOWS_API};
-///
-/// set_console_title_with_api(&DEFAULT_WINDOWS_API, "My Console Application");
-/// ```
-pub fn set_console_title_with_api(api: &dyn WindowsApi, title: &str) {
-    api.set_console_title(title).unwrap();
-}
-
-/// Sets the back- and foreground color of the current console window.
-///
-/// # Arguments
-///
-/// * `color` - The color value describing the back- and foreground color.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::set_console_color;
-/// use windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES;
-///
-/// set_console_color(CONSOLE_CHARACTER_ATTRIBUTES(0x0F)); // White on black
-/// ```
-pub fn set_console_color(color: CONSOLE_CHARACTER_ATTRIBUTES) {
-    return set_console_color_with_api(&DEFAULT_WINDOWS_API, color);
-}
-
 /// Sets the back- and foreground color of the current console window using the provided API.
 ///
 /// # Arguments
@@ -669,12 +600,12 @@ pub fn set_console_color(color: CONSOLE_CHARACTER_ATTRIBUTES) {
 /// # Examples
 ///
 /// ```no_run
-/// use csshw_lib::utils::windows::{set_console_color_with_api, DEFAULT_WINDOWS_API};
+/// use csshw_lib::utils::windows::{set_console_color, DEFAULT_WINDOWS_API};
 /// use windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES;
 ///
-/// set_console_color_with_api(&DEFAULT_WINDOWS_API, CONSOLE_CHARACTER_ATTRIBUTES(0x0F));
+/// set_console_color(&DEFAULT_WINDOWS_API, CONSOLE_CHARACTER_ATTRIBUTES(0x0F));
 /// ```
-pub fn set_console_color_with_api(api: &dyn WindowsApi, color: CONSOLE_CHARACTER_ATTRIBUTES) {
+pub fn set_console_color(api: &dyn WindowsApi, color: CONSOLE_CHARACTER_ATTRIBUTES) {
     api.set_console_text_attribute(color).unwrap();
     let buffer_info = api.get_console_screen_buffer_info().unwrap();
     for y in 0..buffer_info.dwSize.Y {
@@ -687,19 +618,6 @@ pub fn set_console_color_with_api(api: &dyn WindowsApi, color: CONSOLE_CHARACTER
     }
 }
 
-/// Empties the console screen output buffer of the current console window.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::clear_screen;
-///
-/// clear_screen();
-/// ```
-pub fn clear_screen() {
-    return clear_screen_with_api(&DEFAULT_WINDOWS_API);
-}
-
 /// Empties the console screen output buffer of the current console window using the provided API.
 ///
 /// # Arguments
@@ -709,11 +627,11 @@ pub fn clear_screen() {
 /// # Examples
 ///
 /// ```no_run
-/// use csshw_lib::utils::windows::{clear_screen_with_api, DEFAULT_WINDOWS_API};
+/// use csshw_lib::utils::windows::{clear_screen, DEFAULT_WINDOWS_API};
 ///
-/// clear_screen_with_api(&DEFAULT_WINDOWS_API);
+/// clear_screen(&DEFAULT_WINDOWS_API);
 /// ```
-pub fn clear_screen_with_api(api: &dyn WindowsApi) {
+pub fn clear_screen(api: &dyn WindowsApi) {
     let buffer_info = api.get_console_screen_buffer_info().unwrap();
     let scroll_rect = SMALL_RECT {
         Left: 0,
@@ -736,29 +654,6 @@ pub fn clear_screen_with_api(api: &dyn WindowsApi) {
     api.set_console_cursor_position(cursor_position).unwrap();
 }
 
-/// Sets the border color of the current console window.
-///
-/// Windows10 does not support this.
-///
-/// # Arguments
-///
-/// * `color` - RGB [COLORREF][1] to set as border color.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::set_console_border_color;
-/// use windows::Win32::Foundation::COLORREF;
-///
-/// // Note: inversed order of RGB        BBGGRR
-/// set_console_border_color(COLORREF(0x001A2B3C));
-/// ```
-///
-/// [1]: https://learn.microsoft.com/en-us/windows/win32/gdi/colorref
-pub fn set_console_border_color(color: COLORREF) {
-    return set_console_border_color_with_api(&DEFAULT_WINDOWS_API, color);
-}
-
 /// Sets the border color of the current console window using the provided APIs.
 ///
 /// Windows10 does not support this.
@@ -771,35 +666,17 @@ pub fn set_console_border_color(color: COLORREF) {
 /// # Examples
 ///
 /// ```no_run
-/// use csshw_lib::utils::windows::{set_console_border_color_with_api, DEFAULT_WINDOWS_API};
+/// use csshw_lib::utils::windows::{set_console_border_color, DEFAULT_WINDOWS_API};
 /// use windows::Win32::Foundation::COLORREF;
 ///
-/// set_console_border_color_with_api(&DEFAULT_WINDOWS_API, COLORREF(0x001A2B3C));
+/// set_console_border_color(&DEFAULT_WINDOWS_API, COLORREF(0x001A2B3C));
 /// ```
 ///
 /// [1]: https://learn.microsoft.com/en-us/windows/win32/gdi/colorref
-pub fn set_console_border_color_with_api(api: &dyn WindowsApi, color: COLORREF) {
-    if !is_windows_10_with_api(api) {
-        api.set_dwm_border_color(&color).unwrap();
+pub fn set_console_border_color(api: &dyn WindowsApi, color: COLORREF) {
+    if !is_windows_10(api) {
+        api.set_console_border_color(&color).unwrap();
     }
-}
-
-/// Returns the title of the current console window.
-///
-/// # Returns
-///
-/// The title of the current console window.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::get_console_title;
-///
-/// let title = get_console_title();
-/// println!("Console title: {}", title);
-/// ```
-pub fn get_console_title() -> String {
-    return get_console_title_with_api(&DEFAULT_WINDOWS_API);
 }
 
 /// Converts a UTF-16 buffer to a Rust String, filtering out null characters.
@@ -846,74 +723,15 @@ pub fn utf16_buffer_to_string(buffer: &[u16]) -> String {
 /// # Examples
 ///
 /// ```no_run
-/// use csshw_lib::utils::windows::{get_console_title_with_api, DEFAULT_WINDOWS_API};
+/// use csshw_lib::utils::windows::{get_console_title, DEFAULT_WINDOWS_API};
 ///
-/// let title = get_console_title_with_api(&DEFAULT_WINDOWS_API);
+/// let title = get_console_title(&DEFAULT_WINDOWS_API);
 /// println!("Console title: {}", title);
 /// ```
-pub fn get_console_title_with_api(api: &dyn WindowsApi) -> String {
+pub fn get_console_title(api: &dyn WindowsApi) -> String {
     let mut title: [u16; MAX_WINDOW_TITLE_LENGTH] = [0; MAX_WINDOW_TITLE_LENGTH];
-    api.get_console_title_utf16(&mut title);
+    api.get_console_title(&mut title);
     return utf16_buffer_to_string(&title);
-}
-
-/// Returns the title of the window represented by the given window handle [HWND].
-///
-/// # Arguments
-///
-/// * `handle` - Reference to a window handle for which to retrieve the window title.
-///
-/// # Returns
-///
-/// The title of the window.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::get_window_title;
-/// use windows::Win32::Foundation::HWND;
-///
-/// let hwnd = HWND(std::ptr::null_mut()); // Example handle
-/// let title = get_window_title(&hwnd);
-/// println!("Window title: {}", title);
-/// ```
-pub fn get_window_title(handle: &HWND) -> String {
-    return get_window_title_with_api(&DEFAULT_WINDOWS_API, handle);
-}
-
-/// Returns the title of the window represented by the given window handle using the provided API.
-///
-/// # Arguments
-///
-/// * `api` - The Windows API implementation to use.
-/// * `handle` - Reference to a window handle for which to retrieve the window title.
-///
-/// # Returns
-///
-/// The title of the window.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::{get_window_title_with_api, DEFAULT_WINDOWS_API};
-/// use windows::Win32::Foundation::HWND;
-///
-/// let hwnd = HWND(std::ptr::null_mut()); // Example handle
-/// let title = get_window_title_with_api(&DEFAULT_WINDOWS_API, &hwnd);
-/// println!("Window title: {}", title);
-/// ```
-pub fn get_window_title_with_api(_api: &dyn WindowsApi, handle: &HWND) -> String {
-    // For individual HWND, we use the direct Windows API since the trait is console-focused
-    let mut title: [u16; MAX_WINDOW_TITLE_LENGTH] = [0; MAX_WINDOW_TITLE_LENGTH];
-    unsafe { GetWindowTextW(*handle, &mut title) };
-    let vec: Vec<u16> = title
-        .into_iter()
-        .filter(|val| return *val != 0u16)
-        .collect();
-    return String::from_utf16(&vec).unwrap_or_else(|err| {
-        error!("{}", err);
-        panic!("Failed to get window title, invalid utf16")
-    });
 }
 
 /// Returns a [HANDLE] to the requested [STD_HANDLE] of the current process.
@@ -982,11 +800,11 @@ pub fn get_console_output_buffer() -> HANDLE {
 /// # Examples
 ///
 /// ```no_run
-/// use csshw_lib::utils::windows::{read_console_input_with_api, DEFAULT_WINDOWS_API};
+/// use csshw_lib::utils::windows::{read_console_input, DEFAULT_WINDOWS_API};
 ///
-/// let input_record = read_console_input_with_api(&DEFAULT_WINDOWS_API);
+/// let input_record = read_console_input(&DEFAULT_WINDOWS_API);
 /// ```
-pub fn read_console_input_with_api(api: &dyn WindowsApi) -> INPUT_RECORD {
+pub fn read_console_input(api: &dyn WindowsApi) -> INPUT_RECORD {
     const NB_EVENTS: usize = 1;
     let mut input_buffer: [INPUT_RECORD; NB_EVENTS] = [INPUT_RECORD::default(); NB_EVENTS];
     loop {
@@ -998,25 +816,6 @@ pub fn read_console_input_with_api(api: &dyn WindowsApi) -> INPUT_RECORD {
         }
     }
     return input_buffer[0];
-}
-
-/// Returns a single [INPUT_RECORD_0] where `EventType` == [`KEY_EVENT`].
-///
-/// Blocks until 1 key event record was read.
-///
-/// # Returns
-///
-/// A single INPUT_RECORD_0 with EventType == KEY_EVENT.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::read_keyboard_input;
-///
-/// let key_event = read_keyboard_input();
-/// ```
-pub fn read_keyboard_input() -> INPUT_RECORD_0 {
-    return read_keyboard_input_with_api(&DEFAULT_WINDOWS_API);
 }
 
 /// Returns a single [INPUT_RECORD_0] where `EventType` == [`KEY_EVENT`] using the provided API.
@@ -1034,13 +833,13 @@ pub fn read_keyboard_input() -> INPUT_RECORD_0 {
 /// # Examples
 ///
 /// ```no_run
-/// use csshw_lib::utils::windows::{read_keyboard_input_with_api, DEFAULT_WINDOWS_API};
+/// use csshw_lib::utils::windows::{read_keyboard_input, DEFAULT_WINDOWS_API};
 ///
-/// let key_event = read_keyboard_input_with_api(&DEFAULT_WINDOWS_API);
+/// let key_event = read_keyboard_input(&DEFAULT_WINDOWS_API);
 /// ```
-pub fn read_keyboard_input_with_api(api: &dyn WindowsApi) -> INPUT_RECORD_0 {
+pub fn read_keyboard_input(api: &dyn WindowsApi) -> INPUT_RECORD_0 {
     loop {
-        let input_record = read_console_input_with_api(api);
+        let input_record = read_console_input(api);
         match input_record.EventType {
             KEY_EVENT => {
                 return input_record.Event;
@@ -1050,30 +849,6 @@ pub fn read_keyboard_input_with_api(api: &dyn WindowsApi) -> INPUT_RECORD_0 {
             }
         }
     }
-}
-
-/// Changes size and position of the current console window.
-///
-/// # Arguments
-///
-/// * `x`       - The x coordinate to move the window to.
-///               From the top left corner of the screen.
-/// * `y`       - The y coordinate to move the window to.
-///               From the top left corner of the screen.
-/// * `width`   - The width in pixels to resize the window to.
-///               In logical scaling.
-/// * `height`  - The height in pixels to resize the window to.
-///               In logical scaling.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::arrange_console;
-///
-/// arrange_console(100, 100, 800, 600);
-/// ```
-pub fn arrange_console(x: i32, y: i32, width: i32, height: i32) {
-    return arrange_console_with_api(&DEFAULT_WINDOWS_API, x, y, width, height);
 }
 
 /// Changes size and position of the current console window using the provided API.
@@ -1093,38 +868,15 @@ pub fn arrange_console(x: i32, y: i32, width: i32, height: i32) {
 /// # Examples
 ///
 /// ```no_run
-/// use csshw_lib::utils::windows::{arrange_console_with_api, DEFAULT_WINDOWS_API};
+/// use csshw_lib::utils::windows::{arrange_console, DEFAULT_WINDOWS_API};
 ///
-/// arrange_console_with_api(&DEFAULT_WINDOWS_API, 100, 100, 800, 600);
+/// arrange_console(&DEFAULT_WINDOWS_API, 100, 100, 800, 600);
 /// ```
-pub fn arrange_console_with_api(api: &dyn WindowsApi, x: i32, y: i32, width: i32, height: i32) {
+pub fn arrange_console(api: &dyn WindowsApi, x: i32, y: i32, width: i32, height: i32) {
     // FIXME: sometimes a daemon or client console isn't being arrange correctly
     // when this simply retrying doesn't solve the issue. Maybe it has something to do
     // with DPI awareness => https://docs.rs/embed-manifest/latest/embed_manifest/
     api.arrange_console(x, y, width, height).unwrap();
-}
-
-/// Detects if the current windows installation is Windows 10 or not.
-///
-/// Uses the os version, Windows 10 is < `10._.22000`. Windows 11 started with build 22000.
-///
-/// # Returns
-///
-/// Whether the current windows installation is Windows 10 or not.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::is_windows_10;
-///
-/// if is_windows_10() {
-///     println!("Running on Windows 10");
-/// } else {
-///     println!("Running on Windows 11 or newer");
-/// }
-/// ```
-pub fn is_windows_10() -> bool {
-    return is_windows_10_with_api(&DEFAULT_WINDOWS_API);
 }
 
 /// Detects if the current windows installation is Windows 10 or not using the provided API.
@@ -1142,15 +894,15 @@ pub fn is_windows_10() -> bool {
 /// # Examples
 ///
 /// ```no_run
-/// use csshw_lib::utils::windows::{is_windows_10_with_api, DEFAULT_WINDOWS_API};
+/// use csshw_lib::utils::windows::{is_windows_10, DEFAULT_WINDOWS_API};
 ///
-/// if is_windows_10_with_api(&DEFAULT_WINDOWS_API) {
+/// if is_windows_10(&DEFAULT_WINDOWS_API) {
 ///     println!("Running on Windows 10");
 /// } else {
 ///     println!("Running on Windows 11 or newer");
 /// }
 /// ```
-pub fn is_windows_10_with_api(api: &dyn WindowsApi) -> bool {
+pub fn is_windows_10(api: &dyn WindowsApi) -> bool {
     let version = api.get_os_version();
     let mut iter = version.split('.');
     let (major, _, build) = (

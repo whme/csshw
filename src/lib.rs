@@ -124,7 +124,7 @@ pub fn get_console_window_handle(process_id: u32) -> HWND {
 /// # Returns
 ///
 /// [PROCESS_INFORMATION] of the spawned process or None if failed
-pub fn create_process_with_command_line_api<W: WindowsApi>(
+pub fn create_process<W: WindowsApi>(
     api: &W,
     application: &str,
     command_line: &[u16],
@@ -162,7 +162,7 @@ pub fn create_process_windows_api(
     application: &str,
     command_line: &[u16],
 ) -> Option<PROCESS_INFORMATION> {
-    return create_process_with_command_line_api(&DEFAULT_WINDOWS_API, application, command_line);
+    return create_process(&DEFAULT_WINDOWS_API, application, command_line);
 }
 
 /// Trait for file system operations to enable mocking in tests
@@ -309,6 +309,7 @@ impl<R: Registry> Drop for WindowsSettingsDefaultTerminalApplicationGuard<R> {
 ///
 /// # Arguments
 ///
+/// * `api`         - Windows API implementation
 /// * `application` - Application name including file extension (`.exe`).
 ///                   If the application is not in the `PATH` environment variable, the full path
 ///                   must be specified.
@@ -317,23 +318,7 @@ impl<R: Registry> Drop for WindowsSettingsDefaultTerminalApplicationGuard<R> {
 /// # Returns
 ///
 /// [PROCESS_INFORMATION] of the spawned process.
-pub fn spawn_console_process(application: &str, args: Vec<String>) -> PROCESS_INFORMATION {
-    return spawn_console_process_with_api(&DEFAULT_WINDOWS_API, application, args)
-        .expect("Failed to create process");
-}
-
-/// Launch the given console application with the given arguments using the provided API.
-///
-/// # Arguments
-///
-/// * `api` - Windows API operations implementation
-/// * `application` - Application name including file extension
-/// * `args` - List of arguments to the application
-///
-/// # Returns
-///
-/// [PROCESS_INFORMATION] of the spawned process or None if failed
-pub fn spawn_console_process_with_api<W: WindowsApi>(
+pub fn spawn_console_process<W: WindowsApi>(
     api: &W,
     application: &str,
     args: Vec<String>,
@@ -397,8 +382,8 @@ pub fn init_logger_with_fs<F: FileSystem>(fs: &F, name: &str) {
 ///
 /// * `true` - Application was launched from GUI (Explorer, double-click, etc.)
 /// * `false` - Application was launched from existing console (command line)
-pub fn is_launched_from_gui_with_api<W: WindowsApi>(windows_api: &W) -> bool {
-    match windows_api.get_std_handle_console() {
+pub fn is_launched_from_gui<W: WindowsApi>(windows_api: &W) -> bool {
+    match windows_api.get_stdout_handle() {
         Ok(handle) => {
             match windows_api.get_console_screen_buffer_info_with_handle(handle) {
                 Ok(csbi) => {
@@ -412,7 +397,7 @@ pub fn is_launched_from_gui_with_api<W: WindowsApi>(windows_api: &W) -> bool {
             }
         }
         Err(err) => {
-            warn!("GetStdHandle failed: {:?}", err);
+            warn!("Failed to get stdout handle: {:?}", err);
             return false;
         }
     }
@@ -427,8 +412,8 @@ pub fn is_launched_from_gui_with_api<W: WindowsApi>(windows_api: &W) -> bool {
 ///
 /// * `true` - Application was launched from GUI (Explorer, double-click, etc.)
 /// * `false` - Application was launched from existing console (command line)
-pub fn is_launched_from_gui() -> bool {
-    return is_launched_from_gui_with_api(&DEFAULT_WINDOWS_API);
+pub fn is_launched_from_gui_legacy() -> bool {
+    return is_launched_from_gui(&DEFAULT_WINDOWS_API);
 }
 
 #[cfg(test)]

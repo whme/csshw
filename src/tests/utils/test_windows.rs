@@ -4,9 +4,9 @@
 #![allow(clippy::needless_return, clippy::doc_overindented_list_items)]
 
 use crate::utils::windows::{
-    clear_screen_with_api, get_console_title_with_api, is_windows_10_with_api,
-    read_console_input_with_api, read_keyboard_input_with_api, set_console_border_color_with_api,
-    set_console_color_with_api, set_console_title_with_api, utf16_buffer_to_string, MockWindowsApi,
+    clear_screen, get_console_title, is_windows_10,
+    read_console_input, read_keyboard_input, set_console_border_color,
+    set_console_color, set_console_title, utf16_buffer_to_string, MockWindowsApi,
     KEY_EVENT,
 };
 use windows::Win32::Foundation::COLORREF;
@@ -29,7 +29,7 @@ mod version_detection_test {
             .times(1)
             .return_const("6.3.9600".to_string());
 
-        let result = is_windows_10_with_api(&mock_api);
+        let result = is_windows_10(&mock_api);
         assert!(
             result,
             "Should detect Windows 6.3.9600 as Windows 10 or older (major <= 10)"
@@ -46,7 +46,7 @@ mod version_detection_test {
             .times(1)
             .return_const("11.0.25000".to_string());
 
-        let result = is_windows_10_with_api(&mock_api);
+        let result = is_windows_10(&mock_api);
         assert!(
             !result,
             "Should detect Windows 11.0.25000 as newer than Windows 10"
@@ -71,7 +71,7 @@ mod version_detection_test {
                 .times(1)
                 .return_const(version.to_string());
 
-            let result = is_windows_10_with_api(&mock_api);
+            let result = is_windows_10(&mock_api);
             assert_eq!(
                 result, expected,
                 "Version {version} should return {expected}"
@@ -90,7 +90,7 @@ mod version_detection_test {
             .return_const("invalid.version.string".to_string());
 
         let result = std::panic::catch_unwind(|| {
-            return is_windows_10_with_api(&mock_api);
+            return is_windows_10(&mock_api);
         });
         assert!(
             result.is_err(),
@@ -106,7 +106,7 @@ mod console_title_test {
     /// Tests console title setting with ASCII strings.
     /// Validates proper Windows API integration and string handling.
     #[test]
-    fn test_set_console_title_with_api() {
+    fn test_set_console_title() {
         let mut mock_api = MockWindowsApi::new();
         let test_title = "Test Console Title";
 
@@ -116,13 +116,13 @@ mod console_title_test {
             .times(1)
             .returning(|_| return Ok(()));
 
-        set_console_title_with_api(&mock_api, test_title);
+        set_console_title(&mock_api, test_title);
     }
 
     /// Tests console title retrieval with UTF-16 buffer handling.
     /// Validates proper string conversion and API integration.
     #[test]
-    fn test_get_console_title_with_api() {
+    fn test_get_console_title() {
         let mut mock_api = MockWindowsApi::new();
         let expected_title = "Current Console Title";
 
@@ -132,7 +132,7 @@ mod console_title_test {
             .collect();
 
         mock_api
-            .expect_get_console_title_utf16()
+            .expect_get_console_title()
             .with(mockall::predicate::always())
             .times(1)
             .returning(move |buffer: &mut [u16]| {
@@ -141,7 +141,7 @@ mod console_title_test {
                 return copy_len as i32;
             });
 
-        let result = get_console_title_with_api(&mock_api);
+        let result = get_console_title(&mock_api);
         assert_eq!(result, expected_title);
     }
 
@@ -152,12 +152,12 @@ mod console_title_test {
         let mut mock_api = MockWindowsApi::new();
 
         mock_api
-            .expect_get_console_title_utf16()
+            .expect_get_console_title()
             .with(mockall::predicate::always())
             .times(1)
             .returning(|_| return 0);
 
-        let result = get_console_title_with_api(&mock_api);
+        let result = get_console_title(&mock_api);
         assert_eq!(result, "");
     }
 
@@ -174,7 +174,7 @@ mod console_title_test {
             .collect();
 
         mock_api
-            .expect_get_console_title_utf16()
+            .expect_get_console_title()
             .with(mockall::predicate::always())
             .times(1)
             .returning(move |buffer: &mut [u16]| {
@@ -183,7 +183,7 @@ mod console_title_test {
                 return copy_len as i32;
             });
 
-        let result = get_console_title_with_api(&mock_api);
+        let result = get_console_title(&mock_api);
         assert_eq!(result, expected_title);
     }
 
@@ -201,7 +201,7 @@ mod console_title_test {
             .returning(|_| return Err(windows::core::Error::from_win32()));
 
         let result = std::panic::catch_unwind(|| {
-            set_console_title_with_api(&mock_api, test_title);
+            set_console_title(&mock_api, test_title);
         });
 
         assert!(result.is_err(), "Should panic when set_console_title fails");
@@ -281,7 +281,7 @@ mod console_color_test {
     /// Tests console color setting with text attributes and buffer filling.
     /// Validates proper color application across the entire console buffer.
     #[test]
-    fn test_set_console_color_with_api() {
+    fn test_set_console_color() {
         let mut mock_api = MockWindowsApi::new();
         let test_color = CONSOLE_CHARACTER_ATTRIBUTES(0x0F);
 
@@ -305,7 +305,7 @@ mod console_color_test {
             .times(25)
             .returning(|_, _, _| return Ok(80));
 
-        set_console_color_with_api(&mock_api, test_color);
+        set_console_color(&mock_api, test_color);
     }
 
     /// Tests console color setting error handling when API calls fail.
@@ -322,7 +322,7 @@ mod console_color_test {
             .returning(|_| return Err(windows::core::Error::from_win32()));
 
         let result = std::panic::catch_unwind(|| {
-            set_console_color_with_api(&mock_api, test_color);
+            set_console_color(&mock_api, test_color);
         });
 
         assert!(
@@ -339,7 +339,7 @@ mod clear_screen_test {
     /// Tests console screen clearing with scroll buffer operations.
     /// Validates proper screen clearing and cursor positioning to origin.
     #[test]
-    fn test_clear_screen_with_api() {
+    fn test_clear_screen() {
         let mut mock_api = MockWindowsApi::new();
 
         let mut buffer_info = CONSOLE_SCREEN_BUFFER_INFO::default();
@@ -363,7 +363,7 @@ mod clear_screen_test {
             .times(1)
             .returning(|_| return Ok(()));
 
-        clear_screen_with_api(&mock_api);
+        clear_screen(&mock_api);
     }
 
     /// Tests clear screen error handling when buffer info retrieval fails.
@@ -378,7 +378,7 @@ mod clear_screen_test {
             .returning(|| return Err(windows::core::Error::from_win32()));
 
         let result = std::panic::catch_unwind(|| {
-            clear_screen_with_api(&mock_api);
+            clear_screen(&mock_api);
         });
 
         assert!(
@@ -389,13 +389,13 @@ mod clear_screen_test {
 }
 
 /// Test module for console border color functions with proper mocking.
-mod console_border_color_with_api_test {
+mod console_border_color_test {
     use super::*;
 
     /// Tests console border color setting on Windows 10 (no-op behavior).
     /// Validates that function skips DWM calls on Windows 10 systems.
     #[test]
-    fn test_set_console_border_color_with_api_windows_10() {
+    fn test_set_console_border_color_windows_10() {
         let mut api = MockWindowsApi::new();
         let test_color = COLORREF(0x00FF0000);
 
@@ -403,17 +403,17 @@ mod console_border_color_with_api_test {
             .times(1)
             .return_const("10.0.19045".to_string());
 
-        api.expect_set_dwm_border_color()
+        api.expect_set_console_border_color()
             .with(mockall::predicate::eq(test_color))
             .times(0);
 
-        set_console_border_color_with_api(&api, test_color);
+        set_console_border_color(&api, test_color);
     }
 
     /// Tests console border color setting on Windows 11 with DWM integration.
     /// Validates that function properly calls DWM APIs on Windows 11+ systems.
     #[test]
-    fn test_set_console_border_color_with_api_windows_11() {
+    fn test_set_console_border_color_windows_11() {
         let mut api = MockWindowsApi::new();
         let test_color = COLORREF(0x00FF0000);
 
@@ -421,18 +421,18 @@ mod console_border_color_with_api_test {
             .times(1)
             .return_const("10.0.22000".to_string());
 
-        api.expect_set_dwm_border_color()
+        api.expect_set_console_border_color()
             .with(mockall::predicate::eq(test_color))
             .times(1)
             .returning(|_| return Ok(()));
 
-        set_console_border_color_with_api(&api, test_color);
+        set_console_border_color(&api, test_color);
     }
 
     /// Tests console border color setting error handling when DWM calls fail.
     /// Validates that function panics appropriately on DWM API errors.
     #[test]
-    fn test_set_console_border_color_with_api_error_handling() {
+    fn test_set_console_border_color_error_handling() {
         let mut api = MockWindowsApi::new();
         let test_color = COLORREF(0x00FF0000);
 
@@ -440,18 +440,18 @@ mod console_border_color_with_api_test {
             .times(1)
             .return_const("10.0.22000".to_string());
 
-        api.expect_set_dwm_border_color()
+        api.expect_set_console_border_color()
             .with(mockall::predicate::eq(test_color))
             .times(1)
             .returning(|_| return Err(windows::core::Error::from_win32()));
 
         let result = std::panic::catch_unwind(|| {
-            set_console_border_color_with_api(&api, test_color);
+            set_console_border_color(&api, test_color);
         });
 
         assert!(
             result.is_err(),
-            "Should panic when set_dwm_border_color fails"
+            "Should panic when set_console_border_color fails"
         );
     }
 }
@@ -465,7 +465,7 @@ mod console_input_test {
     /// Tests basic console input reading with single event retrieval.
     /// Validates proper input record handling and event type detection.
     #[test]
-    fn test_read_console_input_with_api() {
+    fn test_read_console_input() {
         let mut mock_api = MockWindowsApi::new();
 
         let test_record = INPUT_RECORD {
@@ -482,14 +482,14 @@ mod console_input_test {
                 return Ok(1);
             });
 
-        let result = read_console_input_with_api(&mock_api);
+        let result = read_console_input(&mock_api);
         assert_eq!(result.EventType, KEY_EVENT);
     }
 
     /// Tests console input reading with retry logic when no events are available.
     /// Validates that function retries until an event is successfully retrieved.
     #[test]
-    fn test_read_console_input_with_api_retry() {
+    fn test_read_console_input_retry() {
         let mut mock_api = MockWindowsApi::new();
 
         let test_record = INPUT_RECORD {
@@ -512,14 +512,14 @@ mod console_input_test {
                 }
             });
 
-        let result = read_console_input_with_api(&mock_api);
+        let result = read_console_input(&mock_api);
         assert_eq!(result.EventType, KEY_EVENT);
     }
 
     /// Tests keyboard input filtering with event type detection and field validation.
     /// Validates that function filters out non-key events and returns complete key data.
     #[test]
-    fn test_read_keyboard_input_with_api() {
+    fn test_read_keyboard_input() {
         let mut mock_api = MockWindowsApi::new();
 
         let non_key_record = INPUT_RECORD {
@@ -559,7 +559,7 @@ mod console_input_test {
                 return Ok(1);
             });
 
-        let result = read_keyboard_input_with_api(&mock_api);
+        let result = read_keyboard_input(&mock_api);
 
         let returned_key_event = unsafe { result.KeyEvent };
         assert_eq!(returned_key_event.bKeyDown, key_event_record.bKeyDown);
@@ -597,7 +597,7 @@ mod console_input_test {
             .returning(|_| return Err(windows::core::Error::from_win32()));
 
         let result = std::panic::catch_unwind(|| {
-            read_console_input_with_api(&mock_api);
+            read_console_input(&mock_api);
         });
 
         assert!(

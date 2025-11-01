@@ -3,8 +3,9 @@
 use crate::client::main as client_main;
 use crate::daemon::{main as daemon_main, resolve_cluster_tags};
 use crate::utils::config::{ClientConfig, Cluster, Config, ConfigOpt, DaemonConfig};
+use crate::utils::windows::DEFAULT_WINDOWS_API;
 use crate::{
-    get_console_window_handle, init_logger, spawn_console_process,
+    get_console_window_handle, init_logger, is_launched_from_gui, spawn_console_process,
     WindowsSettingsDefaultTerminalApplicationGuard,
 };
 use clap::{ArgAction, CommandFactory, Parser, Subcommand};
@@ -196,7 +197,13 @@ impl Entrypoint for MainEntrypoint {
         // We must wait for the window to actually launch before dropping the _guard as we might otherwise
         // reset the configuration before the window was launched
         let _ = get_console_window_handle(
-            spawn_console_process(&format!("{PKG_NAME}.exe"), daemon_args).dwProcessId,
+            spawn_console_process(
+                &DEFAULT_WINDOWS_API,
+                &format!("{PKG_NAME}.exe"),
+                daemon_args,
+            )
+            .expect("Failed to create process")
+            .dwProcessId,
         );
     }
 }
@@ -354,7 +361,7 @@ async fn run_interactive_mode<T: Entrypoint>(
 /// If no subcommand is given we launch the daemon subcommand in a new window.
 pub async fn main<T: Entrypoint>(args: Args, mut entrypoint: T) {
     // CRITICAL: Check GUI launch BEFORE any output to console
-    let launched_from_gui = crate::is_launched_from_gui();
+    let launched_from_gui = is_launched_from_gui(&DEFAULT_WINDOWS_API);
 
     // Set DPI awareness programatically. Using the manifest is the recommended way
     // but conhost.exe does not do any manifest loading.
