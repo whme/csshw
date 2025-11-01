@@ -342,64 +342,6 @@ mod create_process_api_test {
     }
 }
 
-/// Test module for command line building functionality.
-mod command_line_test {
-    use crate::build_command_line;
-
-    /// Tests build_command_line with simple application and arguments.
-    /// Validates proper UTF-16 encoding and quoting.
-    #[test]
-    fn test_build_command_line_simple() {
-        let application = "cmd.exe";
-        let args = vec!["arg1".to_string(), "arg2".to_string()];
-
-        let result = build_command_line(application, &args);
-
-        // Also make sure its null terminated
-        assert_eq!(
-            result,
-            vec![
-                34, 99, 109, 100, 46, 101, 120, 101, 34, 32, 34, 97, 114, 103, 49, 34, 32, 34, 97,
-                114, 103, 50, 34, 0
-            ]
-        );
-    }
-
-    /// Tests build_command_line with no arguments.
-    /// Validates proper handling of applications without arguments.
-    #[test]
-    fn test_build_command_line_no_args() {
-        let application = "notepad.exe";
-        let args: Vec<String> = vec![];
-
-        let result = build_command_line(application, &args);
-
-        assert_eq!(
-            result,
-            vec![34, 110, 111, 116, 101, 112, 97, 100, 46, 101, 120, 101, 34, 0]
-        );
-    }
-
-    /// Tests build_command_line with arguments containing spaces.
-    /// Validates proper quoting of complex arguments.
-    #[test]
-    fn test_build_command_line_spaces() {
-        let application = "program.exe";
-        let args = vec!["arg with spaces".to_string(), "another arg".to_string()];
-
-        let result = build_command_line(application, &args);
-
-        assert_eq!(
-            result,
-            vec![
-                34, 112, 114, 111, 103, 114, 97, 109, 46, 101, 120, 101, 34, 32, 34, 97, 114, 103,
-                32, 119, 105, 116, 104, 32, 115, 112, 97, 99, 101, 115, 34, 32, 34, 97, 110, 111,
-                116, 104, 101, 114, 32, 97, 114, 103, 34, 0
-            ]
-        );
-    }
-}
-
 /// Test module for process spawning functionality.
 mod spawn_process_test {
     use super::*;

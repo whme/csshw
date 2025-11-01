@@ -5,11 +5,8 @@
 #![warn(missing_docs)]
 #![doc(html_no_source)]
 
-use std::ffi::OsString;
 use std::fs::{create_dir, File};
 use std::mem;
-
-use std::os::windows::ffi::OsStrExt;
 
 use log::warn;
 use registry::{value, Data, Hive, Security};
@@ -114,33 +111,6 @@ impl Registry for DefaultRegistry {
 /// The Window Handle [HWND] for the window associated with the given `process_id`.
 pub fn get_console_window_handle(process_id: u32) -> HWND {
     return DEFAULT_WINDOWS_API.get_window_handle_for_process(process_id);
-}
-
-/// Build command line string for Windows process creation
-///
-/// # Arguments
-///
-/// * `application` - Application name including file extension
-/// * `args` - List of arguments to the application
-///
-/// # Returns
-///
-/// UTF-16 encoded command line with proper quoting
-pub fn build_command_line(application: &str, args: &[String]) -> Vec<u16> {
-    let mut cmd: Vec<u16> = Vec::new();
-    cmd.push(b'"' as u16);
-    cmd.extend(OsString::from(application).encode_wide());
-    cmd.push(b'"' as u16);
-
-    for arg in args {
-        cmd.push(' ' as u16);
-        cmd.push(b'"' as u16);
-        cmd.extend(OsString::from(arg).encode_wide());
-        cmd.push(b'"' as u16);
-    }
-    cmd.push(0); // add null terminator
-
-    return cmd;
 }
 
 /// Create process with command line using the provided API (testable version)
