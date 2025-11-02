@@ -118,6 +118,41 @@ impl LoggerInitializer for CLILoggerInitializer {
     }
 }
 
+/// Trait for writing output to enable dependency injection and testing
+#[cfg_attr(test, automock)]
+pub trait Writer {
+    /// Write a line to the output
+    fn writeln(&mut self, text: &str);
+    /// Write text without a newline to the output
+    fn write(&mut self, text: &str);
+    /// Write a line to stderr
+    fn write_err(&mut self, text: &str);
+    /// Flush the output
+    fn flush(&mut self);
+}
+
+/// Default implementation of Writer trait that writes to stdout/stderr
+pub struct CLIWriter;
+
+impl Writer for CLIWriter {
+    fn writeln(&mut self, text: &str) {
+        println!("{text}");
+    }
+
+    fn write(&mut self, text: &str) {
+        print!("{text}");
+    }
+
+    fn write_err(&mut self, text: &str) {
+        eprintln!("{text}");
+    }
+
+    fn flush(&mut self) {
+        use std::io::Write;
+        std::io::stdout().flush().unwrap();
+    }
+}
+
 /// Trait defining the entrypoint functions of the different
 /// subcommands
 #[cfg_attr(test, automock)]
@@ -222,13 +257,15 @@ impl Entrypoint for MainEntrypoint {
 }
 
 /// Display the interactive mode prompt and instructions
-fn show_interactive_prompt() {
-    println!("\n=== Interactive Mode ===");
-    println!("Enter your {PKG_NAME} arguments (or press Enter to exit):");
-    println!("Example: -u myuser host1 host2 host3");
-    println!("Example: --help");
-    print!("> ");
-    std::io::Write::flush(&mut std::io::stdout()).unwrap();
+fn show_interactive_prompt<Wr: Writer>(writer: &mut Wr) {
+    writer.writeln("\n=== Interactive Mode ===");
+    writer.writeln(&format!(
+        "Enter your {PKG_NAME} arguments (or press Enter to exit):"
+    ));
+    writer.writeln("Example: -u myuser host1 host2 host3");
+    writer.writeln("Example: --help");
+    writer.write("> ");
+    writer.flush();
 }
 
 /// Read user input from stdin
@@ -327,14 +364,15 @@ async fn execute_parsed_command<
 }
 
 /// Run the interactive mode loop for GUI launches
-async fn run_interactive_mode<W: WindowsApi + Clone + 'static, T: Entrypoint>(
+async fn run_interactive_mode<W: WindowsApi + Clone + 'static, T: Entrypoint, Wr: Writer>(
     windows_api: &W,
     mut entrypoint: T,
     config: &Config,
     config_path: &str,
+    writer: &mut Wr,
 ) {
     loop {
-        show_interactive_prompt();
+        show_interactive_prompt(writer);
 
         match read_user_input() {
             Ok(Some(input)) => {
@@ -362,7 +400,7 @@ async fn run_interactive_mode<W: WindowsApi + Clone + 'static, T: Entrypoint>(
                         .await;
                     }
                     Err(err) => {
-                        eprintln!("\nError parsing arguments: {err}");
+                        writer.write_err(&format!("\nError parsing arguments: {err}"));
                     }
                 }
             }
@@ -370,7 +408,7 @@ async fn run_interactive_mode<W: WindowsApi + Clone + 'static, T: Entrypoint>(
                 return;
             }
             Err(err) => {
-                eprintln!("Error reading input: {err}");
+                writer.write_err(&format!("Error reading input: {err}"));
             }
         }
     }
@@ -382,10 +420,19 @@ async fn run_interactive_mode<W: WindowsApi + Clone + 'static, T: Entrypoint>(
 /// loads an existing config or writes the default config to disk, and
 /// calls the respective subcommand.
 /// If no subcommand is given we launch the daemon subcommand in a new window.
-pub async fn main<W: WindowsApi + Clone + 'static, E: Entrypoint>(
+pub async fn main<
+    W: WindowsApi + Clone + 'static,
+    E: Entrypoint,
+    Wr: Writer,
+    A: ArgsCommand,
+    L: LoggerInitializer,
+>(
     windows_api: &W,
     args: Args,
     mut entrypoint: E,
+    writer: &mut Wr,
+    args_command: &A,
+    logger_initializer: &L,
 ) {
     // CRITICAL: Check GUI launch BEFORE any output to console
     let launched_from_gui = is_launched_from_gui(windows_api);
@@ -394,12 +441,14 @@ pub async fn main<W: WindowsApi + Clone + 'static, E: Entrypoint>(
     // but conhost.exe does not do any manifest loading.
     // https://github.com/microsoft/terminal/issues/18464#issuecomment-2623392013
     if let Err(err) = windows_api.set_process_dpi_awareness(PROCESS_PER_MONITOR_DPI_AWARE) {
-        eprintln!("Failed to set DPI awareness programatically: {err:?}");
+        writer.write_err(&format!(
+            "Failed to set DPI awareness programatically: {err:?}"
+        ));
     }
     match std::env::current_exe() {
         Ok(path) => match path.parent() {
             None => {
-                eprintln!("Failed to get executable path parent working directory");
+                writer.write_err("Failed to get executable path parent working directory");
             }
             Some(exe_dir) => {
                 std::env::set_current_dir(exe_dir)
@@ -407,7 +456,7 @@ pub async fn main<W: WindowsApi + Clone + 'static, E: Entrypoint>(
             }
         },
         Err(_) => {
-            eprintln!("Failed to get executable directory");
+            writer.write_err("Failed to get executable directory");
         }
     }
 
@@ -418,7 +467,7 @@ pub async fn main<W: WindowsApi + Clone + 'static, E: Entrypoint>(
     match &args.command {
         Some(Commands::Client { host }) => {
             if args.debug {
-                init_logger(&format!("csshw_client_{host}"));
+                logger_initializer.init_logger(&format!("csshw_client_{host}"));
             }
             entrypoint
                 .client_main(
@@ -432,7 +481,7 @@ pub async fn main<W: WindowsApi + Clone + 'static, E: Entrypoint>(
         }
         Some(Commands::Daemon {}) => {
             if args.debug {
-                init_logger("csshw_daemon");
+                logger_initializer.init_logger("csshw_daemon");
             }
             entrypoint
                 .daemon_main(
@@ -449,12 +498,13 @@ pub async fn main<W: WindowsApi + Clone + 'static, E: Entrypoint>(
         None => {
             // If no hosts provided, show help and handle GUI vs console launch
             if args.hosts.is_empty() {
-                // Show help using clap's built-in help
-                CLIArgsCommand.print_help().unwrap();
+                // Show help using the injected args_command
+                let _ = args_command.print_help();
 
                 // If launched from GUI, allow user to input arguments interactively
                 if launched_from_gui {
-                    run_interactive_mode(windows_api, entrypoint, &config, &config_path).await;
+                    run_interactive_mode(windows_api, entrypoint, &config, &config_path, writer)
+                        .await;
                 }
                 return;
             }

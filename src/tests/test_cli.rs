@@ -137,14 +137,29 @@ mod cli_args_test {
 }
 
 mod cli_main_test {
-    use crate::cli::{main, Args, Commands, MockEntrypoint};
+    use crate::cli::{
+        main, Args, Commands, MockArgsCommand, MockEntrypoint, MockLoggerInitializer, MockWriter,
+    };
     use crate::utils::windows::MockWindowsApi;
 
-    #[tokio::test]
-    async fn test_main() {
-        let mut mock = MockEntrypoint::new();
-        let mut mock_windows_api = MockWindowsApi::new();
+    /// Test parameters for parametrized main function tests
+    struct MainTestParams {
+        /// Test case name for identification
+        name: &'static str,
+        /// Arguments to pass to main function
+        args: Args,
+        /// Whether launched from GUI
+        launched_from_gui: bool,
+        /// Expected behavior verification function
+        verify_fn: fn(&mut MockEntrypoint, &mut MockWindowsApi, &mut MockWriter),
+    }
 
+    /// Helper function to set up common Windows API mocks
+    fn setup_common_windows_api_mocks(
+        mock_windows_api: &mut MockWindowsApi,
+        mock_writer: &mut MockWriter,
+        launched_from_gui: bool,
+    ) {
         // Mock the is_launched_from_gui call
         mock_windows_api.expect_get_stdout_handle().returning(|| {
             return Ok(windows::Win32::Foundation::HANDLE(
@@ -153,92 +168,198 @@ mod cli_main_test {
         });
         mock_windows_api
             .expect_get_console_screen_buffer_info_with_handle()
-            .returning(|_| {
-                return Ok(
-                    windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO {
-                        dwSize: windows::Win32::System::Console::COORD { X: 80, Y: 25 },
-                        dwCursorPosition: windows::Win32::System::Console::COORD { X: 10, Y: 5 },
-                        wAttributes: windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES(
-                            0,
-                        ),
-                        srWindow: windows::Win32::System::Console::SMALL_RECT {
-                            Left: 0,
-                            Top: 0,
-                            Right: 79,
-                            Bottom: 24,
+            .returning(move |_| {
+                if launched_from_gui {
+                    // Return error to simulate GUI launch
+                    return Err(windows::core::Error::from(
+                        windows::Win32::Foundation::E_FAIL,
+                    ));
+                } else {
+                    // Return success to simulate console launch
+                    return Ok(
+                        windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO {
+                            dwSize: windows::Win32::System::Console::COORD { X: 80, Y: 25 },
+                            dwCursorPosition: windows::Win32::System::Console::COORD {
+                                X: 10,
+                                Y: 5,
+                            },
+                            wAttributes:
+                                windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES(0),
+                            srWindow: windows::Win32::System::Console::SMALL_RECT {
+                                Left: 0,
+                                Top: 0,
+                                Right: 79,
+                                Bottom: 24,
+                            },
+                            dwMaximumWindowSize: windows::Win32::System::Console::COORD {
+                                X: 80,
+                                Y: 25,
+                            },
                         },
-                        dwMaximumWindowSize: windows::Win32::System::Console::COORD {
-                            X: 80,
-                            Y: 25,
-                        },
-                    },
-                );
+                    );
+                }
             });
         // Mock the set_process_dpi_awareness call
         mock_windows_api
             .expect_set_process_dpi_awareness()
-            .returning(|_| return Ok(()));
-
-        // Mock the create_process_with_args call that will be made by the main method
-        mock_windows_api
-            .expect_create_process_with_args()
-            .with(
-                mockall::predicate::eq("csshw.exe"),
-                mockall::predicate::eq(vec![
-                    "daemon".to_string(),
-                    "host1".to_string(),
-                    "host2".to_string(),
-                ]),
-            )
-            .returning(|_, _| {
-                return Some(windows::Win32::System::Threading::PROCESS_INFORMATION {
-                    hProcess: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
-                        std::ffi::c_void,
-                    >()),
-                    hThread: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
-                        std::ffi::c_void,
-                    >()),
-                    dwProcessId: 1234,
-                    dwThreadId: 5678,
-                });
-            });
-
-        // Mock the get_window_handle_for_process call
-        mock_windows_api
-            .expect_get_window_handle_for_process()
-            .with(mockall::predicate::eq(1234u32))
             .returning(|_| {
-                return windows::Win32::Foundation::HWND(
-                    std::ptr::dangling_mut::<std::ffi::c_void>(),
-                );
+                return Err(windows::core::Error::from(
+                    windows::Win32::Foundation::E_FAIL,
+                ));
             });
 
-        let args = Args {
-            command: None,
-            username: None,
-            port: None,
-            hosts: vec!["host1".to_string(), "host2".to_string()],
-            debug: false,
-        };
-        mock.expect_main()
-            .once()
-            .returning(|_: &MockWindowsApi, config_path, _, args| {
-                assert_eq!(config_path, "csshw-config.toml");
-                assert_eq!(args.command, None);
-                assert_eq!(args.username, None);
-                assert_eq!(args.hosts, vec!["host1".to_string(), "host2".to_string()]);
-                assert!(!args.debug);
-                return;
-            });
-        main(&mock_windows_api, args, mock).await;
+        // Expect DPI awareness error message to be written
+        mock_writer
+            .expect_write_err()
+            .with(mockall::predicate::str::starts_with(
+                "Failed to set DPI awareness programatically:",
+            ))
+            .times(1)
+            .returning(|_| {});
+    }
+
+    /// Parametrized test for main function covering all branches
+    #[tokio::test]
+    async fn test_main_parametrized() {
+        let test_cases = vec![
+            MainTestParams {
+                name: "main_with_hosts_success",
+                args: Args {
+                    command: None,
+                    username: None,
+                    port: None,
+                    hosts: vec!["host1".to_string(), "host2".to_string()],
+                    debug: false,
+                },
+                launched_from_gui: false,
+                verify_fn: |mock, mock_windows_api, _mock_writer| {
+                    // Mock the create_process_with_args call that will be made by the main method
+                    mock_windows_api
+                        .expect_create_process_with_args()
+                        .with(
+                            mockall::predicate::eq("csshw.exe"),
+                            mockall::predicate::eq(vec![
+                                "daemon".to_string(),
+                                "host1".to_string(),
+                                "host2".to_string(),
+                            ]),
+                        )
+                        .returning(|_, _| {
+                            return Some(windows::Win32::System::Threading::PROCESS_INFORMATION {
+                                hProcess: windows::Win32::Foundation::HANDLE(
+                                    std::ptr::dangling_mut::<std::ffi::c_void>(),
+                                ),
+                                hThread: windows::Win32::Foundation::HANDLE(
+                                    std::ptr::dangling_mut::<std::ffi::c_void>(),
+                                ),
+                                dwProcessId: 1234,
+                                dwThreadId: 5678,
+                            });
+                        });
+
+                    // Mock the get_window_handle_for_process call
+                    mock_windows_api
+                        .expect_get_window_handle_for_process()
+                        .with(mockall::predicate::eq(1234u32))
+                        .returning(|_| {
+                            return windows::Win32::Foundation::HWND(std::ptr::dangling_mut::<
+                                std::ffi::c_void,
+                            >(
+                            ));
+                        });
+
+                    mock.expect_main().once().returning(
+                        |_: &MockWindowsApi, config_path, _, args| {
+                            assert_eq!(config_path, "csshw-config.toml");
+                            assert_eq!(args.command, None);
+                            assert_eq!(args.username, None);
+                            assert_eq!(args.hosts, vec!["host1".to_string(), "host2".to_string()]);
+                            assert!(!args.debug);
+                            return;
+                        },
+                    );
+                },
+            },
+            MainTestParams {
+                name: "main_with_empty_hosts_console_launch",
+                args: Args {
+                    command: None,
+                    username: None,
+                    port: None,
+                    hosts: vec![],
+                    debug: false,
+                },
+                launched_from_gui: false,
+                verify_fn: |_mock, _mock_windows_api, _mock_writer| {
+                    // No additional expectations needed - should just print help and return
+                },
+            },
+            MainTestParams {
+                name: "main_with_empty_hosts_gui_launch",
+                args: Args {
+                    command: None,
+                    username: None,
+                    port: None,
+                    hosts: vec![],
+                    debug: false,
+                },
+                launched_from_gui: true,
+                verify_fn: |_mock, _mock_windows_api, _mock_writer| {
+                    // No additional expectations needed - should print help and enter interactive mode
+                    // Interactive mode testing would require more complex mocking of stdin
+                },
+            },
+        ];
+
+        for test_case in test_cases {
+            println!("Running test case: {}", test_case.name);
+
+            let mut mock = MockEntrypoint::new();
+            let mut mock_windows_api = MockWindowsApi::new();
+
+            let mut mock_writer = MockWriter::new();
+
+            // Set up common mocks
+            setup_common_windows_api_mocks(
+                &mut mock_windows_api,
+                &mut mock_writer,
+                test_case.launched_from_gui,
+            );
+
+            // Set up test-specific expectations
+            (test_case.verify_fn)(&mut mock, &mut mock_windows_api, &mut mock_writer);
+
+            // Run the test
+            let mut mock_args_command = MockArgsCommand::new();
+
+            // Set up mock for help printing in empty hosts cases
+            if test_case.args.hosts.is_empty() {
+                mock_args_command
+                    .expect_print_help()
+                    .times(1)
+                    .returning(|| return Ok(()));
+            }
+
+            let mock_logger_initializer = MockLoggerInitializer::new();
+            main(
+                &mock_windows_api,
+                test_case.args,
+                mock,
+                &mut mock_writer,
+                &mock_args_command,
+                &mock_logger_initializer,
+            )
+            .await;
+        }
     }
 
     #[tokio::test]
     async fn test_daemon_main() {
         let mut mock = MockEntrypoint::new();
         let mut mock_windows_api = MockWindowsApi::new();
+        let mut mock_writer = MockWriter::new();
 
-        // Mock the is_launched_from_gui call
+        // Set up Windows API mocks without the DPI error expectation
         mock_windows_api.expect_get_stdout_handle().returning(|| {
             return Ok(windows::Win32::Foundation::HANDLE(
                 std::ptr::dangling_mut::<std::ffi::c_void>(),
@@ -267,10 +388,12 @@ mod cli_main_test {
                     },
                 );
             });
-        // Mock the set_process_dpi_awareness call
+
+        // Mock the set_process_dpi_awareness call to succeed for this test
         mock_windows_api
             .expect_set_process_dpi_awareness()
             .returning(|_| return Ok(()));
+
         mock.expect_daemon_main().once().returning(
             |_: &MockWindowsApi, hosts, username, port, _, _, debug| {
                 assert_eq!(hosts, vec!["host1".to_string(), "host2".to_string()]);
@@ -287,15 +410,26 @@ mod cli_main_test {
             hosts: vec!["host1".to_string(), "host2".to_string()],
             debug: false,
         };
-        main(&mock_windows_api, args, mock).await;
+        let mock_args_command = MockArgsCommand::new();
+        let mock_logger_initializer = MockLoggerInitializer::new();
+        main(
+            &mock_windows_api,
+            args,
+            mock,
+            &mut mock_writer,
+            &mock_args_command,
+            &mock_logger_initializer,
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn test_client_main() {
         let mut mock = MockEntrypoint::new();
         let mut mock_windows_api = MockWindowsApi::new();
+        let mut mock_writer = MockWriter::new();
 
-        // Mock the is_launched_from_gui call
+        // Set up Windows API mocks without the DPI error expectation
         mock_windows_api.expect_get_stdout_handle().returning(|| {
             return Ok(windows::Win32::Foundation::HANDLE(
                 std::ptr::dangling_mut::<std::ffi::c_void>(),
@@ -324,10 +458,12 @@ mod cli_main_test {
                     },
                 );
             });
-        // Mock the set_process_dpi_awareness call
+
+        // Mock the set_process_dpi_awareness call to succeed for this test
         mock_windows_api
             .expect_set_process_dpi_awareness()
             .returning(|_| return Ok(()));
+
         mock.expect_client_main::<MockWindowsApi>()
             .once()
             .returning(|_, host, username, port, _| {
@@ -345,7 +481,17 @@ mod cli_main_test {
             hosts: vec!["host1".to_string()],
             debug: false,
         };
-        main(&mock_windows_api, args, mock).await;
+        let mock_args_command = MockArgsCommand::new();
+        let mock_logger_initializer = MockLoggerInitializer::new();
+        main(
+            &mock_windows_api,
+            args,
+            mock,
+            &mut mock_writer,
+            &mock_args_command,
+            &mock_logger_initializer,
+        )
+        .await;
     }
 }
 
