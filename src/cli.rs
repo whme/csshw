@@ -450,7 +450,7 @@ pub async fn main<W: WindowsApi + Clone + 'static, E: Entrypoint>(
             // If no hosts provided, show help and handle GUI vs console launch
             if args.hosts.is_empty() {
                 // Show help using clap's built-in help
-                Args::command().print_help().unwrap();
+                CLIArgsCommand.print_help().unwrap();
 
                 // If launched from GUI, allow user to input arguments interactively
                 if launched_from_gui {
