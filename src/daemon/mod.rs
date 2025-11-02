@@ -260,7 +260,6 @@ impl<'a> Daemon<'a> {
             }
         });
 
-        // Launch background monitoring task with proper Arc<dyn WindowsApi + Send + Sync>
         ensure_client_z_order_in_sync_with_daemon(
             Arc::new(windows_api.clone()),
             clients.to_owned(),
@@ -1070,14 +1069,14 @@ fn get_console_rect(
 /// # Arguments
 ///
 /// * `windows_api` - Arc-wrapped Windows API implementation for thread-safe access
-/// * `clients` - A thread safe mapping from the number
-///               a client console window was launched at
-///               in relation to the other client windows
-///               and the clients console window handle.
-///               The mapping must be thread safe to allow
-///               it to be modified by the main thread
-///               while we periodically read from it in the
-///               background thread.
+/// * `clients`     - A thread safe mapping from the number
+///                   a client console window was launched at
+///                   in relation to the other client windows
+///                   and the clients console window handle.
+///                   The mapping must be thread safe to allow
+///                   it to be modified by the main thread
+///                   while we periodically read from it in the
+///                   background thread.
 fn ensure_client_z_order_in_sync_with_daemon<W: WindowsApi + Send + Sync + 'static>(
     windows_api: Arc<W>,
     clients: Arc<Mutex<Vec<Client>>>,
