@@ -3,7 +3,7 @@
 use crate::client::main as client_main;
 use crate::daemon::{main as daemon_main, resolve_cluster_tags};
 use crate::utils::config::{ClientConfig, Cluster, Config, ConfigOpt, DaemonConfig};
-use crate::utils::windows::DEFAULT_WINDOWS_API;
+use crate::utils::windows::WindowsApi;
 use crate::{
     get_console_window_handle, init_logger, is_launched_from_gui, spawn_console_process,
     WindowsSettingsDefaultTerminalApplicationGuard,
@@ -12,7 +12,7 @@ use clap::{ArgAction, CommandFactory, Parser, Subcommand};
 
 #[cfg(test)]
 use mockall::{automock, predicate::*};
-use windows::Win32::UI::HiDpi::{SetProcessDpiAwareness, PROCESS_PER_MONITOR_DPI_AWARE};
+use windows::Win32::UI::HiDpi::PROCESS_PER_MONITOR_DPI_AWARE;
 
 const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -123,16 +123,18 @@ impl LoggerInitializer for CLILoggerInitializer {
 #[cfg_attr(test, automock)]
 pub trait Entrypoint {
     /// Entrypoint for the client subcommand
-    fn client_main(
+    fn client_main<W: WindowsApi + 'static>(
         &mut self,
+        windows_api: &W,
         host: String,
         username: Option<String>,
         port: Option<u16>,
         config: &ClientConfig,
     ) -> impl std::future::Future<Output = ()> + Send;
     /// Entrypoint for the daemon subcommand
-    fn daemon_main(
+    fn daemon_main<W: WindowsApi + Clone + 'static>(
         &mut self,
+        windows_api: &W,
         hosts: Vec<String>,
         username: Option<String>,
         port: Option<u16>,
@@ -141,22 +143,30 @@ pub trait Entrypoint {
         debug: bool,
     ) -> impl std::future::Future<Output = ()> + Send;
     /// Entrypoint for the main command
-    fn main(&mut self, config_path: &str, config: &Config, args: Args);
+    fn main<W: WindowsApi + 'static>(
+        &mut self,
+        windows_api: &W,
+        config_path: &str,
+        config: &Config,
+        args: Args,
+    );
 }
 
 impl Entrypoint for MainEntrypoint {
-    async fn client_main(
+    async fn client_main<W: WindowsApi>(
         &mut self,
+        windows_api: &W,
         host: String,
         username: Option<String>,
         port: Option<u16>,
         config: &ClientConfig,
     ) {
-        client_main(host, username, port, config).await;
+        client_main(windows_api, host, username, port, config).await;
     }
 
-    async fn daemon_main(
+    async fn daemon_main<W: WindowsApi + Clone + 'static>(
         &mut self,
+        windows_api: &W,
         hosts: Vec<String>,
         username: Option<String>,
         port: Option<u16>,
@@ -164,10 +174,16 @@ impl Entrypoint for MainEntrypoint {
         clusters: &[Cluster],
         debug: bool,
     ) {
-        daemon_main(hosts, username, port, config, clusters, debug).await;
+        daemon_main(windows_api, hosts, username, port, config, clusters, debug).await;
     }
 
-    fn main(&mut self, config_path: &str, config: &Config, args: Args) {
+    fn main<W: WindowsApi + 'static>(
+        &mut self,
+        windows_api: &W,
+        config_path: &str,
+        config: &Config,
+        args: Args,
+    ) {
         confy::store_path(config_path, config).unwrap();
 
         let mut daemon_args: Vec<String> = Vec::new();
@@ -197,13 +213,10 @@ impl Entrypoint for MainEntrypoint {
         // We must wait for the window to actually launch before dropping the _guard as we might otherwise
         // reset the configuration before the window was launched
         let _ = get_console_window_handle(
-            spawn_console_process(
-                &DEFAULT_WINDOWS_API,
-                &format!("{PKG_NAME}.exe"),
-                daemon_args,
-            )
-            .expect("Failed to create process")
-            .dwProcessId,
+            windows_api,
+            spawn_console_process(windows_api, &format!("{PKG_NAME}.exe"), daemon_args)
+                .expect("Failed to create process")
+                .dwProcessId,
         );
     }
 }
@@ -257,7 +270,13 @@ fn handle_special_commands<A: ArgsCommand>(input: &str, args_command: &A) -> boo
 }
 
 /// Execute a parsed command using the provided entrypoint
-async fn execute_parsed_command<T: Entrypoint, A: ArgsCommand, L: LoggerInitializer>(
+async fn execute_parsed_command<
+    W: WindowsApi + Clone + 'static,
+    T: Entrypoint,
+    A: ArgsCommand,
+    L: LoggerInitializer,
+>(
+    windows_api: &W,
     parsed_args: Args,
     entrypoint: &mut T,
     args_command: &A,
@@ -272,6 +291,7 @@ async fn execute_parsed_command<T: Entrypoint, A: ArgsCommand, L: LoggerInitiali
             }
             entrypoint
                 .client_main(
+                    windows_api,
                     host.to_owned(),
                     parsed_args.username.to_owned(),
                     parsed_args.port,
@@ -285,8 +305,9 @@ async fn execute_parsed_command<T: Entrypoint, A: ArgsCommand, L: LoggerInitiali
             }
             entrypoint
                 .daemon_main(
-                    parsed_args.hosts.to_owned(),
-                    parsed_args.username.clone(),
+                    windows_api,
+                    parsed_args.hosts,
+                    parsed_args.username,
                     parsed_args.port,
                     &config.daemon,
                     &config.clusters,
@@ -296,7 +317,7 @@ async fn execute_parsed_command<T: Entrypoint, A: ArgsCommand, L: LoggerInitiali
         }
         None => {
             if !parsed_args.hosts.is_empty() {
-                entrypoint.main(config_path, config, parsed_args);
+                entrypoint.main(windows_api, config_path, config, parsed_args);
             } else {
                 // Show help for empty hosts
                 let _ = args_command.print_help();
@@ -306,7 +327,8 @@ async fn execute_parsed_command<T: Entrypoint, A: ArgsCommand, L: LoggerInitiali
 }
 
 /// Run the interactive mode loop for GUI launches
-async fn run_interactive_mode<T: Entrypoint>(
+async fn run_interactive_mode<W: WindowsApi + Clone + 'static, T: Entrypoint>(
+    windows_api: &W,
     mut entrypoint: T,
     config: &Config,
     config_path: &str,
@@ -329,6 +351,7 @@ async fn run_interactive_mode<T: Entrypoint>(
                 match Args::try_parse_from(full_args) {
                     Ok(parsed_args) => {
                         execute_parsed_command(
+                            windows_api,
                             parsed_args,
                             &mut entrypoint,
                             &CLIArgsCommand,
@@ -359,14 +382,18 @@ async fn run_interactive_mode<T: Entrypoint>(
 /// loads an existing config or writes the default config to disk, and
 /// calls the respective subcommand.
 /// If no subcommand is given we launch the daemon subcommand in a new window.
-pub async fn main<T: Entrypoint>(args: Args, mut entrypoint: T) {
+pub async fn main<W: WindowsApi + Clone + 'static, E: Entrypoint>(
+    windows_api: &W,
+    args: Args,
+    mut entrypoint: E,
+) {
     // CRITICAL: Check GUI launch BEFORE any output to console
-    let launched_from_gui = is_launched_from_gui(&DEFAULT_WINDOWS_API);
+    let launched_from_gui = is_launched_from_gui(windows_api);
 
     // Set DPI awareness programatically. Using the manifest is the recommended way
     // but conhost.exe does not do any manifest loading.
     // https://github.com/microsoft/terminal/issues/18464#issuecomment-2623392013
-    if let Err(err) = unsafe { SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE) } {
+    if let Err(err) = windows_api.set_process_dpi_awareness(PROCESS_PER_MONITOR_DPI_AWARE) {
         eprintln!("Failed to set DPI awareness programatically: {err:?}");
     }
     match std::env::current_exe() {
@@ -395,6 +422,7 @@ pub async fn main<T: Entrypoint>(args: Args, mut entrypoint: T) {
             }
             entrypoint
                 .client_main(
+                    windows_api,
                     host.to_owned(),
                     args.username.to_owned(),
                     args.port,
@@ -408,6 +436,7 @@ pub async fn main<T: Entrypoint>(args: Args, mut entrypoint: T) {
             }
             entrypoint
                 .daemon_main(
+                    windows_api,
                     args.hosts.to_owned(),
                     args.username.clone(),
                     args.port,
@@ -425,12 +454,12 @@ pub async fn main<T: Entrypoint>(args: Args, mut entrypoint: T) {
 
                 // If launched from GUI, allow user to input arguments interactively
                 if launched_from_gui {
-                    run_interactive_mode(entrypoint, &config, &config_path).await;
+                    run_interactive_mode(windows_api, entrypoint, &config, &config_path).await;
                 }
                 return;
             }
 
-            entrypoint.main(&config_path, &config, args);
+            entrypoint.main(windows_api, &config_path, &config, args);
         }
     }
 }

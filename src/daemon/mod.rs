@@ -5,7 +5,6 @@
 #![warn(missing_docs)]
 
 use std::cmp::max;
-use std::collections::BTreeMap;
 use std::{
     io,
     sync::{Arc, Mutex},
@@ -16,7 +15,7 @@ use std::{thread, time};
 use crate::get_console_window_handle;
 use crate::utils::config::{Cluster, DaemonConfig};
 use crate::utils::debug::StringRepr;
-use crate::utils::windows::{clear_screen, set_console_color, WindowsApi, DEFAULT_WINDOWS_API};
+use crate::utils::windows::{clear_screen, set_console_color, WindowsApi};
 use crate::{
     serde::{serialization::serialize_input_record_0, SERIALIZED_INPUT_RECORD_0_LENGTH},
     spawn_console_process,
@@ -150,42 +149,43 @@ struct Daemon<'a> {
     debug: bool,
 }
 
-impl Daemon<'_> {
+impl<'a> Daemon<'a> {
     /// Launches all client windows and blocks on the main run loop.
     ///
     /// Sets up the daemon console by disabling processed input mode and applying
     /// the configured colors and dimensions.
     /// Once all client windows have successfully started the daemon console window
     /// is moved to the foreground and receives focus.
-    async fn launch(mut self) {
-        DEFAULT_WINDOWS_API
+    async fn launch<W: WindowsApi + Clone + 'static>(mut self, windows_api: &W) {
+        windows_api
             .set_console_title(format!("{PKG_NAME} daemon").as_str())
             .unwrap();
         set_console_color(
-            &DEFAULT_WINDOWS_API,
+            windows_api,
             CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color),
         );
-        set_console_border_color(&DEFAULT_WINDOWS_API, COLORREF(0x000000FF));
+        set_console_border_color(windows_api, COLORREF(0x000000FF));
 
-        toggle_processed_input_mode(); // Disable processed input mode
+        toggle_processed_input_mode(windows_api); // Disable processed input mode
 
         // Initialize the COM library so we can use UI automation
-        DEFAULT_WINDOWS_API
+        windows_api
             .initialize_com_library(windows::Win32::System::Com::COINIT_MULTITHREADED)
             .unwrap();
 
-        let workspace_area = workspace::get_workspace_area(self.config.height);
+        let workspace_area = workspace::get_workspace_area(windows_api, self.config.height);
 
-        self.arrange_daemon_console(&workspace_area);
+        self.arrange_daemon_console(windows_api, &workspace_area);
 
         // Looks like on windows 10 re-arranging the console resets the console output buffer
         set_console_color(
-            &DEFAULT_WINDOWS_API,
+            windows_api,
             CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color),
         );
 
         let mut clients = Arc::new(Mutex::new(
             launch_clients(
+                windows_api,
                 self.hosts.to_vec(),
                 &self.username,
                 self.port,
@@ -198,12 +198,12 @@ impl Daemon<'_> {
         ));
 
         // Now that all clients started, focus the daemon console again.
-        let daemon_console = DEFAULT_WINDOWS_API.get_console_window();
-        let _ = DEFAULT_WINDOWS_API.set_foreground_window(daemon_console);
-        let _ = DEFAULT_WINDOWS_API.focus_window_with_automation(daemon_console);
+        let daemon_console = windows_api.get_console_window();
+        let _ = windows_api.set_foreground_window(daemon_console);
+        let _ = windows_api.focus_window_with_automation(daemon_console);
 
-        self.print_instructions();
-        self.run(&mut clients, &workspace_area).await;
+        self.print_instructions(windows_api);
+        self.run(windows_api, &mut clients, &workspace_area).await;
     }
 
     /// The main run loop of the `daemon` subcommand.
@@ -222,6 +222,7 @@ impl Daemon<'_> {
     ///
     /// # Arguments
     ///
+    /// * `windows_api`                     - The Windows API implementation to use
     /// * `clients`                         - A thread safe mapping from the number
     ///                                       a client console window was launched at
     ///                                       in relation to the other client windows
@@ -229,8 +230,9 @@ impl Daemon<'_> {
     /// * `workspace_area`                  - The available workspace area on the
     ///                                       primary monitor minus the space occupied
     ///                                       by the daemon console window.
-    async fn run(
+    async fn run<W: WindowsApi + Clone + 'static>(
         &mut self,
+        windows_api: &W,
         clients: &mut Arc<Mutex<Vec<Client>>>,
         workspace_area: &workspace::WorkspaceArea,
     ) {
@@ -241,10 +243,11 @@ impl Daemon<'_> {
 
         // Monitor client processes
         let clients_clone = Arc::clone(clients);
+        let windows_api_clone = windows_api.clone();
         tokio::spawn(async move {
             loop {
                 clients_clone.lock().unwrap().retain(|client| {
-                    match DEFAULT_WINDOWS_API.get_exit_code(client.process_handle) {
+                    match windows_api_clone.get_exit_code(client.process_handle) {
                         Ok(exit_code) => return exit_code == STILL_ACTIVE.0 as u32,
                         Err(_) => return false, // Process handle is invalid, remove client
                     }
@@ -257,12 +260,16 @@ impl Daemon<'_> {
             }
         });
 
-        ensure_client_z_order_in_sync_with_daemon(clients.to_owned());
+        ensure_client_z_order_in_sync_with_daemon(
+            Arc::new(windows_api.clone()),
+            clients.to_owned(),
+        );
 
         loop {
             self.handle_input_record(
+                windows_api,
                 &sender,
-                read_keyboard_input(&DEFAULT_WINDOWS_API),
+                read_keyboard_input(windows_api),
                 clients,
                 workspace_area,
                 &mut servers,
@@ -349,17 +356,18 @@ impl Daemon<'_> {
     ///                                       one handle for each named pipe server background thread.
     ///                                       The list will be extended if additional clients are being added
     ///                                       through control mode `[c]reate window(s)`.
-    async fn handle_input_record(
+    async fn handle_input_record<W: WindowsApi + Clone + 'static>(
         &mut self,
+        windows_api: &W,
         sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
         input_record: INPUT_RECORD_0,
         clients: &mut Arc<Mutex<Vec<Client>>>,
         workspace_area: &workspace::WorkspaceArea,
         servers: &mut Arc<Mutex<Vec<JoinHandle<()>>>>,
     ) {
-        if self.control_mode_is_active(input_record) {
+        if self.control_mode_is_active(windows_api, input_record) {
             if self.control_mode_state == ControlModeState::Initiated {
-                clear_screen(&DEFAULT_WINDOWS_API);
+                clear_screen(windows_api);
                 println!("Control Mode (Esc to exit)");
                 println!("[c]reate window(s), [r]etile, copy active [h]ostname(s)");
                 self.control_mode_state = ControlModeState::Active;
@@ -374,8 +382,12 @@ impl Daemon<'_> {
                 key_event.dwControlKeyState,
             ) {
                 (VK_R, 0) => {
-                    self.rearrange_client_windows(&clients.lock().unwrap(), workspace_area);
-                    self.arrange_daemon_console(workspace_area);
+                    self.rearrange_client_windows(
+                        windows_api,
+                        &clients.lock().unwrap(),
+                        workspace_area,
+                    );
+                    self.arrange_daemon_console(windows_api, workspace_area);
                 }
                 (VK_E, 0) => {
                     // TODO: Select windows
@@ -384,10 +396,10 @@ impl Daemon<'_> {
                     // TODO: trigger input on selected windows
                 }
                 (VK_C, 0) => {
-                    clear_screen(&DEFAULT_WINDOWS_API);
+                    clear_screen(windows_api);
                     // TODO: make ESC abort
                     println!("Hostname(s) or cluster tag(s): (leave empty to abort)");
-                    toggle_processed_input_mode(); // As it was disabled before, this enables it again
+                    toggle_processed_input_mode(windows_api); // As it was disabled before, this enables it again
                     let mut hostnames = String::new();
                     match io::stdin().read_line(&mut hostnames) {
                         Ok(2) => {
@@ -396,6 +408,7 @@ impl Daemon<'_> {
                         Ok(_) => {
                             let number_of_existing_clients = clients.lock().unwrap().len();
                             let new_clients = launch_clients(
+                                windows_api,
                                 resolve_cluster_tags(
                                     hostnames.split(' ').map(|x| return x.trim()).collect(),
                                     self.clusters,
@@ -420,24 +433,28 @@ impl Daemon<'_> {
                             error!("{error}");
                         }
                     }
-                    toggle_processed_input_mode(); // Re-disable processed input mode.
-                    self.rearrange_client_windows(&clients.lock().unwrap(), workspace_area);
-                    self.arrange_daemon_console(workspace_area);
+                    toggle_processed_input_mode(windows_api); // Re-disable processed input mode.
+                    self.rearrange_client_windows(
+                        windows_api,
+                        &clients.lock().unwrap(),
+                        workspace_area,
+                    );
+                    self.arrange_daemon_console(windows_api, workspace_area);
                     // Focus the daemon console again.
-                    let daemon_window = DEFAULT_WINDOWS_API.get_console_window();
-                    let _ = DEFAULT_WINDOWS_API.set_foreground_window(daemon_window);
-                    let _ = DEFAULT_WINDOWS_API.focus_window_with_automation(daemon_window);
-                    self.quit_control_mode();
+                    let daemon_window = windows_api.get_console_window();
+                    let _ = windows_api.set_foreground_window(daemon_window);
+                    let _ = windows_api.focus_window_with_automation(daemon_window);
+                    self.quit_control_mode(windows_api);
                 }
                 (VK_H, 0) => {
                     let mut active_hostnames: Vec<String> = vec![];
                     for client in clients.lock().unwrap().iter() {
-                        if DEFAULT_WINDOWS_API.is_window(client.window_handle) {
+                        if windows_api.is_window(client.window_handle) {
                             active_hostnames.push(client.hostname.clone());
                         }
                     }
                     cli_clipboard::set_contents(active_hostnames.join(" ")).unwrap();
-                    self.quit_control_mode();
+                    self.quit_control_mode(windows_api);
                 }
                 _ => {}
             }
@@ -472,16 +489,21 @@ impl Daemon<'_> {
     ///
     /// # Arguments
     ///
+    /// * `windows_api` - The Windows API implementation to use
     /// * `input_record` -  A KeyEvent input record.
     ///
     /// # Returns
     ///
     /// Whether or not control mode is active.
-    fn control_mode_is_active(&mut self, input_record: INPUT_RECORD_0) -> bool {
+    fn control_mode_is_active<W: WindowsApi>(
+        &mut self,
+        windows_api: &W,
+        input_record: INPUT_RECORD_0,
+    ) -> bool {
         let key_event = unsafe { input_record.KeyEvent };
         if self.control_mode_state == ControlModeState::Active {
             if key_event.wVirtualKeyCode == VK_ESCAPE.0 {
-                self.quit_control_mode();
+                self.quit_control_mode(windows_api);
                 return false;
             }
             return true;
@@ -498,14 +520,14 @@ impl Daemon<'_> {
 
     /// Prints the default daemon instructions to the daemon console and
     /// sets `self.control_mode_state` to inactive.
-    fn quit_control_mode(&mut self) {
-        self.print_instructions();
+    fn quit_control_mode<W: WindowsApi>(&mut self, windows_api: &W) {
+        self.print_instructions(windows_api);
         self.control_mode_state = ControlModeState::Inactive;
     }
 
     /// Clears the console screen and prints the default daemon instructions.
-    fn print_instructions(&self) {
-        clear_screen(&DEFAULT_WINDOWS_API);
+    fn print_instructions<W: WindowsApi>(&self, windows_api: &W) {
+        clear_screen(windows_api);
         println!("Input to terminal: (Ctrl-A to enter control mode)");
     }
 
@@ -516,6 +538,7 @@ impl Daemon<'_> {
     ///
     /// # Arguments
     ///
+    /// * `windows_api`                     - The Windows API implementation to use
     /// * `clients`                         - A thread safe mapping from the number
     ///                                       a client console window was launched at
     ///                                       in relation to the other client windows
@@ -526,25 +549,25 @@ impl Daemon<'_> {
     /// * `workspace_area`                  - The available workspace area on the
     ///                                       primary monitor minus the space occupied
     ///                                       by the daemon console window.
-    fn rearrange_client_windows(
+    fn rearrange_client_windows<W: WindowsApi>(
         &self,
+        windows_api: &W,
         clients: &[Client],
         workspace_area: &workspace::WorkspaceArea,
     ) {
         let mut valid_clients = Vec::new();
         for client in clients.iter() {
-            let exit_code = match DEFAULT_WINDOWS_API.get_exit_code(client.process_handle) {
+            let exit_code = match windows_api.get_exit_code(client.process_handle) {
                 Ok(code) => code,
                 Err(_) => continue, // Process handle is invalid, skip client
             };
-            if exit_code == STILL_ACTIVE.0 as u32
-                && DEFAULT_WINDOWS_API.is_window(client.window_handle)
-            {
+            if exit_code == STILL_ACTIVE.0 as u32 && windows_api.is_window(client.window_handle) {
                 valid_clients.push(client);
             }
         }
         for (index, client) in valid_clients.iter().enumerate() {
             arrange_client_window(
+                windows_api,
                 &client.window_handle,
                 workspace_area,
                 index,
@@ -559,10 +582,15 @@ impl Daemon<'_> {
     ///
     /// # Arguments
     ///
+    /// * `windows_api` - The Windows API implementation to use
     /// * `workspace_area` - The available workspace area on the
     ///                      primary monitor minus the space occupied
     ///                      by the daemon console window.
-    fn arrange_daemon_console(&self, workspace_area: &WorkspaceArea) {
+    fn arrange_daemon_console<W: WindowsApi>(
+        &self,
+        windows_api: &W,
+        workspace_area: &WorkspaceArea,
+    ) {
         let (x, y, width, height) = get_console_rect(
             0,
             workspace_area.height,
@@ -570,7 +598,7 @@ impl Daemon<'_> {
             self.config.height,
             workspace_area,
         );
-        arrange_console(&DEFAULT_WINDOWS_API, x, y, width, height);
+        arrange_console(windows_api, x, y, width, height);
     }
 }
 
@@ -582,11 +610,15 @@ impl Daemon<'_> {
 /// a signal, not key presses.
 ///
 /// <https://learn.microsoft.com/en-us/windows/console/ctrl-c-and-ctrl-break-signals>
-fn toggle_processed_input_mode() {
+///
+/// # Arguments
+///
+/// * `windows_api` - The Windows API implementation to use
+fn toggle_processed_input_mode<W: WindowsApi>(windows_api: &W) {
     let handle = get_console_input_buffer();
-    let mode = DEFAULT_WINDOWS_API.get_console_mode(handle).unwrap();
+    let mode = windows_api.get_console_mode(handle).unwrap();
     let new_mode = windows::Win32::System::Console::CONSOLE_MODE(mode.0 ^ ENABLE_PROCESSED_INPUT.0);
-    let _ = DEFAULT_WINDOWS_API.set_console_mode(handle, new_mode);
+    let _ = windows_api.set_console_mode(handle, new_mode);
 }
 
 /// Resolve cluster tags into hostnames
@@ -629,6 +661,7 @@ pub fn resolve_cluster_tags<'a>(hosts: Vec<&'a str>, clusters: &'a [Cluster]) ->
 ///
 /// # Arguments
 ///
+/// * `windows_api`             - The Windows API implementation to use
 /// * `hosts`                   - List of hosts
 /// * `username`                - Optional username, if none is given
 ///                               the client will use the SSH config to
@@ -647,7 +680,8 @@ pub fn resolve_cluster_tags<'a>(hosts: Vec<&'a str>, clusters: &'a [Cluster]) ->
 ///
 /// A mapping from the order a client console window was launched at
 /// in relation to the other client windows and the clients console window handle.
-async fn launch_clients(
+async fn launch_clients<W: WindowsApi + 'static + Clone>(
+    windows_api: &W,
     hosts: Vec<String>,
     username: &Option<String>,
     port: Option<u16>,
@@ -657,16 +691,23 @@ async fn launch_clients(
     index_offset: usize,
 ) -> Vec<Client> {
     let len_hosts = hosts.len();
-    let result = Arc::new(Mutex::new(BTreeMap::new()));
-    let host_iter = IntoIterator::into_iter(hosts);
-    let mut handles = vec![];
     let _guard = WindowsSettingsDefaultTerminalApplicationGuard::new();
-    for (index, host) in host_iter.enumerate() {
+
+    // Create an Arc to share the windows_api across parallel tasks
+    let windows_api_arc = Arc::new(windows_api.clone());
+
+    // Create tasks for each client launch using spawn_blocking to handle the synchronous operations
+    let mut tasks = Vec::new();
+
+    for (index, host) in hosts.into_iter().enumerate() {
         let username_client = username.clone();
         let workspace_area_client = *workspace_area;
-        let result_arc = Arc::clone(&result);
-        let future = tokio::spawn(async move {
+        let windows_api_clone = Arc::clone(&windows_api_arc);
+
+        // Use spawn_blocking to run the synchronous launch_client_console in parallel
+        let task = tokio::task::spawn_blocking(move || {
             let (window_handle, process_handle) = launch_client_console(
+                windows_api_clone.as_ref(),
                 &host,
                 username_client,
                 port,
@@ -676,22 +717,35 @@ async fn launch_clients(
                 len_hosts + index_offset,
                 aspect_ratio_adjustment,
             );
-            result_arc.lock().unwrap().insert(
+            return (
                 index,
                 Client {
-                    hostname: host.to_string(),
+                    hostname: host,
                     window_handle,
                     process_handle,
                 },
             );
         });
-        handles.push(future);
-    }
-    for handle in handles {
-        handle.await.unwrap();
+
+        tasks.push(task);
     }
 
-    return result.lock().unwrap().values().cloned().collect();
+    // Wait for all tasks to complete in parallel
+    let mut results = Vec::new();
+    for task in tasks {
+        match task.await {
+            Ok(result) => results.push(result),
+            Err(e) => panic!("Failed to launch client: {e}"),
+        }
+    }
+
+    // Sort results by index to maintain order
+    results.sort_by_key(|(index, _)| return *index);
+
+    return results
+        .into_iter()
+        .map(|(_, client)| return client)
+        .collect();
 }
 
 /// Launchs a `client` console process with its own window with the given
@@ -703,6 +757,7 @@ async fn launch_clients(
 ///
 /// # Arguments
 ///
+/// * `windows_api`             - The Windows API implementation to use
 /// * `host`                    - Hostname the client should connect to
 /// * `username`                - Username the client should use
 /// * `port`                    - Optional port for SSH connections
@@ -717,7 +772,8 @@ async fn launch_clients(
 /// # Returns
 ///
 /// A tuple containing the window handle and process handle of the client process.
-fn launch_client_console(
+fn launch_client_console<W: WindowsApi>(
+    windows_api: &W,
     host: &str,
     username: Option<String>,
     port: Option<u16>,
@@ -748,14 +804,10 @@ fn launch_client_console(
     client_args.push("client".to_string());
     client_args.extend(vec!["--".to_string(), actual_host.to_string()]);
 
-    let process_info = spawn_console_process(
-        &DEFAULT_WINDOWS_API,
-        &format!("{PKG_NAME}.exe"),
-        client_args,
-    )
-    .expect("Failed to create process");
-    let client_window_handle = get_console_window_handle(process_info.dwProcessId);
-    let process_handle = DEFAULT_WINDOWS_API
+    let process_info = spawn_console_process(windows_api, &format!("{PKG_NAME}.exe"), client_args)
+        .expect("Failed to create process");
+    let client_window_handle = get_console_window_handle(windows_api, process_info.dwProcessId);
+    let process_handle = windows_api
         .open_process(PROCESS_QUERY_INFORMATION.0, false, process_info.dwProcessId)
         .unwrap_or_else(|err| {
             panic!(
@@ -765,6 +817,7 @@ fn launch_client_console(
         });
 
     arrange_client_window(
+        windows_api,
         &client_window_handle,
         workspace_area,
         index,
@@ -864,13 +917,15 @@ async fn named_pipe_server_routine(
 ///
 /// # Arguments
 ///
+/// * `windows_api`              - The Windows API implementation to use
 /// * `handle`                   - Reference the windows handle of a client console window.
 /// * `workspace_area`           - The available workspace area on the primary monitor
 ///                                minus the space occupied by the daemon console window.
 /// * `index`                    - The index of the client in the list of all clients.
 /// * `number_of_consoles`       - The total number of active client console windows.
 /// * `aspect_ratio_adjustment` - The `aspect_ratio_adjustment` daemon configuration.
-fn arrange_client_window(
+fn arrange_client_window<W: WindowsApi>(
+    windows_api: &W,
     handle: &HWND,
     workspace_area: &workspace::WorkspaceArea,
     index: usize,
@@ -887,13 +942,13 @@ fn arrange_client_window(
     // after a move+resize. Why is unclear, but resizing again does solve the issue.
     // We first make the window 1 pixel in each dimension too small and imediately fix it.
     // To reduce overhead we do not repaint the window the first time.
-    DEFAULT_WINDOWS_API
+    windows_api
         .move_window(*handle, x, y, width - 1, height - 1, false)
         .unwrap_or_else(|err| {
             error!("{}", err);
             panic!("Failed to move window",)
         });
-    DEFAULT_WINDOWS_API
+    windows_api
         .move_window(*handle, x, y, width, height, true)
         .unwrap_or_else(|err| {
             error!("{}", err);
@@ -1013,21 +1068,25 @@ fn get_console_rect(
 ///
 /// # Arguments
 ///
-/// * `clients`                       - A thread safe mapping from the number
-///                                     a client console window was launched at
-///                                     in relation to the other client windows
-///                                     and the clients console window handle.
-///                                     The mapping must be thread safe to allow
-///                                     it to be modified by the main thread
-///                                     while we periodically read from it in the
-///                                     background thread.
-fn ensure_client_z_order_in_sync_with_daemon(clients: Arc<Mutex<Vec<Client>>>) {
+/// * `windows_api` - Arc-wrapped Windows API implementation for thread-safe access
+/// * `clients`     - A thread safe mapping from the number
+///                   a client console window was launched at
+///                   in relation to the other client windows
+///                   and the clients console window handle.
+///                   The mapping must be thread safe to allow
+///                   it to be modified by the main thread
+///                   while we periodically read from it in the
+///                   background thread.
+fn ensure_client_z_order_in_sync_with_daemon<W: WindowsApi + Send + Sync + 'static>(
+    windows_api: Arc<W>,
+    clients: Arc<Mutex<Vec<Client>>>,
+) {
     tokio::spawn(async move {
-        let daemon_handle = get_console_window_wrapper(&DEFAULT_WINDOWS_API);
-        let mut previous_foreground_window = get_foreground_window_wrapper(&DEFAULT_WINDOWS_API);
+        let daemon_handle = get_console_window_wrapper(windows_api.as_ref());
+        let mut previous_foreground_window = get_foreground_window_wrapper(windows_api.as_ref());
         loop {
             tokio::time::sleep(Duration::from_millis(1)).await;
-            let foreground_window = get_foreground_window_wrapper(&DEFAULT_WINDOWS_API);
+            let foreground_window = get_foreground_window_wrapper(windows_api.as_ref());
             if previous_foreground_window == foreground_window {
                 continue;
             }
@@ -1037,7 +1096,11 @@ fn ensure_client_z_order_in_sync_with_daemon(clients: Arc<Mutex<Vec<Client>>>) {
                         || client.window_handle == daemon_handle.hwdn;
                 })
             {
-                defer_windows(&clients.lock().unwrap(), &daemon_handle.hwdn);
+                defer_windows(
+                    windows_api.as_ref(),
+                    &clients.lock().unwrap(),
+                    &daemon_handle.hwdn,
+                );
             }
             previous_foreground_window = foreground_window;
         }
@@ -1052,18 +1115,19 @@ fn ensure_client_z_order_in_sync_with_daemon(clients: Arc<Mutex<Vec<Client>>>) {
 ///
 /// # Arguments
 ///
+/// * `windows_api`                   - The Windows API implementation to use
 /// * `clients`                       - A thread safe mapping from the number
 ///                                     a client console window was launched at
 ///                                     in relation to the other client windows
 ///                                     and the clients console window handle.
 /// * `daemon_handle`                 - Handle to the daemon console window.
-fn defer_windows(clients: &[Client], daemon_handle: &HWND) {
+fn defer_windows<W: WindowsApi>(windows_api: &W, clients: &[Client], daemon_handle: &HWND) {
     for client in clients.iter().chain([&Client {
         hostname: "root".to_owned(),
         window_handle: *daemon_handle,
         process_handle: HANDLE::default(),
     }]) {
-        let placement = match DEFAULT_WINDOWS_API.get_window_placement(client.window_handle) {
+        let placement = match windows_api.get_window_placement(client.window_handle) {
             Ok(placement) => placement,
             Err(_) => {
                 continue;
@@ -1071,10 +1135,10 @@ fn defer_windows(clients: &[Client], daemon_handle: &HWND) {
         };
         // First restore if window is minimized
         if placement.showCmd == SW_SHOWMINIMIZED.0.try_into().unwrap() {
-            let _ = DEFAULT_WINDOWS_API.show_window(client.window_handle, SW_RESTORE);
+            let _ = windows_api.show_window(client.window_handle, SW_RESTORE);
         }
         // Then bring it to front using UI automation
-        let _ = DEFAULT_WINDOWS_API.focus_window_with_automation(client.window_handle);
+        let _ = windows_api.focus_window_with_automation(client.window_handle);
     }
 }
 
@@ -1091,6 +1155,7 @@ fn defer_windows(clients: &[Client], daemon_handle: &HWND) {
 ///
 /// # Arguments
 ///
+/// * `windows_api` - The Windows API implementation to use
 /// * `hosts`    - List of hostnames for which to launch clients.
 /// * `username` - Username used to connect to the hosts.
 ///                If none, each client will use the SSH config to determine
@@ -1098,7 +1163,8 @@ fn defer_windows(clients: &[Client], daemon_handle: &HWND) {
 /// * `port`     - Optional port used for all SSH connections.
 /// * `config`   - The `DaemonConfig`.
 /// * `debug`    - Enables debug logging
-pub async fn main(
+pub async fn main<W: WindowsApi + Clone + 'static>(
+    windows_api: &W,
     hosts: Vec<String>,
     username: Option<String>,
     port: Option<u16>,
@@ -1115,7 +1181,7 @@ pub async fn main(
         control_mode_state: ControlModeState::Inactive,
         debug,
     };
-    daemon.launch().await;
+    daemon.launch(windows_api).await;
     debug!("Actually exiting");
 }
 

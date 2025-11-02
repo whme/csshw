@@ -24,7 +24,7 @@ pub mod daemon;
 pub mod serde;
 pub mod utils;
 
-use utils::windows::{WindowsApi, DEFAULT_WINDOWS_API};
+use utils::windows::WindowsApi;
 
 /// CLSID identifying `conhost.exe` in the registry.
 ///
@@ -104,13 +104,14 @@ impl Registry for DefaultRegistry {
 ///
 /// # Arguments
 ///
+/// * `windows_api` - Windows API operations implementation
 /// * `process_id` - ID of the process for which to retrieve the window handle.
 ///
 /// # Returns
 ///
 /// The Window Handle [HWND] for the window associated with the given `process_id`.
-pub fn get_console_window_handle(process_id: u32) -> HWND {
-    return DEFAULT_WINDOWS_API.get_window_handle_for_process(process_id);
+pub fn get_console_window_handle<W: WindowsApi>(windows_api: &W, process_id: u32) -> HWND {
+    return windows_api.get_window_handle_for_process(process_id);
 }
 
 /// Create process with command line using the provided API (testable version)
@@ -146,23 +147,6 @@ pub fn create_process<W: WindowsApi>(
         Ok(()) => return Some(process_information),
         Err(_) => return None,
     }
-}
-
-/// Create process using Windows API (legacy function for backward compatibility)
-///
-/// # Arguments
-///
-/// * `application` - Application name including file extension
-/// * `command_line` - UTF-16 encoded command line
-///
-/// # Returns
-///
-/// [PROCESS_INFORMATION] of the spawned process or None if failed
-pub fn create_process_windows_api(
-    application: &str,
-    command_line: &[u16],
-) -> Option<PROCESS_INFORMATION> {
-    return create_process(&DEFAULT_WINDOWS_API, application, command_line);
 }
 
 /// Trait for file system operations to enable mocking in tests
@@ -401,19 +385,6 @@ pub fn is_launched_from_gui<W: WindowsApi>(windows_api: &W) -> bool {
             return false;
         }
     }
-}
-
-/// Detect if application was launched from Windows Explorer (GUI) vs command line.
-///
-/// Returns true if launched from GUI (separate console), false if from existing console.
-/// Based on: <https://stackoverflow.com/a/513574>
-///
-/// # Returns
-///
-/// * `true` - Application was launched from GUI (Explorer, double-click, etc.)
-/// * `false` - Application was launched from existing console (command line)
-pub fn is_launched_from_gui_legacy() -> bool {
-    return is_launched_from_gui(&DEFAULT_WINDOWS_API);
 }
 
 #[cfg(test)]

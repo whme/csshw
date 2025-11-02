@@ -498,12 +498,34 @@ pub trait WindowsApi: Send + Sync {
     ///
     /// The requested system metric value
     fn get_system_metrics(&self, index: SYSTEM_METRICS_INDEX) -> i32;
+
+    /// Sets the process DPI awareness.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - DPI awareness value to set
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or failure of the operation
+    fn set_process_dpi_awareness(
+        &self,
+        value: windows::Win32::UI::HiDpi::PROCESS_DPI_AWARENESS,
+    ) -> windows::core::Result<()>;
+}
+
+#[cfg(test)]
+impl Clone for MockWindowsApi {
+    fn clone(&self) -> Self {
+        return MockWindowsApi::new();
+    }
 }
 
 /// Default implementation of WindowsApi that calls actual Windows APIs.
 ///
 /// This implementation provides direct access to Windows system APIs and should
 /// be used in production code. For testing, use the MockWindowsApi instead.
+#[derive(Clone)]
 pub struct DefaultWindowsApi;
 
 impl WindowsApi for DefaultWindowsApi {
@@ -814,13 +836,14 @@ impl WindowsApi for DefaultWindowsApi {
     fn get_system_metrics(&self, index: SYSTEM_METRICS_INDEX) -> i32 {
         return unsafe { windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(index) };
     }
-}
 
-/// Global instance of the Windows API implementation.
-///
-/// This static instance provides access to the default Windows API implementation
-/// throughout the application. Use this for production code.
-pub static DEFAULT_WINDOWS_API: DefaultWindowsApi = DefaultWindowsApi;
+    fn set_process_dpi_awareness(
+        &self,
+        value: windows::Win32::UI::HiDpi::PROCESS_DPI_AWARENESS,
+    ) -> windows::core::Result<()> {
+        return unsafe { windows::Win32::UI::HiDpi::SetProcessDpiAwareness(value) };
+    }
+}
 
 /// u16 representation of a [KEY_EVENT][1].
 ///
@@ -877,10 +900,11 @@ pub fn build_command_line(application: &str, args: &[String]) -> Vec<u16> {
 /// # Examples
 ///
 /// ```no_run
-/// use csshw_lib::utils::windows::{set_console_color, DEFAULT_WINDOWS_API};
+/// use csshw_lib::utils::windows::{set_console_color, DefaultWindowsApi};
 /// use windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES;
 ///
-/// set_console_color(&DEFAULT_WINDOWS_API, CONSOLE_CHARACTER_ATTRIBUTES(0x0F));
+/// let api = DefaultWindowsApi;
+/// set_console_color(&api, CONSOLE_CHARACTER_ATTRIBUTES(0x0F));
 /// ```
 pub fn set_console_color(api: &dyn WindowsApi, color: CONSOLE_CHARACTER_ATTRIBUTES) {
     api.set_console_text_attribute(color).unwrap();
@@ -904,9 +928,10 @@ pub fn set_console_color(api: &dyn WindowsApi, color: CONSOLE_CHARACTER_ATTRIBUT
 /// # Examples
 ///
 /// ```no_run
-/// use csshw_lib::utils::windows::{clear_screen, DEFAULT_WINDOWS_API};
+/// use csshw_lib::utils::windows::{clear_screen, DefaultWindowsApi};
 ///
-/// clear_screen(&DEFAULT_WINDOWS_API);
+/// let api = DefaultWindowsApi;
+/// clear_screen(&api);
 /// ```
 pub fn clear_screen(api: &dyn WindowsApi) {
     let buffer_info = api.get_console_screen_buffer_info().unwrap();
@@ -943,10 +968,10 @@ pub fn clear_screen(api: &dyn WindowsApi) {
 /// # Examples
 ///
 /// ```no_run
-/// use csshw_lib::utils::windows::{set_console_border_color, DEFAULT_WINDOWS_API};
+/// use csshw_lib::utils::windows::{set_console_border_color, DefaultWindowsApi};
 /// use windows::Win32::Foundation::COLORREF;
 ///
-/// set_console_border_color(&DEFAULT_WINDOWS_API, COLORREF(0x001A2B3C));
+/// set_console_border_color(&DefaultWindowsApi, COLORREF(0x001A2B3C));
 /// ```
 ///
 /// [1]: https://learn.microsoft.com/en-us/windows/win32/gdi/colorref
@@ -1000,9 +1025,9 @@ pub fn utf16_buffer_to_string(buffer: &[u16]) -> String {
 /// # Examples
 ///
 /// ```no_run
-/// use csshw_lib::utils::windows::{get_console_title, DEFAULT_WINDOWS_API};
+/// use csshw_lib::utils::windows::{get_console_title, DefaultWindowsApi};
 ///
-/// let title = get_console_title(&DEFAULT_WINDOWS_API);
+/// let title = get_console_title(&DefaultWindowsApi);
 /// println!("Console title: {}", title);
 /// ```
 pub fn get_console_title(api: &dyn WindowsApi) -> String {
@@ -1077,9 +1102,10 @@ pub fn get_console_output_buffer() -> HANDLE {
 /// # Examples
 ///
 /// ```no_run
-/// use csshw_lib::utils::windows::{read_console_input, DEFAULT_WINDOWS_API};
+/// use csshw_lib::utils::windows::{read_console_input, DefaultWindowsApi};
 ///
-/// let input_record = read_console_input(&DEFAULT_WINDOWS_API);
+/// let api = DefaultWindowsApi;
+/// let input_record = read_console_input(&api);
 /// ```
 pub fn read_console_input(api: &dyn WindowsApi) -> INPUT_RECORD {
     const NB_EVENTS: usize = 1;
@@ -1110,9 +1136,10 @@ pub fn read_console_input(api: &dyn WindowsApi) -> INPUT_RECORD {
 /// # Examples
 ///
 /// ```no_run
-/// use csshw_lib::utils::windows::{read_keyboard_input, DEFAULT_WINDOWS_API};
+/// use csshw_lib::utils::windows::{read_keyboard_input, DefaultWindowsApi};
 ///
-/// let key_event = read_keyboard_input(&DEFAULT_WINDOWS_API);
+/// let api = DefaultWindowsApi;
+/// let key_event = read_keyboard_input(&api);
 /// ```
 pub fn read_keyboard_input(api: &dyn WindowsApi) -> INPUT_RECORD_0 {
     loop {
@@ -1145,9 +1172,10 @@ pub fn read_keyboard_input(api: &dyn WindowsApi) -> INPUT_RECORD_0 {
 /// # Examples
 ///
 /// ```no_run
-/// use csshw_lib::utils::windows::{arrange_console, DEFAULT_WINDOWS_API};
+/// use csshw_lib::utils::windows::{arrange_console, DefaultWindowsApi};
 ///
-/// arrange_console(&DEFAULT_WINDOWS_API, 100, 100, 800, 600);
+/// let api = DefaultWindowsApi;
+/// arrange_console(&api, 100, 100, 800, 600);
 /// ```
 pub fn arrange_console(api: &dyn WindowsApi, x: i32, y: i32, width: i32, height: i32) {
     // FIXME: sometimes a daemon or client console isn't being arrange correctly
@@ -1171,9 +1199,9 @@ pub fn arrange_console(api: &dyn WindowsApi, x: i32, y: i32, width: i32, height:
 /// # Examples
 ///
 /// ```no_run
-/// use csshw_lib::utils::windows::{is_windows_10, DEFAULT_WINDOWS_API};
+/// use csshw_lib::utils::windows::{is_windows_10, DefaultWindowsApi};
 ///
-/// if is_windows_10(&DEFAULT_WINDOWS_API) {
+/// if is_windows_10(&DefaultWindowsApi) {
 ///     println!("Running on Windows 10");
 /// } else {
 ///     println!("Running on Windows 11 or newer");

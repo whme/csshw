@@ -1,4 +1,4 @@
-use crate::utils::windows::{WindowsApi, DEFAULT_WINDOWS_API};
+use crate::utils::windows::WindowsApi;
 use windows::Win32::UI::WindowsAndMessaging::{
     SM_CXFIXEDFRAME, SM_CXMAXIMIZED, SM_CXSIZEFRAME, SM_CYFIXEDFRAME, SM_CYMAXIMIZED,
     SM_CYSIZEFRAME,
@@ -48,13 +48,16 @@ pub struct WorkspaceArea {
 ///
 /// The available workspace area on the primary monitor in the specified scaling minus the space
 /// occupied by the daemon console.
-pub fn get_workspace_area(daemon_console_height: i32) -> WorkspaceArea {
-    let workspace_width = DEFAULT_WINDOWS_API.get_system_metrics(SM_CXMAXIMIZED) - 1;
-    let workspace_height = DEFAULT_WINDOWS_API.get_system_metrics(SM_CYMAXIMIZED) - 1;
-    let x_fixed_frame = DEFAULT_WINDOWS_API.get_system_metrics(SM_CXFIXEDFRAME);
-    let y_fixed_frame = DEFAULT_WINDOWS_API.get_system_metrics(SM_CYFIXEDFRAME);
-    let x_size_frame = DEFAULT_WINDOWS_API.get_system_metrics(SM_CXSIZEFRAME);
-    let y_size_frame = DEFAULT_WINDOWS_API.get_system_metrics(SM_CYSIZEFRAME);
+pub fn get_workspace_area<W: WindowsApi>(
+    windows_api: &W,
+    daemon_console_height: i32,
+) -> WorkspaceArea {
+    let workspace_width = windows_api.get_system_metrics(SM_CXMAXIMIZED) - 1;
+    let workspace_height = windows_api.get_system_metrics(SM_CYMAXIMIZED) - 1;
+    let x_fixed_frame = windows_api.get_system_metrics(SM_CXFIXEDFRAME);
+    let y_fixed_frame = windows_api.get_system_metrics(SM_CYFIXEDFRAME);
+    let x_size_frame = windows_api.get_system_metrics(SM_CXSIZEFRAME);
+    let y_size_frame = windows_api.get_system_metrics(SM_CYSIZEFRAME);
     return WorkspaceArea {
         x: 0,
         y: 0,
