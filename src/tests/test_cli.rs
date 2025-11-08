@@ -136,6 +136,126 @@ mod cli_args_test {
     }
 }
 
+/// Test module for show_interactive_prompt function
+mod show_interactive_prompt_test {
+    use crate::cli::{show_interactive_prompt, MockOutput};
+    use mockall::predicate::eq;
+
+    #[test]
+    fn test_show_interactive_prompt() {
+        let mut mock_output = MockOutput::new();
+
+        // Set up expectations for all the output calls
+        mock_output
+            .expect_println()
+            .with(eq("\n=== Interactive Mode ==="))
+            .times(1)
+            .returning(|_| {});
+
+        mock_output
+            .expect_println()
+            .with(eq("Enter your csshw arguments (or press Enter to exit):"))
+            .times(1)
+            .returning(|_| {});
+
+        mock_output
+            .expect_println()
+            .with(eq("Example: -u myuser host1 host2 host3"))
+            .times(1)
+            .returning(|_| {});
+
+        mock_output
+            .expect_println()
+            .with(eq("Example: --help"))
+            .times(1)
+            .returning(|_| {});
+
+        mock_output
+            .expect_print()
+            .with(eq("> "))
+            .times(1)
+            .returning(|_| {});
+
+        mock_output.expect_flush().times(1).returning(|| {});
+
+        show_interactive_prompt(&mut mock_output);
+    }
+}
+
+/// Test module for read_user_input function
+mod read_user_input_test {
+    use crate::cli::{read_user_input, MockInput};
+
+    #[test]
+    fn test_read_user_input_with_content() {
+        let mut mock_input = MockInput::new();
+
+        mock_input
+            .expect_read_line()
+            .times(1)
+            .returning(|| return Ok("host1 host2\n".to_string()));
+
+        let result = read_user_input(&mut mock_input);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some("host1 host2".to_string()));
+    }
+
+    #[test]
+    fn test_read_user_input_empty() {
+        let mut mock_input = MockInput::new();
+
+        mock_input
+            .expect_read_line()
+            .times(1)
+            .returning(|| return Ok("\n".to_string()));
+
+        let result = read_user_input(&mut mock_input);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_read_user_input_exit() {
+        let mut mock_input = MockInput::new();
+
+        mock_input
+            .expect_read_line()
+            .times(1)
+            .returning(|| return Ok("exit\n".to_string()));
+
+        let result = read_user_input(&mut mock_input);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_read_user_input_exit_case_insensitive() {
+        let mut mock_input = MockInput::new();
+
+        mock_input
+            .expect_read_line()
+            .times(1)
+            .returning(|| return Ok("EXIT\n".to_string()));
+
+        let result = read_user_input(&mut mock_input);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_read_user_input_error() {
+        let mut mock_input = MockInput::new();
+
+        mock_input
+            .expect_read_line()
+            .times(1)
+            .returning(|| return Err(std::io::Error::other("Test error")));
+
+        let result = read_user_input(&mut mock_input);
+        assert!(result.is_err());
+    }
+}
+
 mod cli_main_test {
     use crate::cli::{
         main, Args, Commands, MockArgsCommand, MockConfigManager, MockEntrypoint, MockEnvironment,
@@ -539,13 +659,374 @@ mod cli_main_test {
         )
         .await;
     }
+
+    /// Test main function with debug enabled for client command
+    #[tokio::test]
+    async fn test_client_main_with_debug() {
+        let mut mock = MockEntrypoint::new();
+        let mut mock_windows_api = MockWindowsApi::new();
+        let mut mock_output = MockOutput::new();
+        let mut mock_input = MockInput::new();
+        let mut mock_environment = MockEnvironment::new();
+        let mut mock_config_manager = MockConfigManager::new();
+        let mut mock_logger_initializer = MockLoggerInitializer::new();
+
+        // Set up Windows API mocks
+        mock_windows_api.expect_get_stdout_handle().returning(|| {
+            return Ok(windows::Win32::Foundation::HANDLE(
+                std::ptr::dangling_mut::<std::ffi::c_void>(),
+            ));
+        });
+        mock_windows_api
+            .expect_get_console_screen_buffer_info_with_handle()
+            .returning(|_| {
+                return Ok(
+                    windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO {
+                        dwSize: windows::Win32::System::Console::COORD { X: 80, Y: 25 },
+                        dwCursorPosition: windows::Win32::System::Console::COORD { X: 10, Y: 5 },
+                        wAttributes: windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES(
+                            0,
+                        ),
+                        srWindow: windows::Win32::System::Console::SMALL_RECT {
+                            Left: 0,
+                            Top: 0,
+                            Right: 79,
+                            Bottom: 24,
+                        },
+                        dwMaximumWindowSize: windows::Win32::System::Console::COORD {
+                            X: 80,
+                            Y: 25,
+                        },
+                    },
+                );
+            });
+
+        mock_windows_api
+            .expect_set_process_dpi_awareness()
+            .returning(|_| return Ok(()));
+
+        // Set up environment mocks
+        setup_common_environment_mocks(&mut mock_environment);
+        setup_common_config_manager_mocks(&mut mock_config_manager);
+
+        // Set up logger initialization expectation
+        mock_logger_initializer
+            .expect_init_logger()
+            .with(mockall::predicate::eq("csshw_client_testhost"))
+            .times(1)
+            .returning(|_| {});
+
+        mock.expect_client_main::<MockWindowsApi>()
+            .once()
+            .returning(|_, host, username, port, _| {
+                assert_eq!(host, "testhost");
+                assert_eq!(username, Some("testuser".to_string()));
+                assert_eq!(port, Some(2222));
+                return Box::pin(async {});
+            });
+
+        let args = Args {
+            command: Some(Commands::Client {
+                host: "testhost".to_string(),
+            }),
+            username: Some("testuser".to_string()),
+            port: Some(2222),
+            hosts: vec![],
+            debug: true,
+        };
+
+        let mock_args_command = MockArgsCommand::new();
+        main(
+            &mock_windows_api,
+            args,
+            mock,
+            &mut mock_output,
+            &mut mock_input,
+            &mock_environment,
+            &mock_args_command,
+            &mock_logger_initializer,
+            &mock_config_manager,
+        )
+        .await;
+    }
+
+    /// Test main function with debug enabled for daemon command
+    #[tokio::test]
+    async fn test_daemon_main_with_debug() {
+        let mut mock = MockEntrypoint::new();
+        let mut mock_windows_api = MockWindowsApi::new();
+        let mut mock_output = MockOutput::new();
+        let mut mock_input = MockInput::new();
+        let mut mock_environment = MockEnvironment::new();
+        let mut mock_config_manager = MockConfigManager::new();
+        let mut mock_logger_initializer = MockLoggerInitializer::new();
+
+        // Set up Windows API mocks
+        mock_windows_api.expect_get_stdout_handle().returning(|| {
+            return Ok(windows::Win32::Foundation::HANDLE(
+                std::ptr::dangling_mut::<std::ffi::c_void>(),
+            ));
+        });
+        mock_windows_api
+            .expect_get_console_screen_buffer_info_with_handle()
+            .returning(|_| {
+                return Ok(
+                    windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO {
+                        dwSize: windows::Win32::System::Console::COORD { X: 80, Y: 25 },
+                        dwCursorPosition: windows::Win32::System::Console::COORD { X: 10, Y: 5 },
+                        wAttributes: windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES(
+                            0,
+                        ),
+                        srWindow: windows::Win32::System::Console::SMALL_RECT {
+                            Left: 0,
+                            Top: 0,
+                            Right: 79,
+                            Bottom: 24,
+                        },
+                        dwMaximumWindowSize: windows::Win32::System::Console::COORD {
+                            X: 80,
+                            Y: 25,
+                        },
+                    },
+                );
+            });
+
+        mock_windows_api
+            .expect_set_process_dpi_awareness()
+            .returning(|_| return Ok(()));
+
+        // Set up environment mocks
+        setup_common_environment_mocks(&mut mock_environment);
+        setup_common_config_manager_mocks(&mut mock_config_manager);
+
+        // Set up logger initialization expectation
+        mock_logger_initializer
+            .expect_init_logger()
+            .with(mockall::predicate::eq("csshw_daemon"))
+            .times(1)
+            .returning(|_| {});
+
+        mock.expect_daemon_main().once().returning(
+            |_: &MockWindowsApi, hosts, username, port, _, _, debug| {
+                assert_eq!(hosts, vec!["host1".to_string(), "host2".to_string()]);
+                assert_eq!(username, Some("testuser".to_string()));
+                assert_eq!(port, Some(3333));
+                assert!(debug);
+                return Box::pin(async {});
+            },
+        );
+
+        let args = Args {
+            command: Some(Commands::Daemon {}),
+            username: Some("testuser".to_string()),
+            port: Some(3333),
+            hosts: vec!["host1".to_string(), "host2".to_string()],
+            debug: true,
+        };
+
+        let mock_args_command = MockArgsCommand::new();
+        main(
+            &mock_windows_api,
+            args,
+            mock,
+            &mut mock_output,
+            &mut mock_input,
+            &mock_environment,
+            &mock_args_command,
+            &mock_logger_initializer,
+            &mock_config_manager,
+        )
+        .await;
+    }
+
+    /// Test main function error handling for environment operations
+    #[tokio::test]
+    async fn test_main_environment_errors() {
+        let mock = MockEntrypoint::new();
+        let mut mock_windows_api = MockWindowsApi::new();
+        let mut mock_output = MockOutput::new();
+        let mut mock_input = MockInput::new();
+        let mut mock_environment = MockEnvironment::new();
+        let mut mock_config_manager = MockConfigManager::new();
+
+        // Set up Windows API mocks
+        mock_windows_api.expect_get_stdout_handle().returning(|| {
+            return Ok(windows::Win32::Foundation::HANDLE(
+                std::ptr::dangling_mut::<std::ffi::c_void>(),
+            ));
+        });
+        mock_windows_api
+            .expect_get_console_screen_buffer_info_with_handle()
+            .returning(|_| {
+                return Ok(
+                    windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO {
+                        dwSize: windows::Win32::System::Console::COORD { X: 80, Y: 25 },
+                        dwCursorPosition: windows::Win32::System::Console::COORD { X: 10, Y: 5 },
+                        wAttributes: windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES(
+                            0,
+                        ),
+                        srWindow: windows::Win32::System::Console::SMALL_RECT {
+                            Left: 0,
+                            Top: 0,
+                            Right: 79,
+                            Bottom: 24,
+                        },
+                        dwMaximumWindowSize: windows::Win32::System::Console::COORD {
+                            X: 80,
+                            Y: 25,
+                        },
+                    },
+                );
+            });
+
+        mock_windows_api
+            .expect_set_process_dpi_awareness()
+            .returning(|_| return Ok(()));
+
+        // Set up environment mocks with errors
+        mock_environment.expect_current_exe().returning(|| {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Executable not found",
+            ));
+        });
+
+        // Expect error message to be written
+        mock_output
+            .expect_eprintln()
+            .with(mockall::predicate::eq("Failed to get executable directory"))
+            .times(1)
+            .returning(|_| {});
+
+        setup_common_config_manager_mocks(&mut mock_config_manager);
+
+        // Set up mock for help printing
+        let mut mock_args_command = MockArgsCommand::new();
+        mock_args_command
+            .expect_print_help()
+            .times(1)
+            .returning(|| return Ok(()));
+
+        let args = Args {
+            command: None,
+            username: None,
+            port: None,
+            hosts: vec![],
+            debug: false,
+        };
+
+        let mock_logger_initializer = MockLoggerInitializer::new();
+        main(
+            &mock_windows_api,
+            args,
+            mock,
+            &mut mock_output,
+            &mut mock_input,
+            &mock_environment,
+            &mock_args_command,
+            &mock_logger_initializer,
+            &mock_config_manager,
+        )
+        .await;
+    }
+
+    /// Test main function error handling for executable path parent
+    #[tokio::test]
+    async fn test_main_executable_parent_error() {
+        let mock = MockEntrypoint::new();
+        let mut mock_windows_api = MockWindowsApi::new();
+        let mut mock_output = MockOutput::new();
+        let mut mock_input = MockInput::new();
+        let mut mock_environment = MockEnvironment::new();
+        let mut mock_config_manager = MockConfigManager::new();
+
+        // Set up Windows API mocks
+        mock_windows_api.expect_get_stdout_handle().returning(|| {
+            return Ok(windows::Win32::Foundation::HANDLE(
+                std::ptr::dangling_mut::<std::ffi::c_void>(),
+            ));
+        });
+        mock_windows_api
+            .expect_get_console_screen_buffer_info_with_handle()
+            .returning(|_| {
+                return Ok(
+                    windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO {
+                        dwSize: windows::Win32::System::Console::COORD { X: 80, Y: 25 },
+                        dwCursorPosition: windows::Win32::System::Console::COORD { X: 10, Y: 5 },
+                        wAttributes: windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES(
+                            0,
+                        ),
+                        srWindow: windows::Win32::System::Console::SMALL_RECT {
+                            Left: 0,
+                            Top: 0,
+                            Right: 79,
+                            Bottom: 24,
+                        },
+                        dwMaximumWindowSize: windows::Win32::System::Console::COORD {
+                            X: 80,
+                            Y: 25,
+                        },
+                    },
+                );
+            });
+
+        mock_windows_api
+            .expect_set_process_dpi_awareness()
+            .returning(|_| return Ok(()));
+
+        // Set up environment mocks - return a path with no parent
+        mock_environment.expect_current_exe().returning(|| {
+            return Ok(std::path::PathBuf::from("/"));
+        });
+
+        // Expect error message to be written
+        mock_output
+            .expect_eprintln()
+            .with(mockall::predicate::eq(
+                "Failed to get executable path parent working directory",
+            ))
+            .times(1)
+            .returning(|_| {});
+
+        setup_common_config_manager_mocks(&mut mock_config_manager);
+
+        // Set up mock for help printing
+        let mut mock_args_command = MockArgsCommand::new();
+        mock_args_command
+            .expect_print_help()
+            .times(1)
+            .returning(|| return Ok(()));
+
+        let args = Args {
+            command: None,
+            username: None,
+            port: None,
+            hosts: vec![],
+            debug: false,
+        };
+
+        let mock_logger_initializer = MockLoggerInitializer::new();
+        main(
+            &mock_windows_api,
+            args,
+            mock,
+            &mut mock_output,
+            &mut mock_input,
+            &mock_environment,
+            &mock_args_command,
+            &mock_logger_initializer,
+            &mock_config_manager,
+        )
+        .await;
+    }
 }
 
 /// Test module for the new interactive mode helper functions
 mod interactive_mode_test {
     use crate::cli::{
-        execute_parsed_command, handle_special_commands, Args, Commands, MockArgsCommand,
-        MockConfigManager, MockEntrypoint, MockLoggerInitializer,
+        execute_parsed_command, handle_special_commands, run_interactive_mode, Args, Commands,
+        MockArgsCommand, MockConfigManager, MockEntrypoint, MockInput, MockLoggerInitializer,
+        MockOutput,
     };
     use crate::utils::config::Config;
     use crate::utils::windows::MockWindowsApi;
@@ -759,6 +1240,139 @@ mod interactive_mode_test {
             &MockConfigManager::new(),
             &config,
             config_path,
+        )
+        .await;
+    }
+
+    /// Test run_interactive_mode with successful input parsing
+    #[tokio::test]
+    async fn test_run_interactive_mode_success() {
+        let mock_entrypoint = MockEntrypoint::new();
+        let mock_args_command = MockArgsCommand::new();
+        let mock_logger_initializer = MockLoggerInitializer::new();
+        let mock_windows_api = MockWindowsApi::new();
+        let mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+        let mut mock_output = MockOutput::new();
+        let mut mock_input = MockInput::new();
+
+        // Set up expectations for interactive prompt display
+        mock_output
+            .expect_println()
+            .with(eq("\n=== Interactive Mode ==="))
+            .times(1)
+            .returning(|_| {});
+        mock_output
+            .expect_println()
+            .with(eq("Enter your csshw arguments (or press Enter to exit):"))
+            .times(1)
+            .returning(|_| {});
+        mock_output
+            .expect_println()
+            .with(eq("Example: -u myuser host1 host2 host3"))
+            .times(1)
+            .returning(|_| {});
+        mock_output
+            .expect_println()
+            .with(eq("Example: --help"))
+            .times(1)
+            .returning(|_| {});
+        mock_output
+            .expect_print()
+            .with(eq("> "))
+            .times(1)
+            .returning(|_| {});
+        mock_output.expect_flush().times(1).returning(|| {});
+
+        // Set up input expectation - user enters empty line to exit
+        mock_input
+            .expect_read_line()
+            .times(1)
+            .returning(|| return Ok("\n".to_string()));
+
+        run_interactive_mode(
+            &mock_windows_api,
+            &mock_args_command,
+            &mock_logger_initializer,
+            mock_entrypoint,
+            &mock_config_manager,
+            &config,
+            config_path,
+            &mut mock_output,
+            &mut mock_input,
+        )
+        .await;
+    }
+
+    /// Test run_interactive_mode with parsing error
+    #[tokio::test]
+    async fn test_run_interactive_mode_parse_error() {
+        let mock_entrypoint = MockEntrypoint::new();
+        let mock_args_command = MockArgsCommand::new();
+        let mock_logger_initializer = MockLoggerInitializer::new();
+        let mock_windows_api = MockWindowsApi::new();
+        let mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+        let mut mock_output = MockOutput::new();
+        let mut mock_input = MockInput::new();
+
+        // Set up expectations for interactive prompt display (first iteration)
+        mock_output
+            .expect_println()
+            .with(eq("\n=== Interactive Mode ==="))
+            .times(2)
+            .returning(|_| {});
+        mock_output
+            .expect_println()
+            .with(eq("Enter your csshw arguments (or press Enter to exit):"))
+            .times(2)
+            .returning(|_| {});
+        mock_output
+            .expect_println()
+            .with(eq("Example: -u myuser host1 host2 host3"))
+            .times(2)
+            .returning(|_| {});
+        mock_output
+            .expect_println()
+            .with(eq("Example: --help"))
+            .times(2)
+            .returning(|_| {});
+        mock_output
+            .expect_print()
+            .with(eq("> "))
+            .times(2)
+            .returning(|_| {});
+        mock_output.expect_flush().times(2).returning(|| {});
+
+        // Expect error message for invalid arguments
+        mock_output
+            .expect_eprintln()
+            .with(str::starts_with("\nError parsing arguments:"))
+            .times(1)
+            .returning(|_| {});
+
+        // Set up input expectations - first invalid input, then exit
+        mock_input
+            .expect_read_line()
+            .times(1)
+            .returning(|| return Ok("--invalid-flag\n".to_string()));
+        mock_input
+            .expect_read_line()
+            .times(1)
+            .returning(|| return Ok("\n".to_string()));
+
+        run_interactive_mode(
+            &mock_windows_api,
+            &mock_args_command,
+            &mock_logger_initializer,
+            mock_entrypoint,
+            &mock_config_manager,
+            &config,
+            config_path,
+            &mut mock_output,
+            &mut mock_input,
         )
         .await;
     }
