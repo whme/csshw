@@ -1019,6 +1019,137 @@ mod cli_main_test {
         )
         .await;
     }
+
+    /// Test that verifies run_interactive_mode is called when appropriate
+    #[tokio::test]
+    async fn test_main_calls_run_interactive_mode() {
+        let mock = MockEntrypoint::new();
+        let mut mock_windows_api = MockWindowsApi::new();
+        let mut mock_output = MockOutput::new();
+        let mut mock_input = MockInput::new();
+        let mut mock_environment = MockEnvironment::new();
+        let mut mock_args_command = MockArgsCommand::new();
+        let mock_logger_initializer = MockLoggerInitializer::new();
+        let mut mock_config_manager = MockConfigManager::new();
+
+        // Set up Windows API mocks to simulate GUI launch
+        mock_windows_api.expect_get_stdout_handle().returning(|| {
+            return Ok(windows::Win32::Foundation::HANDLE(
+                std::ptr::dangling_mut::<std::ffi::c_void>(),
+            ));
+        });
+        mock_windows_api
+            .expect_get_console_screen_buffer_info_with_handle()
+            .returning(|_| {
+                // Return cursor at (0,0) to simulate GUI launch
+                return Ok(
+                    windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO {
+                        dwSize: windows::Win32::System::Console::COORD { X: 80, Y: 25 },
+                        dwCursorPosition: windows::Win32::System::Console::COORD { X: 0, Y: 0 },
+                        wAttributes: windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES(
+                            0,
+                        ),
+                        srWindow: windows::Win32::System::Console::SMALL_RECT {
+                            Left: 0,
+                            Top: 0,
+                            Right: 79,
+                            Bottom: 24,
+                        },
+                        dwMaximumWindowSize: windows::Win32::System::Console::COORD {
+                            X: 80,
+                            Y: 25,
+                        },
+                    },
+                );
+            });
+
+        // Mock the set_process_dpi_awareness call
+        mock_windows_api
+            .expect_set_process_dpi_awareness()
+            .returning(|_| {
+                return Err(windows::core::Error::from(
+                    windows::Win32::Foundation::E_FAIL,
+                ));
+            });
+
+        // Expect DPI awareness error message to be written
+        mock_output
+            .expect_eprintln()
+            .with(mockall::predicate::str::starts_with(
+                "Failed to set DPI awareness programatically:",
+            ))
+            .times(1)
+            .returning(|_| {});
+
+        // Set up environment mocks
+        setup_common_environment_mocks(&mut mock_environment);
+        setup_common_config_manager_mocks(&mut mock_config_manager);
+
+        // Set up mock for help printing (called before interactive mode)
+        mock_args_command
+            .expect_print_help()
+            .times(1)
+            .returning(|| return Ok(()));
+
+        // Set up mocks for interactive mode - minimal setup to return early
+        mock_output
+            .expect_println()
+            .with(mockall::predicate::eq("\n=== Interactive Mode ==="))
+            .times(1)
+            .returning(|_| {});
+        mock_output
+            .expect_println()
+            .with(mockall::predicate::eq(
+                "Enter your csshw arguments (or press Enter to exit):",
+            ))
+            .times(1)
+            .returning(|_| {});
+        mock_output
+            .expect_println()
+            .with(mockall::predicate::eq(
+                "Example: -u myuser host1 host2 host3",
+            ))
+            .times(1)
+            .returning(|_| {});
+        mock_output
+            .expect_println()
+            .with(mockall::predicate::eq("Example: --help"))
+            .times(1)
+            .returning(|_| {});
+        mock_output
+            .expect_print()
+            .with(mockall::predicate::eq("> "))
+            .times(1)
+            .returning(|_| {});
+        mock_output.expect_flush().times(1).returning(|| {});
+
+        // Set up input mock to return empty line (exit interactive mode)
+        mock_input
+            .expect_read_line()
+            .times(1)
+            .returning(|| return Ok("\n".to_string()));
+
+        let args = Args {
+            command: None,
+            username: None,
+            port: None,
+            hosts: vec![],
+            debug: false,
+        };
+
+        main(
+            &mock_windows_api,
+            args,
+            mock,
+            &mut mock_output,
+            &mut mock_input,
+            &mock_environment,
+            &mock_args_command,
+            &mock_logger_initializer,
+            &mock_config_manager,
+        )
+        .await;
+    }
 }
 
 /// Test module for execute_parsed_command function
