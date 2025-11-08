@@ -138,26 +138,27 @@ mod cli_args_test {
 
 mod cli_main_test {
     use crate::cli::{
-        main, Args, Commands, MockArgsCommand, MockEntrypoint, MockLoggerInitializer, MockWriter,
+        main, Args, Commands, MockArgsCommand, MockConfigManager, MockEntrypoint, MockEnvironment,
+        MockInput, MockLoggerInitializer, MockOutput,
     };
+    use crate::utils::config::ConfigOpt;
     use crate::utils::windows::MockWindowsApi;
 
     /// Test parameters for parametrized main function tests
     struct MainTestParams {
-        /// Test case name for identification
-        name: &'static str,
         /// Arguments to pass to main function
         args: Args,
         /// Whether launched from GUI
         launched_from_gui: bool,
         /// Expected behavior verification function
-        verify_fn: fn(&mut MockEntrypoint, &mut MockWindowsApi, &mut MockWriter),
+        verify_fn:
+            fn(&mut MockEntrypoint, &mut MockWindowsApi, &mut MockOutput, &mut MockArgsCommand),
     }
 
     /// Helper function to set up common Windows API mocks
     fn setup_common_windows_api_mocks(
         mock_windows_api: &mut MockWindowsApi,
-        mock_writer: &mut MockWriter,
+        mock_output: &mut MockOutput,
         launched_from_gui: bool,
     ) {
         // Mock the is_launched_from_gui call
@@ -209,8 +210,8 @@ mod cli_main_test {
             });
 
         // Expect DPI awareness error message to be written
-        mock_writer
-            .expect_write_err()
+        mock_output
+            .expect_eprintln()
             .with(mockall::predicate::str::starts_with(
                 "Failed to set DPI awareness programatically:",
             ))
@@ -218,12 +219,30 @@ mod cli_main_test {
             .returning(|_| {});
     }
 
+    /// Helper function to set up common Environment mocks
+    fn setup_common_environment_mocks(mock_environment: &mut MockEnvironment) {
+        mock_environment.expect_current_exe().returning(|| {
+            return Ok(std::path::PathBuf::from("C:\\test\\csshw.exe"));
+        });
+        mock_environment
+            .expect_set_current_dir()
+            .returning(|_| return Ok(()));
+    }
+
+    /// Helper function to set up common ConfigManager mocks
+    fn setup_common_config_manager_mocks(mock_config_manager: &mut MockConfigManager) {
+        mock_config_manager
+            .expect_load_config()
+            .with(mockall::predicate::eq("csshw-config.toml"))
+            .returning(|_| return Ok(ConfigOpt::default()));
+    }
+
     /// Parametrized test for main function covering all branches
     #[tokio::test]
     async fn test_main_parametrized() {
         let test_cases = vec![
+            // main_with_hosts_success
             MainTestParams {
-                name: "main_with_hosts_success",
                 args: Args {
                     command: None,
                     username: None,
@@ -232,7 +251,7 @@ mod cli_main_test {
                     debug: false,
                 },
                 launched_from_gui: false,
-                verify_fn: |mock, mock_windows_api, _mock_writer| {
+                verify_fn: |mock, mock_windows_api, _mock_output, _mock_args_command| {
                     // Mock the create_process_with_args call that will be made by the main method
                     mock_windows_api
                         .expect_create_process_with_args()
@@ -269,7 +288,7 @@ mod cli_main_test {
                         });
 
                     mock.expect_main().once().returning(
-                        |_: &MockWindowsApi, config_path, _, args| {
+                        |_: &MockWindowsApi, _: &MockConfigManager, config_path, _, args| {
                             assert_eq!(config_path, "csshw-config.toml");
                             assert_eq!(args.command, None);
                             assert_eq!(args.username, None);
@@ -280,8 +299,8 @@ mod cli_main_test {
                     );
                 },
             },
+            // main_with_empty_hosts_console_launch
             MainTestParams {
-                name: "main_with_empty_hosts_console_launch",
                 args: Args {
                     command: None,
                     username: None,
@@ -290,12 +309,16 @@ mod cli_main_test {
                     debug: false,
                 },
                 launched_from_gui: false,
-                verify_fn: |_mock, _mock_windows_api, _mock_writer| {
-                    // No additional expectations needed - should just print help and return
+                verify_fn: |_mock, _mock_windows_api, _mock_output, mock_args_command| {
+                    // Set up mock for help printing in empty hosts cases
+                    mock_args_command
+                        .expect_print_help()
+                        .times(1)
+                        .returning(|| return Ok(()));
                 },
             },
+            // main_with_empty_hosts_gui_launch
             MainTestParams {
-                name: "main_with_empty_hosts_gui_launch",
                 args: Args {
                     command: None,
                     username: None,
@@ -304,50 +327,53 @@ mod cli_main_test {
                     debug: false,
                 },
                 launched_from_gui: true,
-                verify_fn: |_mock, _mock_windows_api, _mock_writer| {
-                    // No additional expectations needed - should print help and enter interactive mode
-                    // Interactive mode testing would require more complex mocking of stdin
+                verify_fn: |_mock, _mock_windows_api, _mock_output, mock_args_command| {
+                    // Set up mock for help printing in empty hosts cases
+                    mock_args_command
+                        .expect_print_help()
+                        .times(1)
+                        .returning(|| return Ok(()));
                 },
             },
         ];
 
         for test_case in test_cases {
-            println!("Running test case: {}", test_case.name);
-
             let mut mock = MockEntrypoint::new();
             let mut mock_windows_api = MockWindowsApi::new();
-
-            let mut mock_writer = MockWriter::new();
+            let mut mock_output = MockOutput::new();
+            let mut mock_input = MockInput::new();
+            let mut mock_environment = MockEnvironment::new();
+            let mut mock_args_command = MockArgsCommand::new();
+            let mock_logger_initializer = MockLoggerInitializer::new();
+            let mut mock_config_manager = MockConfigManager::new();
 
             // Set up common mocks
             setup_common_windows_api_mocks(
                 &mut mock_windows_api,
-                &mut mock_writer,
+                &mut mock_output,
                 test_case.launched_from_gui,
             );
+            setup_common_environment_mocks(&mut mock_environment);
+            setup_common_config_manager_mocks(&mut mock_config_manager);
 
             // Set up test-specific expectations
-            (test_case.verify_fn)(&mut mock, &mut mock_windows_api, &mut mock_writer);
+            (test_case.verify_fn)(
+                &mut mock,
+                &mut mock_windows_api,
+                &mut mock_output,
+                &mut mock_args_command,
+            );
 
-            // Run the test
-            let mut mock_args_command = MockArgsCommand::new();
-
-            // Set up mock for help printing in empty hosts cases
-            if test_case.args.hosts.is_empty() {
-                mock_args_command
-                    .expect_print_help()
-                    .times(1)
-                    .returning(|| return Ok(()));
-            }
-
-            let mock_logger_initializer = MockLoggerInitializer::new();
             main(
                 &mock_windows_api,
                 test_case.args,
                 mock,
-                &mut mock_writer,
+                &mut mock_output,
+                &mut mock_input,
+                &mock_environment,
                 &mock_args_command,
                 &mock_logger_initializer,
+                &mock_config_manager,
             )
             .await;
         }
@@ -357,7 +383,10 @@ mod cli_main_test {
     async fn test_daemon_main() {
         let mut mock = MockEntrypoint::new();
         let mut mock_windows_api = MockWindowsApi::new();
-        let mut mock_writer = MockWriter::new();
+        let mut mock_output = MockOutput::new();
+        let mut mock_input = MockInput::new();
+        let mut mock_environment = MockEnvironment::new();
+        let mut mock_config_manager = MockConfigManager::new();
 
         // Set up Windows API mocks without the DPI error expectation
         mock_windows_api.expect_get_stdout_handle().returning(|| {
@@ -393,6 +422,10 @@ mod cli_main_test {
         mock_windows_api
             .expect_set_process_dpi_awareness()
             .returning(|_| return Ok(()));
+
+        // Set up environment mocks
+        setup_common_environment_mocks(&mut mock_environment);
+        setup_common_config_manager_mocks(&mut mock_config_manager);
 
         mock.expect_daemon_main().once().returning(
             |_: &MockWindowsApi, hosts, username, port, _, _, debug| {
@@ -416,9 +449,12 @@ mod cli_main_test {
             &mock_windows_api,
             args,
             mock,
-            &mut mock_writer,
+            &mut mock_output,
+            &mut mock_input,
+            &mock_environment,
             &mock_args_command,
             &mock_logger_initializer,
+            &mock_config_manager,
         )
         .await;
     }
@@ -427,7 +463,10 @@ mod cli_main_test {
     async fn test_client_main() {
         let mut mock = MockEntrypoint::new();
         let mut mock_windows_api = MockWindowsApi::new();
-        let mut mock_writer = MockWriter::new();
+        let mut mock_output = MockOutput::new();
+        let mut mock_input = MockInput::new();
+        let mut mock_environment = MockEnvironment::new();
+        let mut mock_config_manager = MockConfigManager::new();
 
         // Set up Windows API mocks without the DPI error expectation
         mock_windows_api.expect_get_stdout_handle().returning(|| {
@@ -463,6 +502,10 @@ mod cli_main_test {
         mock_windows_api
             .expect_set_process_dpi_awareness()
             .returning(|_| return Ok(()));
+
+        // Set up environment mocks
+        setup_common_environment_mocks(&mut mock_environment);
+        setup_common_config_manager_mocks(&mut mock_config_manager);
 
         mock.expect_client_main::<MockWindowsApi>()
             .once()
@@ -487,9 +530,12 @@ mod cli_main_test {
             &mock_windows_api,
             args,
             mock,
-            &mut mock_writer,
+            &mut mock_output,
+            &mut mock_input,
+            &mock_environment,
             &mock_args_command,
             &mock_logger_initializer,
+            &mock_config_manager,
         )
         .await;
     }
@@ -499,7 +545,7 @@ mod cli_main_test {
 mod interactive_mode_test {
     use crate::cli::{
         execute_parsed_command, handle_special_commands, Args, Commands, MockArgsCommand,
-        MockEntrypoint, MockLoggerInitializer,
+        MockConfigManager, MockEntrypoint, MockLoggerInitializer,
     };
     use crate::utils::config::Config;
     use crate::utils::windows::MockWindowsApi;
@@ -582,6 +628,7 @@ mod interactive_mode_test {
             &mut mock_entrypoint,
             &mock_args_command,
             &mock_logger_initializer,
+            &MockConfigManager::new(),
             &config,
             config_path,
         )
@@ -634,6 +681,7 @@ mod interactive_mode_test {
             &mut mock_entrypoint,
             &mock_args_command,
             &mock_logger_initializer,
+            &MockConfigManager::new(),
             &config,
             config_path,
         )
@@ -652,9 +700,9 @@ mod interactive_mode_test {
         // Set up expectations
         mock_entrypoint
             .expect_main()
-            .with(always(), eq(config_path), always(), always())
+            .with(always(), always(), eq(config_path), always(), always())
             .times(1)
-            .returning(|_: &MockWindowsApi, _, _, _| {});
+            .returning(|_: &MockWindowsApi, _: &MockConfigManager, _, _, _| {});
 
         let args = Args {
             command: None,
@@ -671,6 +719,7 @@ mod interactive_mode_test {
             &mut mock_entrypoint,
             &mock_args_command,
             &mock_logger_initializer,
+            &MockConfigManager::new(),
             &config,
             config_path,
         )
@@ -707,6 +756,7 @@ mod interactive_mode_test {
             &mut mock_entrypoint,
             &mock_args_command,
             &mock_logger_initializer,
+            &MockConfigManager::new(),
             &config,
             config_path,
         )

@@ -120,36 +120,98 @@ impl LoggerInitializer for CLILoggerInitializer {
 
 /// Trait for writing output to enable dependency injection and testing
 #[cfg_attr(test, automock)]
-pub trait Writer {
+pub trait Output {
     /// Write a line to the output
-    fn writeln(&mut self, text: &str);
+    fn println(&mut self, text: &str);
     /// Write text without a newline to the output
-    fn write(&mut self, text: &str);
+    fn print(&mut self, text: &str);
     /// Write a line to stderr
-    fn write_err(&mut self, text: &str);
+    fn eprintln(&mut self, text: &str);
     /// Flush the output
     fn flush(&mut self);
 }
 
-/// Default implementation of Writer trait that writes to stdout/stderr
-pub struct CLIWriter;
+/// Default implementation of Output trait that writes to stdout/stderr
+pub struct CLIOutput;
 
-impl Writer for CLIWriter {
-    fn writeln(&mut self, text: &str) {
+impl Output for CLIOutput {
+    fn println(&mut self, text: &str) {
         println!("{text}");
     }
 
-    fn write(&mut self, text: &str) {
+    fn print(&mut self, text: &str) {
         print!("{text}");
     }
 
-    fn write_err(&mut self, text: &str) {
+    fn eprintln(&mut self, text: &str) {
         eprintln!("{text}");
     }
 
     fn flush(&mut self) {
         use std::io::Write;
         std::io::stdout().flush().unwrap();
+    }
+}
+
+/// Trait for reading input to enable dependency injection and testing
+#[cfg_attr(test, automock)]
+pub trait Input {
+    /// Read a line from stdin
+    fn read_line(&mut self) -> Result<String, std::io::Error>;
+}
+
+/// Default implementation of Input trait that reads from stdin
+pub struct CLIInput;
+
+impl Input for CLIInput {
+    fn read_line(&mut self) -> Result<String, std::io::Error> {
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        return Ok(input);
+    }
+}
+
+/// Trait for environment operations to enable dependency injection and testing
+#[cfg_attr(test, automock)]
+pub trait Environment {
+    /// Get current executable path
+    fn current_exe(&self) -> Result<std::path::PathBuf, std::io::Error>;
+    /// Set current directory
+    fn set_current_dir(&self, path: &std::path::Path) -> Result<(), std::io::Error>;
+}
+
+/// Default implementation of Environment trait
+pub struct CLIEnvironment;
+
+impl Environment for CLIEnvironment {
+    fn current_exe(&self) -> Result<std::path::PathBuf, std::io::Error> {
+        return std::env::current_exe();
+    }
+
+    fn set_current_dir(&self, path: &std::path::Path) -> Result<(), std::io::Error> {
+        return std::env::set_current_dir(path);
+    }
+}
+
+/// Trait for configuration management to enable dependency injection and testing
+#[cfg_attr(test, automock)]
+pub trait ConfigManager {
+    /// Load configuration from the specified path
+    fn load_config(&self, path: &str) -> Result<ConfigOpt, confy::ConfyError>;
+    /// Store configuration to the specified path
+    fn store_config(&self, path: &str, config: &Config) -> Result<(), confy::ConfyError>;
+}
+
+/// Default implementation of ConfigManager trait
+pub struct CLIConfigManager;
+
+impl ConfigManager for CLIConfigManager {
+    fn load_config(&self, path: &str) -> Result<ConfigOpt, confy::ConfyError> {
+        return confy::load_path(path);
+    }
+
+    fn store_config(&self, path: &str, config: &Config) -> Result<(), confy::ConfyError> {
+        return confy::store_path(path, config);
     }
 }
 
@@ -178,9 +240,10 @@ pub trait Entrypoint {
         debug: bool,
     ) -> impl std::future::Future<Output = ()> + Send;
     /// Entrypoint for the main command
-    fn main<W: WindowsApi + 'static>(
+    fn main<W: WindowsApi + 'static, C: ConfigManager + 'static>(
         &mut self,
         windows_api: &W,
+        config_manager: &C,
         config_path: &str,
         config: &Config,
         args: Args,
@@ -212,14 +275,15 @@ impl Entrypoint for MainEntrypoint {
         daemon_main(windows_api, hosts, username, port, config, clusters, debug).await;
     }
 
-    fn main<W: WindowsApi + 'static>(
+    fn main<W: WindowsApi + 'static, C: ConfigManager + 'static>(
         &mut self,
         windows_api: &W,
+        config_manager: &C,
         config_path: &str,
         config: &Config,
         args: Args,
     ) {
-        confy::store_path(config_path, config).unwrap();
+        config_manager.store_config(config_path, config).unwrap();
 
         let mut daemon_args: Vec<String> = Vec::new();
         if args.debug {
@@ -257,34 +321,37 @@ impl Entrypoint for MainEntrypoint {
 }
 
 /// Display the interactive mode prompt and instructions
-fn show_interactive_prompt<Wr: Writer>(writer: &mut Wr) {
-    writer.writeln("\n=== Interactive Mode ===");
-    writer.writeln(&format!(
+fn show_interactive_prompt<O: Output>(output: &mut O) {
+    output.println("\n=== Interactive Mode ===");
+    output.println(&format!(
         "Enter your {PKG_NAME} arguments (or press Enter to exit):"
     ));
-    writer.writeln("Example: -u myuser host1 host2 host3");
-    writer.writeln("Example: --help");
-    writer.write("> ");
-    writer.flush();
+    output.println("Example: -u myuser host1 host2 host3");
+    output.println("Example: --help");
+    output.print("> ");
+    output.flush();
 }
 
 /// Read user input from stdin
+///
+/// # Arguments
+///
+/// * `input` - The Input trait object for reading from stdin
 ///
 /// # Returns
 ///
 /// * `Ok(Some(input))` - User provided input
 /// * `Ok(None)` - User wants to exit (empty input or "exit")
 /// * `Err(error)` - Error reading input
-fn read_user_input() -> Result<Option<String>, std::io::Error> {
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
+fn read_user_input<I: Input>(input: &mut I) -> Result<Option<String>, std::io::Error> {
+    let input_line = input.read_line()?;
 
-    let input = input.trim();
-    if input.is_empty() || input.to_lowercase() == "exit" {
+    let input_trimmed = input_line.trim();
+    if input_trimmed.is_empty() || input_trimmed.to_lowercase() == "exit" {
         return Ok(None);
     }
 
-    return Ok(Some(input.to_string()));
+    return Ok(Some(input_trimmed.to_string()));
 }
 
 /// Handle special commands that don't need full parsing
@@ -312,12 +379,14 @@ async fn execute_parsed_command<
     T: Entrypoint,
     A: ArgsCommand,
     L: LoggerInitializer,
+    C: ConfigManager + 'static,
 >(
     windows_api: &W,
     parsed_args: Args,
     entrypoint: &mut T,
     args_command: &A,
     logger_initializer: &L,
+    config_manager: &C,
     config: &Config,
     config_path: &str,
 ) {
@@ -354,7 +423,13 @@ async fn execute_parsed_command<
         }
         None => {
             if !parsed_args.hosts.is_empty() {
-                entrypoint.main(windows_api, config_path, config, parsed_args);
+                entrypoint.main(
+                    windows_api,
+                    config_manager,
+                    config_path,
+                    config,
+                    parsed_args,
+                );
             } else {
                 // Show help for empty hosts
                 let _ = args_command.print_help();
@@ -364,25 +439,37 @@ async fn execute_parsed_command<
 }
 
 /// Run the interactive mode loop for GUI launches
-async fn run_interactive_mode<W: WindowsApi + Clone + 'static, T: Entrypoint, Wr: Writer>(
+async fn run_interactive_mode<
+    W: WindowsApi + Clone + 'static,
+    A: ArgsCommand,
+    L: LoggerInitializer,
+    T: Entrypoint,
+    O: Output,
+    I: Input,
+    C: ConfigManager + 'static,
+>(
     windows_api: &W,
+    args_command: &A,
+    logger_initializer: &L,
     mut entrypoint: T,
+    config_manager: &C,
     config: &Config,
     config_path: &str,
-    writer: &mut Wr,
+    output: &mut O,
+    input: &mut I,
 ) {
     loop {
-        show_interactive_prompt(writer);
+        show_interactive_prompt(output);
 
-        match read_user_input() {
-            Ok(Some(input)) => {
+        match read_user_input(input) {
+            Ok(Some(input_str)) => {
                 // Handle special commands first
-                if handle_special_commands(&input, &CLIArgsCommand) {
+                if handle_special_commands(&input_str, args_command) {
                     continue;
                 }
 
                 // Parse the input as command line arguments
-                let input_args: Vec<&str> = input.split_whitespace().collect();
+                let input_args: Vec<&str> = input_str.split_whitespace().collect();
                 let mut full_args = vec![PKG_NAME];
                 full_args.extend(input_args);
 
@@ -392,15 +479,16 @@ async fn run_interactive_mode<W: WindowsApi + Clone + 'static, T: Entrypoint, Wr
                             windows_api,
                             parsed_args,
                             &mut entrypoint,
-                            &CLIArgsCommand,
-                            &CLILoggerInitializer,
+                            args_command,
+                            logger_initializer,
+                            config_manager,
                             config,
                             config_path,
                         )
                         .await;
                     }
                     Err(err) => {
-                        writer.write_err(&format!("\nError parsing arguments: {err}"));
+                        output.eprintln(&format!("\nError parsing arguments: {err}"));
                     }
                 }
             }
@@ -408,7 +496,7 @@ async fn run_interactive_mode<W: WindowsApi + Clone + 'static, T: Entrypoint, Wr
                 return;
             }
             Err(err) => {
-                writer.write_err(&format!("Error reading input: {err}"));
+                output.eprintln(&format!("Error reading input: {err}"));
             }
         }
     }
@@ -423,16 +511,22 @@ async fn run_interactive_mode<W: WindowsApi + Clone + 'static, T: Entrypoint, Wr
 pub async fn main<
     W: WindowsApi + Clone + 'static,
     E: Entrypoint,
-    Wr: Writer,
+    O: Output,
+    I: Input,
+    Env: Environment,
     A: ArgsCommand,
     L: LoggerInitializer,
+    C: ConfigManager + 'static,
 >(
     windows_api: &W,
     args: Args,
     mut entrypoint: E,
-    writer: &mut Wr,
+    output: &mut O,
+    input: &mut I,
+    environment: &Env,
     args_command: &A,
     logger_initializer: &L,
+    config_manager: &C,
 ) {
     // CRITICAL: Check GUI launch BEFORE any output to console
     let launched_from_gui = is_launched_from_gui(windows_api);
@@ -441,27 +535,28 @@ pub async fn main<
     // but conhost.exe does not do any manifest loading.
     // https://github.com/microsoft/terminal/issues/18464#issuecomment-2623392013
     if let Err(err) = windows_api.set_process_dpi_awareness(PROCESS_PER_MONITOR_DPI_AWARE) {
-        writer.write_err(&format!(
+        output.eprintln(&format!(
             "Failed to set DPI awareness programatically: {err:?}"
         ));
     }
-    match std::env::current_exe() {
+    match environment.current_exe() {
         Ok(path) => match path.parent() {
             None => {
-                writer.write_err("Failed to get executable path parent working directory");
+                output.eprintln("Failed to get executable path parent working directory");
             }
             Some(exe_dir) => {
-                std::env::set_current_dir(exe_dir)
+                environment
+                    .set_current_dir(exe_dir)
                     .expect("Failed to change current working directory");
             }
         },
         Err(_) => {
-            writer.write_err("Failed to get executable directory");
+            output.eprintln("Failed to get executable directory");
         }
     }
 
     let config_path = format!("{PKG_NAME}-config.toml");
-    let config_on_disk: ConfigOpt = confy::load_path(&config_path).unwrap();
+    let config_on_disk: ConfigOpt = config_manager.load_config(&config_path).unwrap();
     let config: Config = config_on_disk.into();
 
     match &args.command {
@@ -498,18 +593,27 @@ pub async fn main<
         None => {
             // If no hosts provided, show help and handle GUI vs console launch
             if args.hosts.is_empty() {
-                // Show help using the injected args_command
                 let _ = args_command.print_help();
 
                 // If launched from GUI, allow user to input arguments interactively
                 if launched_from_gui {
-                    run_interactive_mode(windows_api, entrypoint, &config, &config_path, writer)
-                        .await;
+                    run_interactive_mode(
+                        windows_api,
+                        args_command,
+                        logger_initializer,
+                        entrypoint,
+                        config_manager,
+                        &config,
+                        &config_path,
+                        output,
+                        input,
+                    )
+                    .await;
                 }
                 return;
             }
 
-            entrypoint.main(windows_api, &config_path, &config, args);
+            entrypoint.main(windows_api, config_manager, &config_path, &config, args);
         }
     }
 }

@@ -24,7 +24,10 @@
 #![doc(html_no_source)]
 
 use clap::Parser as _;
-use csshw_lib::cli::{self, Args, CLIArgsCommand, CLILoggerInitializer, CLIWriter, MainEntrypoint};
+use csshw_lib::cli::{
+    self, Args, CLIArgsCommand, CLIConfigManager, CLIEnvironment, CLIInput, CLILoggerInitializer,
+    CLIOutput, MainEntrypoint,
+};
 use csshw_lib::utils::windows::DefaultWindowsApi;
 
 /// The main entrypoint of the binary
@@ -34,9 +37,12 @@ async fn main() {
         &DefaultWindowsApi,
         Args::parse(),
         MainEntrypoint,
-        &mut CLIWriter,
+        &mut CLIOutput,
+        &mut CLIInput,
+        &CLIEnvironment,
         &CLIArgsCommand,
         &CLILoggerInitializer,
+        &CLIConfigManager,
     )
     .await;
 }
