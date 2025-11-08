@@ -1311,6 +1311,427 @@ mod execute_parsed_command_test {
     }
 }
 
+/// Test module for MainEntrypoint.main method
+mod main_entrypoint_test {
+    use crate::cli::{Args, Entrypoint, MainEntrypoint, MockConfigManager};
+    use crate::utils::config::Config;
+    use crate::utils::windows::MockWindowsApi;
+    use mockall::predicate::*;
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::System::Threading::PROCESS_INFORMATION;
+
+    /// Test MainEntrypoint.main with basic arguments
+    #[test]
+    fn test_main_entrypoint_basic_args() {
+        let mut mock_windows_api = MockWindowsApi::new();
+        let mut mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        // Set up expectations for config storage
+        mock_config_manager
+            .expect_store_config()
+            .with(eq(config_path), always())
+            .times(1)
+            .returning(|_, _| return Ok(()));
+
+        // Set up expectations for process creation
+        mock_windows_api
+            .expect_create_process_with_args()
+            .with(
+                eq("csshw.exe"),
+                eq(vec![
+                    "daemon".to_string(),
+                    "host1".to_string(),
+                    "host2".to_string(),
+                ]),
+            )
+            .times(1)
+            .returning(|_, _| {
+                return Some(PROCESS_INFORMATION {
+                    hProcess: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
+                        std::ffi::c_void,
+                    >()),
+                    hThread: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
+                        std::ffi::c_void,
+                    >()),
+                    dwProcessId: 1234,
+                    dwThreadId: 5678,
+                });
+            });
+
+        // Set up expectations for getting window handle
+        mock_windows_api
+            .expect_get_window_handle_for_process()
+            .with(eq(1234u32))
+            .times(1)
+            .returning(|_| return HWND(std::ptr::dangling_mut::<std::ffi::c_void>()));
+
+        let args = Args {
+            command: None,
+            username: None,
+            port: None,
+            hosts: vec!["host1".to_string(), "host2".to_string()],
+            debug: false,
+        };
+
+        let mut entrypoint = MainEntrypoint;
+        entrypoint.main(
+            &mock_windows_api,
+            &mock_config_manager,
+            config_path,
+            &config,
+            args,
+        );
+    }
+
+    /// Test MainEntrypoint.main with debug flag
+    #[test]
+    fn test_main_entrypoint_with_debug() {
+        let mut mock_windows_api = MockWindowsApi::new();
+        let mut mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        // Set up expectations for config storage
+        mock_config_manager
+            .expect_store_config()
+            .with(eq(config_path), always())
+            .times(1)
+            .returning(|_, _| return Ok(()));
+
+        // Set up expectations for process creation with debug flag
+        mock_windows_api
+            .expect_create_process_with_args()
+            .with(
+                eq("csshw.exe"),
+                eq(vec![
+                    "-d".to_string(),
+                    "daemon".to_string(),
+                    "host1".to_string(),
+                ]),
+            )
+            .times(1)
+            .returning(|_, _| {
+                return Some(PROCESS_INFORMATION {
+                    hProcess: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
+                        std::ffi::c_void,
+                    >()),
+                    hThread: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
+                        std::ffi::c_void,
+                    >()),
+                    dwProcessId: 2345,
+                    dwThreadId: 6789,
+                });
+            });
+
+        // Set up expectations for getting window handle
+        mock_windows_api
+            .expect_get_window_handle_for_process()
+            .with(eq(2345u32))
+            .times(1)
+            .returning(|_| return HWND(std::ptr::dangling_mut::<std::ffi::c_void>()));
+
+        let args = Args {
+            command: None,
+            username: None,
+            port: None,
+            hosts: vec!["host1".to_string()],
+            debug: true,
+        };
+
+        let mut entrypoint = MainEntrypoint;
+        entrypoint.main(
+            &mock_windows_api,
+            &mock_config_manager,
+            config_path,
+            &config,
+            args,
+        );
+    }
+
+    /// Test MainEntrypoint.main with username and port
+    #[test]
+    fn test_main_entrypoint_with_username_and_port() {
+        let mut mock_windows_api = MockWindowsApi::new();
+        let mut mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        // Set up expectations for config storage
+        mock_config_manager
+            .expect_store_config()
+            .with(eq(config_path), always())
+            .times(1)
+            .returning(|_, _| return Ok(()));
+
+        // Set up expectations for process creation with username and port
+        mock_windows_api
+            .expect_create_process_with_args()
+            .with(
+                eq("csshw.exe"),
+                eq(vec![
+                    "-u".to_string(),
+                    "testuser".to_string(),
+                    "-p".to_string(),
+                    "2222".to_string(),
+                    "daemon".to_string(),
+                    "server1".to_string(),
+                    "server2".to_string(),
+                ]),
+            )
+            .times(1)
+            .returning(|_, _| {
+                return Some(PROCESS_INFORMATION {
+                    hProcess: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
+                        std::ffi::c_void,
+                    >()),
+                    hThread: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
+                        std::ffi::c_void,
+                    >()),
+                    dwProcessId: 3456,
+                    dwThreadId: 7890,
+                });
+            });
+
+        // Set up expectations for getting window handle
+        mock_windows_api
+            .expect_get_window_handle_for_process()
+            .with(eq(3456u32))
+            .times(1)
+            .returning(|_| return HWND(std::ptr::dangling_mut::<std::ffi::c_void>()));
+
+        let args = Args {
+            command: None,
+            username: Some("testuser".to_string()),
+            port: Some(2222),
+            hosts: vec!["server1".to_string(), "server2".to_string()],
+            debug: false,
+        };
+
+        let mut entrypoint = MainEntrypoint;
+        entrypoint.main(
+            &mock_windows_api,
+            &mock_config_manager,
+            config_path,
+            &config,
+            args,
+        );
+    }
+
+    /// Test MainEntrypoint.main with all options enabled
+    #[test]
+    fn test_main_entrypoint_all_options() {
+        let mut mock_windows_api = MockWindowsApi::new();
+        let mut mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        // Set up expectations for config storage
+        mock_config_manager
+            .expect_store_config()
+            .with(eq(config_path), always())
+            .times(1)
+            .returning(|_, _| return Ok(()));
+
+        // Set up expectations for process creation with all options
+        mock_windows_api
+            .expect_create_process_with_args()
+            .with(
+                eq("csshw.exe"),
+                eq(vec![
+                    "-d".to_string(),
+                    "-u".to_string(),
+                    "admin".to_string(),
+                    "-p".to_string(),
+                    "8080".to_string(),
+                    "daemon".to_string(),
+                    "web1".to_string(),
+                    "web2".to_string(),
+                    "web3".to_string(),
+                ]),
+            )
+            .times(1)
+            .returning(|_, _| {
+                return Some(PROCESS_INFORMATION {
+                    hProcess: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
+                        std::ffi::c_void,
+                    >()),
+                    hThread: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
+                        std::ffi::c_void,
+                    >()),
+                    dwProcessId: 4567,
+                    dwThreadId: 8901,
+                });
+            });
+
+        // Set up expectations for getting window handle
+        mock_windows_api
+            .expect_get_window_handle_for_process()
+            .with(eq(4567u32))
+            .times(1)
+            .returning(|_| return HWND(std::ptr::dangling_mut::<std::ffi::c_void>()));
+
+        let args = Args {
+            command: None,
+            username: Some("admin".to_string()),
+            port: Some(8080),
+            hosts: vec!["web1".to_string(), "web2".to_string(), "web3".to_string()],
+            debug: true,
+        };
+
+        let mut entrypoint = MainEntrypoint;
+        entrypoint.main(
+            &mock_windows_api,
+            &mock_config_manager,
+            config_path,
+            &config,
+            args,
+        );
+    }
+
+    /// Test MainEntrypoint.main with empty hosts (should not be called in practice)
+    #[test]
+    fn test_main_entrypoint_empty_hosts() {
+        let mock_windows_api = MockWindowsApi::new();
+        let mut mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        // Set up expectations for config storage
+        mock_config_manager
+            .expect_store_config()
+            .with(eq(config_path), always())
+            .times(1)
+            .returning(|_, _| return Ok(()));
+
+        // Set up expectations for process creation with just daemon command
+        let mut mock_windows_api = mock_windows_api;
+        mock_windows_api
+            .expect_create_process_with_args()
+            .with(eq("csshw.exe"), eq(vec!["daemon".to_string()]))
+            .times(1)
+            .returning(|_, _| {
+                return Some(PROCESS_INFORMATION {
+                    hProcess: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
+                        std::ffi::c_void,
+                    >()),
+                    hThread: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
+                        std::ffi::c_void,
+                    >()),
+                    dwProcessId: 5678,
+                    dwThreadId: 9012,
+                });
+            });
+
+        // Set up expectations for getting window handle
+        mock_windows_api
+            .expect_get_window_handle_for_process()
+            .with(eq(5678u32))
+            .times(1)
+            .returning(|_| return HWND(std::ptr::dangling_mut::<std::ffi::c_void>()));
+
+        let args = Args {
+            command: None,
+            username: None,
+            port: None,
+            hosts: vec![],
+            debug: false,
+        };
+
+        let mut entrypoint = MainEntrypoint;
+        entrypoint.main(
+            &mock_windows_api,
+            &mock_config_manager,
+            config_path,
+            &config,
+            args,
+        );
+    }
+
+    /// Test MainEntrypoint.main config storage failure
+    #[test]
+    #[should_panic(expected = "Failed to store config")]
+    fn test_main_entrypoint_config_storage_failure() {
+        let mock_windows_api = MockWindowsApi::new();
+        let mut mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        // Set up expectations for config storage failure
+        mock_config_manager
+            .expect_store_config()
+            .with(eq(config_path), always())
+            .times(1)
+            .returning(|_, _| {
+                return Err(confy::ConfyError::GeneralLoadError(std::io::Error::other(
+                    "Failed to store config",
+                )));
+            });
+
+        let args = Args {
+            command: None,
+            username: None,
+            port: None,
+            hosts: vec!["host1".to_string()],
+            debug: false,
+        };
+
+        let mut entrypoint = MainEntrypoint;
+        entrypoint.main(
+            &mock_windows_api,
+            &mock_config_manager,
+            config_path,
+            &config,
+            args,
+        );
+    }
+
+    /// Test MainEntrypoint.main process creation failure
+    #[test]
+    #[should_panic(expected = "Failed to create process")]
+    fn test_main_entrypoint_process_creation_failure() {
+        let mut mock_windows_api = MockWindowsApi::new();
+        let mut mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        // Set up expectations for config storage
+        mock_config_manager
+            .expect_store_config()
+            .with(eq(config_path), always())
+            .times(1)
+            .returning(|_, _| return Ok(()));
+
+        // Set up expectations for process creation failure
+        mock_windows_api
+            .expect_create_process_with_args()
+            .with(
+                eq("csshw.exe"),
+                eq(vec!["daemon".to_string(), "host1".to_string()]),
+            )
+            .times(1)
+            .returning(|_, _| return None);
+
+        let args = Args {
+            command: None,
+            username: None,
+            port: None,
+            hosts: vec!["host1".to_string()],
+            debug: false,
+        };
+
+        let mut entrypoint = MainEntrypoint;
+        entrypoint.main(
+            &mock_windows_api,
+            &mock_config_manager,
+            config_path,
+            &config,
+            args,
+        );
+    }
+}
+
 /// Test module for the interactive mode helper functions
 mod interactive_mode_test {
     use crate::cli::{
