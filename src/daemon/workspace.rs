@@ -69,3 +69,7 @@ pub fn get_workspace_area<W: WindowsApi>(
         y_size_frame,
     };
 }
+
+#[cfg(test)]
+#[path = "../tests/daemon/test_workspace.rs"]
+mod test_mod;
