@@ -43,7 +43,7 @@ Unsure where to begin contributing to csshW? Here are some suggestions:
 ### Development Environment Setup
 
 1. **Prerequisites**:
-   - Rust (the version used by the CI can be found in [`.github/workflows/_shared-ci.yml`](https://github.com/whme/csshw/blob/main/.github/workflows/_shared-ci.yml#L21) as `RUST_VERSION`)
+   - Rust (the version used by the CI can be found in [`.github/workflows/_shared-ci.yml`](https://github.com/whme/csshw/blob/main/.github/workflows/_shared-ci.yml#L15) as `RUST_VERSION`)
    - Git
    - A Windows development environment
 
@@ -145,7 +145,7 @@ If a pull request shows no activity for 2 weeks after feedback, it may be closed
 
 ### Maintainers
 
-csshW is maintained by @whme. Response times may vary based on availability and workload.
+csshW is maintained by [@whme](https://github.com/whme). Response times may vary based on availability and workload.
 
 ## Code, Commit Message and other Conventions
 
