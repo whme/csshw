@@ -1021,7 +1021,297 @@ mod cli_main_test {
     }
 }
 
-/// Test module for the new interactive mode helper functions
+/// Test module for execute_parsed_command function
+mod execute_parsed_command_test {
+    use crate::cli::{
+        execute_parsed_command, Args, Commands, MockArgsCommand, MockConfigManager, MockEntrypoint,
+        MockLoggerInitializer,
+    };
+    use crate::utils::config::Config;
+    use crate::utils::windows::MockWindowsApi;
+    use mockall::predicate::*;
+
+    /// Test execute_parsed_command with Client command
+    #[tokio::test]
+    async fn test_execute_parsed_command_client_main() {
+        let mut mock_entrypoint = MockEntrypoint::new();
+        let mock_args_command = MockArgsCommand::new();
+        let mock_logger_initializer = MockLoggerInitializer::new();
+        let mock_windows_api = MockWindowsApi::new();
+        let mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        // Set up expectations for client_main call
+        mock_entrypoint
+            .expect_client_main::<MockWindowsApi>()
+            .with(
+                always(),
+                eq("testhost".to_string()),
+                eq(Some("testuser".to_string())),
+                eq(Some(2222)),
+                always(),
+            )
+            .times(1)
+            .returning(|_, _, _, _, _| return Box::pin(async {}));
+
+        let args = Args {
+            command: Some(Commands::Client {
+                host: "testhost".to_string(),
+            }),
+            username: Some("testuser".to_string()),
+            port: Some(2222),
+            hosts: vec![],
+            debug: false,
+        };
+
+        execute_parsed_command(
+            &mock_windows_api,
+            args,
+            &mut mock_entrypoint,
+            &mock_args_command,
+            &mock_logger_initializer,
+            &mock_config_manager,
+            &config,
+            config_path,
+        )
+        .await;
+    }
+
+    /// Test execute_parsed_command with Client command and debug enabled
+    #[tokio::test]
+    async fn test_execute_parsed_command_client_main_with_debug() {
+        let mut mock_entrypoint = MockEntrypoint::new();
+        let mock_args_command = MockArgsCommand::new();
+        let mut mock_logger_initializer = MockLoggerInitializer::new();
+        let mock_windows_api = MockWindowsApi::new();
+        let mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        // Set up expectations for logger initialization
+        mock_logger_initializer
+            .expect_init_logger()
+            .with(eq("csshw_client_debughost"))
+            .times(1)
+            .returning(|_| {});
+
+        // Set up expectations for client_main call
+        mock_entrypoint
+            .expect_client_main::<MockWindowsApi>()
+            .with(
+                always(),
+                eq("debughost".to_string()),
+                eq(None),
+                eq(None),
+                always(),
+            )
+            .times(1)
+            .returning(|_, _, _, _, _| return Box::pin(async {}));
+
+        let args = Args {
+            command: Some(Commands::Client {
+                host: "debughost".to_string(),
+            }),
+            username: None,
+            port: None,
+            hosts: vec![],
+            debug: true,
+        };
+
+        execute_parsed_command(
+            &mock_windows_api,
+            args,
+            &mut mock_entrypoint,
+            &mock_args_command,
+            &mock_logger_initializer,
+            &mock_config_manager,
+            &config,
+            config_path,
+        )
+        .await;
+    }
+
+    /// Test execute_parsed_command with Daemon command
+    #[tokio::test]
+    async fn test_execute_parsed_command_daemon_main() {
+        let mut mock_entrypoint = MockEntrypoint::new();
+        let mock_args_command = MockArgsCommand::new();
+        let mock_logger_initializer = MockLoggerInitializer::new();
+        let mock_windows_api = MockWindowsApi::new();
+        let mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        // Set up expectations for daemon_main call
+        mock_entrypoint
+            .expect_daemon_main()
+            .with(
+                always(),
+                eq(vec!["host1".to_string(), "host2".to_string()]),
+                eq(Some("testuser".to_string())),
+                eq(Some(8080)),
+                always(),
+                always(),
+                eq(false),
+            )
+            .times(1)
+            .returning(|_: &MockWindowsApi, _, _, _, _, _, _| return Box::pin(async {}));
+
+        let args = Args {
+            command: Some(Commands::Daemon {}),
+            username: Some("testuser".to_string()),
+            port: Some(8080),
+            hosts: vec!["host1".to_string(), "host2".to_string()],
+            debug: false,
+        };
+
+        execute_parsed_command(
+            &mock_windows_api,
+            args,
+            &mut mock_entrypoint,
+            &mock_args_command,
+            &mock_logger_initializer,
+            &mock_config_manager,
+            &config,
+            config_path,
+        )
+        .await;
+    }
+
+    /// Test execute_parsed_command with Daemon command and debug enabled
+    #[tokio::test]
+    async fn test_execute_parsed_command_daemon_main_with_debug() {
+        let mut mock_entrypoint = MockEntrypoint::new();
+        let mock_args_command = MockArgsCommand::new();
+        let mut mock_logger_initializer = MockLoggerInitializer::new();
+        let mock_windows_api = MockWindowsApi::new();
+        let mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        // Set up expectations for logger initialization
+        mock_logger_initializer
+            .expect_init_logger()
+            .with(eq("csshw_daemon"))
+            .times(1)
+            .returning(|_| {});
+
+        // Set up expectations for daemon_main call
+        mock_entrypoint
+            .expect_daemon_main()
+            .with(
+                always(),
+                eq(vec!["host1".to_string(), "host2".to_string()]),
+                eq(Some("testuser".to_string())),
+                eq(Some(8080)),
+                always(),
+                always(),
+                eq(true),
+            )
+            .times(1)
+            .returning(|_: &MockWindowsApi, _, _, _, _, _, _| return Box::pin(async {}));
+
+        let args = Args {
+            command: Some(Commands::Daemon {}),
+            username: Some("testuser".to_string()),
+            port: Some(8080),
+            hosts: vec!["host1".to_string(), "host2".to_string()],
+            debug: true,
+        };
+
+        execute_parsed_command(
+            &mock_windows_api,
+            args,
+            &mut mock_entrypoint,
+            &mock_args_command,
+            &mock_logger_initializer,
+            &mock_config_manager,
+            &config,
+            config_path,
+        )
+        .await;
+    }
+
+    /// Test execute_parsed_command with None command and hosts (calls main)
+    #[tokio::test]
+    async fn test_execute_parsed_command_main_with_hosts() {
+        let mut mock_entrypoint = MockEntrypoint::new();
+        let mock_args_command = MockArgsCommand::new();
+        let mock_logger_initializer = MockLoggerInitializer::new();
+        let mock_windows_api = MockWindowsApi::new();
+        let mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        // Set up expectations for main call
+        mock_entrypoint
+            .expect_main()
+            .with(always(), always(), eq(config_path), always(), always())
+            .times(1)
+            .returning(|_: &MockWindowsApi, _: &MockConfigManager, _, _, _| {});
+
+        let args = Args {
+            command: None,
+            username: Some("testuser".to_string()),
+            port: Some(3333),
+            hosts: vec!["host1".to_string(), "host2".to_string()],
+            debug: false,
+        };
+
+        execute_parsed_command(
+            &mock_windows_api,
+            args,
+            &mut mock_entrypoint,
+            &mock_args_command,
+            &mock_logger_initializer,
+            &mock_config_manager,
+            &config,
+            config_path,
+        )
+        .await;
+    }
+
+    /// Test execute_parsed_command with None command and no hosts (calls print_help)
+    #[tokio::test]
+    async fn test_execute_parsed_command_print_help() {
+        let mut mock_entrypoint = MockEntrypoint::new();
+        let mut mock_args_command = MockArgsCommand::new();
+        let mock_logger_initializer = MockLoggerInitializer::new();
+        let mock_windows_api = MockWindowsApi::new();
+        let mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+
+        // Set up expectation that print_help will be called
+        mock_args_command
+            .expect_print_help()
+            .times(1)
+            .returning(|| return Ok(()));
+
+        let args = Args {
+            command: None,
+            username: None,
+            port: None,
+            hosts: vec![],
+            debug: false,
+        };
+
+        execute_parsed_command(
+            &mock_windows_api,
+            args,
+            &mut mock_entrypoint,
+            &mock_args_command,
+            &mock_logger_initializer,
+            &mock_config_manager,
+            &config,
+            config_path,
+        )
+        .await;
+    }
+}
+
+/// Test module for the interactive mode helper functions
 mod interactive_mode_test {
     use crate::cli::{
         execute_parsed_command, handle_special_commands, run_interactive_mode, Args, Commands,
