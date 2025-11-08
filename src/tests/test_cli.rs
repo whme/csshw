@@ -1955,11 +1955,11 @@ mod interactive_mode_test {
         .await;
     }
 
-    /// Test run_interactive_mode with successful input parsing
+    /// Test run_interactive_mode with successful input parsing and handle_special_commands returning true
     #[tokio::test]
     async fn test_run_interactive_mode_success() {
         let mock_entrypoint = MockEntrypoint::new();
-        let mock_args_command = MockArgsCommand::new();
+        let mut mock_args_command = MockArgsCommand::new();
         let mock_logger_initializer = MockLoggerInitializer::new();
         let mock_windows_api = MockWindowsApi::new();
         let mock_config_manager = MockConfigManager::new();
@@ -1968,68 +1968,7 @@ mod interactive_mode_test {
         let mut mock_output = MockOutput::new();
         let mut mock_input = MockInput::new();
 
-        // Set up expectations for interactive prompt display
-        mock_output
-            .expect_println()
-            .with(eq("\n=== Interactive Mode ==="))
-            .times(1)
-            .returning(|_| {});
-        mock_output
-            .expect_println()
-            .with(eq("Enter your csshw arguments (or press Enter to exit):"))
-            .times(1)
-            .returning(|_| {});
-        mock_output
-            .expect_println()
-            .with(eq("Example: -u myuser host1 host2 host3"))
-            .times(1)
-            .returning(|_| {});
-        mock_output
-            .expect_println()
-            .with(eq("Example: --help"))
-            .times(1)
-            .returning(|_| {});
-        mock_output
-            .expect_print()
-            .with(eq("> "))
-            .times(1)
-            .returning(|_| {});
-        mock_output.expect_flush().times(1).returning(|| {});
-
-        // Set up input expectation - user enters empty line to exit
-        mock_input
-            .expect_read_line()
-            .times(1)
-            .returning(|| return Ok("\n".to_string()));
-
-        run_interactive_mode(
-            &mock_windows_api,
-            &mock_args_command,
-            &mock_logger_initializer,
-            mock_entrypoint,
-            &mock_config_manager,
-            &config,
-            config_path,
-            &mut mock_output,
-            &mut mock_input,
-        )
-        .await;
-    }
-
-    /// Test run_interactive_mode with parsing error
-    #[tokio::test]
-    async fn test_run_interactive_mode_parse_error() {
-        let mock_entrypoint = MockEntrypoint::new();
-        let mock_args_command = MockArgsCommand::new();
-        let mock_logger_initializer = MockLoggerInitializer::new();
-        let mock_windows_api = MockWindowsApi::new();
-        let mock_config_manager = MockConfigManager::new();
-        let config = Config::default();
-        let config_path = "test-config.toml";
-        let mut mock_output = MockOutput::new();
-        let mut mock_input = MockInput::new();
-
-        // Set up expectations for interactive prompt display (first iteration)
+        // Set up expectations for interactive prompt display (two iterations - one for help, one for exit)
         mock_output
             .expect_println()
             .with(eq("\n=== Interactive Mode ==="))
@@ -2057,6 +1996,149 @@ mod interactive_mode_test {
             .returning(|_| {});
         mock_output.expect_flush().times(2).returning(|| {});
 
+        // Set up expectation for help command handling
+        mock_args_command
+            .expect_print_help()
+            .times(1)
+            .returning(|| return Ok(()));
+
+        // Set up input expectations - first help command, then empty line to exit
+        mock_input
+            .expect_read_line()
+            .times(1)
+            .returning(|| return Ok("--help\n".to_string()));
+        mock_input
+            .expect_read_line()
+            .times(1)
+            .returning(|| return Ok("\n".to_string()));
+
+        run_interactive_mode(
+            &mock_windows_api,
+            &mock_args_command,
+            &mock_logger_initializer,
+            mock_entrypoint,
+            &mock_config_manager,
+            &config,
+            config_path,
+            &mut mock_output,
+            &mut mock_input,
+        )
+        .await;
+    }
+
+    /// Test run_interactive_mode calls execute_parsed_command for main command (no subcommand with hosts)
+    #[tokio::test]
+    async fn test_run_interactive_mode_calls_execute_parsed_command_main() {
+        let mut mock_entrypoint = MockEntrypoint::new();
+        let mock_args_command = MockArgsCommand::new();
+        let mock_logger_initializer = MockLoggerInitializer::new();
+        let mock_windows_api = MockWindowsApi::new();
+        let mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+        let mut mock_output = MockOutput::new();
+        let mut mock_input = MockInput::new();
+
+        // Set up expectations for interactive prompt display (two iterations)
+        mock_output
+            .expect_println()
+            .with(eq("\n=== Interactive Mode ==="))
+            .times(2)
+            .returning(|_| {});
+        mock_output
+            .expect_println()
+            .with(eq("Enter your csshw arguments (or press Enter to exit):"))
+            .times(2)
+            .returning(|_| {});
+        mock_output
+            .expect_println()
+            .with(eq("Example: -u myuser host1 host2 host3"))
+            .times(2)
+            .returning(|_| {});
+        mock_output
+            .expect_println()
+            .with(eq("Example: --help"))
+            .times(2)
+            .returning(|_| {});
+        mock_output
+            .expect_print()
+            .with(eq("> "))
+            .times(2)
+            .returning(|_| {});
+        mock_output.expect_flush().times(2).returning(|| {});
+
+        // Set up expectation that main will be called via execute_parsed_command
+        mock_entrypoint
+            .expect_main()
+            .with(always(), always(), eq(config_path), always(), always())
+            .times(1)
+            .returning(|_: &MockWindowsApi, _: &MockConfigManager, _, _, _| {});
+
+        // Set up input expectations - first main command with hosts, then exit
+        mock_input
+            .expect_read_line()
+            .times(1)
+            .returning(|| return Ok("-u testuser host1 host2\n".to_string()));
+        mock_input
+            .expect_read_line()
+            .times(1)
+            .returning(|| return Ok("\n".to_string()));
+
+        run_interactive_mode(
+            &mock_windows_api,
+            &mock_args_command,
+            &mock_logger_initializer,
+            mock_entrypoint,
+            &mock_config_manager,
+            &config,
+            config_path,
+            &mut mock_output,
+            &mut mock_input,
+        )
+        .await;
+    }
+
+    /// Test run_interactive_mode with parsing error and read_user_input error
+    #[tokio::test]
+    async fn test_run_interactive_mode_parse_error() {
+        let mock_entrypoint = MockEntrypoint::new();
+        let mock_args_command = MockArgsCommand::new();
+        let mock_logger_initializer = MockLoggerInitializer::new();
+        let mock_windows_api = MockWindowsApi::new();
+        let mock_config_manager = MockConfigManager::new();
+        let config = Config::default();
+        let config_path = "test-config.toml";
+        let mut mock_output = MockOutput::new();
+        let mut mock_input = MockInput::new();
+
+        // Set up expectations for interactive prompt display (three iterations - parse error, input error, exit)
+        mock_output
+            .expect_println()
+            .with(eq("\n=== Interactive Mode ==="))
+            .times(3)
+            .returning(|_| {});
+        mock_output
+            .expect_println()
+            .with(eq("Enter your csshw arguments (or press Enter to exit):"))
+            .times(3)
+            .returning(|_| {});
+        mock_output
+            .expect_println()
+            .with(eq("Example: -u myuser host1 host2 host3"))
+            .times(3)
+            .returning(|_| {});
+        mock_output
+            .expect_println()
+            .with(eq("Example: --help"))
+            .times(3)
+            .returning(|_| {});
+        mock_output
+            .expect_print()
+            .with(eq("> "))
+            .times(3)
+            .returning(|_| {});
+        mock_output.expect_flush().times(3).returning(|| {});
+
         // Expect error message for invalid arguments
         mock_output
             .expect_eprintln()
@@ -2064,11 +2146,22 @@ mod interactive_mode_test {
             .times(1)
             .returning(|_| {});
 
-        // Set up input expectations - first invalid input, then exit
+        // Expect error message for input reading error
+        mock_output
+            .expect_eprintln()
+            .with(str::starts_with("Error reading input:"))
+            .times(1)
+            .returning(|_| {});
+
+        // Set up input expectations - first invalid input, then input error, then exit
         mock_input
             .expect_read_line()
             .times(1)
             .returning(|| return Ok("--invalid-flag\n".to_string()));
+        mock_input
+            .expect_read_line()
+            .times(1)
+            .returning(|| return Err(std::io::Error::other("Test input error")));
         mock_input
             .expect_read_line()
             .times(1)
