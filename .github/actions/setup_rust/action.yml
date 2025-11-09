@@ -16,3 +16,4 @@ runs:
 
     - name: Setup Rust toolchain
       run: cargo make init-rust
+      shell: bash
