@@ -122,12 +122,12 @@ jobs:
     - uses: *checkout-action
     - uses: *rust-cache-action
       with: *rust-cache-shared-key
+    - uses: *build-cache
+      with: *build-cache-paths
     - name: Install cargo-make
       uses: *cargo-install-action
       with:
         crate: cargo-make
         version: '^0.37'
-    - uses: *build-cache
-      with: *build-cache-paths
     - name: Run check-readme-help
       run: cargo make check-readme-help

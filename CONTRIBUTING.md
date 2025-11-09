@@ -43,7 +43,7 @@ Unsure where to begin contributing to csshW? Here are some suggestions:
 ### Development Environment Setup
 
 1. **Prerequisites**:
-   - Rust (we use [`rust-toolchain.toml`](https://github.com/whme/csshw/blob/main/rust-toolchain.toml#) to configure the desired rust version/toolchain)
+   - Rust (we use [`rust-toolchain.toml`](https://github.com/whme/csshw/blob/main/rust-toolchain.toml) to configure the desired rust version/toolchain)
    - Git
    - A Windows development environment
 
