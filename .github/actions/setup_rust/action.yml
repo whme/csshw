@@ -3,9 +3,6 @@
 #
 # Reusable workflow to setup rust in reliable and controllable way
 
-on:
-  workflow_call:
-
 name: "Setup Rust Environment"
 description: "Installs cargo-make and runs cargo make init-rust"
 runs:
@@ -19,4 +16,3 @@ runs:
 
     - name: Setup Rust toolchain
       run: cargo make init-rust
-      shell: bash
