@@ -12,7 +12,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_VERSION: 1.88.0
   IGNORE_COVERAGE: '((src[/\\]main\.rs$)|(src[/\\]utils[/\\]debug\.rs$))'
 
 jobs:
@@ -23,8 +22,8 @@ jobs:
     - uses: &checkout-action
         actions/checkout@v5
 
-    - run: &rust-toolchain-setup
-        rustup update $env:RUST_VERSION && rustup default $env:RUST_VERSION
+    - uses: &setup-rust
+        ./.github/workflows/_setup_rust.yml
 
     - uses: &rust-cache-action
         Swatinem/rust-cache@v2
@@ -52,7 +51,7 @@ jobs:
     runs-on: *runner-version
     steps:
     - uses: *checkout-action
-    - run: *rust-toolchain-setup
+    - uses: *setup-rust
     - name: Check format
       run: cargo fmt -- --check
 
@@ -61,7 +60,7 @@ jobs:
     needs: build
     steps:
     - uses: *checkout-action
-    - run: *rust-toolchain-setup
+    - uses: *setup-rust
     - uses: *rust-cache-action
       with: *rust-cache-shared-key
     - uses: *build-cache
@@ -74,15 +73,14 @@ jobs:
     needs: build
     steps:
     - uses: *checkout-action
-    - run: *rust-toolchain-setup
+    - uses: *setup-rust
     - uses: *rust-cache-action
       with: *rust-cache-shared-key
     - uses: *build-cache
       with: *build-cache-paths
 
     - name: Install cargo-llvm-cov
-      uses: &cargo-install-action
-        baptiste0928/cargo-install@v3
+      uses: *cargo-install-action
       with:
         crate: cargo-llvm-cov
         version: '^0.6'
@@ -115,7 +113,7 @@ jobs:
     needs: build
     steps:
     - uses: *checkout-action
-    - run: *rust-toolchain-setup
+    - uses: *setup-rust
     - uses: *rust-cache-action
       with: *rust-cache-shared-key
     - uses: *build-cache
@@ -128,15 +126,10 @@ jobs:
     needs: build
     steps:
     - uses: *checkout-action
-    - run: *rust-toolchain-setup
+    - uses: *setup-rust
     - uses: *rust-cache-action
       with: *rust-cache-shared-key
     - uses: *build-cache
       with: *build-cache-paths
-    - name: Install cargo-make
-      uses: *cargo-install-action
-      with:
-        crate: cargo-make
-        version: '^0.37'
     - name: Run check-readme-help
       run: cargo make check-readme-help

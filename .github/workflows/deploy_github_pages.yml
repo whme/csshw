@@ -22,8 +22,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Configure correct rust version
-      run: rustup update $RUST_VERSION && rustup default $RUST_VERSION
+    - uses: ./.github/workflows/_setup_rust.yml
 
     - name: Build docs
       run: cargo docs

@@ -1,6 +1,37 @@
 [config]
 default_to_workspace = false
 
+# ==============================#
+# ========= init task ========= #
+# ==============================#
+
+[env]
+RUST_VERSION = "1.88.0"
+
+[tasks.rustup-rust-version]
+private=true
+command = "rustup"
+args = ["update", "${RUST_VERSION}"]
+
+[tasks.rustup-default-rust-version]
+private=true
+command = "rustup"
+args = ["default", "${RUST_VERSION}"]
+
+[tasks.rustup-dependencies]
+private=true
+command = "rustup"
+args = ["component", "add", "rustfmt", "clippy", "llvm-tools"]
+
+[tasks.init-rust]
+# Task used to setup rust
+dependencies = [
+    "rustup-rust-version",
+    "rustup-default-rust-version",
+    "rustup-dependencies",
+]
+
+
 # ============================= #
 # === readme-CLI-help Tasks === #
 # ============================= #

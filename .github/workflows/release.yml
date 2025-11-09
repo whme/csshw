@@ -23,8 +23,7 @@ jobs:
       - uses: &checkout-action
           actions/checkout@v5
 
-      - name: Setup Rust toolchain
-        run: rustup update $env.RUST_VERSION && rustup default $env.RUST_VERSION
+      - uses: ./.github/workflows/_setup_rust.yml
 
       - name: Build release binary
         run: cargo release
