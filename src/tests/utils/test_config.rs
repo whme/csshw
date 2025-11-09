@@ -224,7 +224,9 @@ mod config_test {
 
     #[test]
     fn test_config_default() {
-        let config = Config::default();
+        let mut config = Config::default();
+        let config_opt = ConfigOpt::from(config);
+        config = config_opt.into();
 
         assert_eq!(config.client, ClientConfig::default());
         assert_eq!(config.daemon, DaemonConfig::default());
