@@ -76,7 +76,6 @@ jobs:
     - name: Install cargo-llvm-cov
       uses: &cargo-install-action
         baptiste0928/cargo-install@v3
-      uses: baptiste0928/cargo-install@v3
       with:
         crate: cargo-llvm-cov
         version: '^0.6'
