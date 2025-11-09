@@ -13,7 +13,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_VERSION: 1.88.0
-  IGNORE_COVERAGE: '((src[/\\]main\.rs$)|(src[/\\]utils[/\\]debug\.rs$))'
+  IGNORE_COVERAGE: ((src[/\\]main\.rs$)|(src[/\\]utils[/\\]debug\.rs$))
 
 jobs:
   build:
@@ -92,8 +92,8 @@ jobs:
         # Run tests with coverage - Total coverage
         cargo llvm-cov clean --workspace
         cargo llvm-cov --all-features --workspace --no-report
-        cargo llvm-cov report --cobertura --output-path coverage.xml --ignore-filename-regex $IGNORE_COVERAGE
-        cargo llvm-cov report --html --output-dir coverage_html --ignore-filename-regex $IGNORE_COVERAGE
+        cargo llvm-cov report --cobertura --output-path coverage.xml --ignore-filename-regex "$IGNORE_COVERAGE"
+        cargo llvm-cov report --html --output-dir coverage_html --ignore-filename-regex "$IGNORE_COVERAGE"
 
     - name: Upload Coverage XML Data
       uses: &upload-artifact-action
