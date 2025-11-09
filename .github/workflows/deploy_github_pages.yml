@@ -17,13 +17,8 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    env:
-      RUST_VERSION: 1.88.0
     steps:
     - uses: actions/checkout@v3
-
-    - name: Configure correct rust version
-      run: rustup update $RUST_VERSION && rustup default $RUST_VERSION
 
     - name: Build docs
       run: cargo docs

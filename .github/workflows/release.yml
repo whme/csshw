@@ -14,7 +14,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_VERSION: 1.88.0
 
 jobs:
   build-release:
@@ -22,9 +21,6 @@ jobs:
     steps:
       - uses: &checkout-action
           actions/checkout@v5
-
-      - name: Setup Rust toolchain
-        run: rustup update ${{ env.RUST_VERSION }} && rustup default ${{ env.RUST_VERSION }}
 
       - name: Build release binary
         run: cargo release
