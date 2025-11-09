@@ -34,7 +34,7 @@ jobs:
           ~\.cargo\git
           ~\.cargo\registry
           target
-        key: ${{runner.os}}-build-cache-${{ hashFiles('Cargo.toml', 'rust-toolchain.toml')) }}
+        key: ${{runner.os}}-build-cache-${{ hashFiles('Cargo.toml', 'rust-toolchain.toml') }}
 
     - name: Build
       run: |
