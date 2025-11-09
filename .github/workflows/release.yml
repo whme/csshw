@@ -24,7 +24,7 @@ jobs:
           actions/checkout@v5
 
       - name: Setup Rust toolchain
-        run: rustup update ${{ env.RUST_VERSION }} && rustup default ${{ env.RUST_VERSION }}
+        run: rustup update $env.RUST_VERSION && rustup default $env.RUST_VERSION
 
       - name: Build release binary
         run: cargo release

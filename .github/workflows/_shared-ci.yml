@@ -24,7 +24,7 @@ jobs:
         actions/checkout@v5
 
     - run: &rust-toolchain-setup
-        rustup update $RUST_VERSION && rustup default $RUST_VERSION
+        rustup update $env:RUST_VERSION && rustup default $env:RUST_VERSION
 
     - uses: &rust-cache-action
         Swatinem/rust-cache@v2
