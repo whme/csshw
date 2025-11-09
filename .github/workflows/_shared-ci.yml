@@ -23,7 +23,7 @@ jobs:
         actions/checkout@v5
 
     - uses: &setup-rust
-        ./.github/actions/setup_rust/action.yml
+        ./.github/actions/setup_rust
 
     - uses: &rust-cache-action
         Swatinem/rust-cache@v2

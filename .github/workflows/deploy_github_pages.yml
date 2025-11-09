@@ -17,12 +17,10 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    env:
-      RUST_VERSION: 1.88.0
     steps:
     - uses: actions/checkout@v3
 
-    - uses: ./.github/actions/setup_rust/action.yml
+    - uses: ./.github/actions/setup_rust
 
     - name: Build docs
       run: cargo docs

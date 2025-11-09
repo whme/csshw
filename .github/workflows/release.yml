@@ -14,7 +14,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_VERSION: 1.88.0
 
 jobs:
   build-release:
@@ -23,7 +22,7 @@ jobs:
       - uses: &checkout-action
           actions/checkout@v5
 
-      - uses: ./.github/actions/setup_rust/action.yml
+      - uses: ./.github/actions/setup_rust
 
       - name: Build release binary
         run: cargo release
