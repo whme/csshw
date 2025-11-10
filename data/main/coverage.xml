@@ -1,10 +1,101 @@
 <?xml version="1.0" ?>
 <!DOCTYPE coverage SYSTEM "https://cobertura.sourceforge.net/xml/coverage-04.dtd">
-<coverage branch-rate="0" branches-covered="0" branches-valid="0" complexity="0" line-rate="0.35294117647058826" lines-covered="624" lines-valid="1768" timestamp="1762726384" version="2.0.3">
+<coverage branch-rate="0" branches-covered="0" branches-valid="0" complexity="0" line-rate="0.4072398190045249" lines-covered="720" lines-valid="1768" timestamp="1762813972" version="2.0.3">
     <sources>
         <source>D:\a\csshw\csshw</source>
     </sources>
     <packages>
+        <package line-rate="1" branch-rate="0" name="src.serde" complexity="0">
+            <classes>
+                <class branch-rate="0" complexity="0" filename="src\serde\deserialization.rs" line-rate="1" name="src.serde.deserialization.rs">
+                    <methods>
+                        <method name="csshw_lib::serde::deserialization::deserialize_input_record_0" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="46" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::serde::deserialization::deserialize_key_event_record" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="2" number="24" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::serde::deserialization::deserialize_key_event_record_0" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="11" branch="false"/>
+                            </lines>
+                        </method>
+                    </methods>
+                    <lines>
+                        <line branch="false" hits="1" number="11"/>
+                        <line branch="false" hits="1" number="12"/>
+                        <line branch="false" hits="1" number="13"/>
+                        <line branch="false" hits="1" number="14"/>
+                        <line branch="false" hits="1" number="15"/>
+                        <line branch="false" hits="2" number="24"/>
+                        <line branch="false" hits="2" number="25"/>
+                        <line branch="false" hits="2" number="26"/>
+                        <line branch="false" hits="2" number="27"/>
+                        <line branch="false" hits="2" number="28"/>
+                        <line branch="false" hits="2" number="29"/>
+                        <line branch="false" hits="2" number="30"/>
+                        <line branch="false" hits="2" number="31"/>
+                        <line branch="false" hits="2" number="32"/>
+                        <line branch="false" hits="2" number="33"/>
+                        <line branch="false" hits="2" number="34"/>
+                        <line branch="false" hits="2" number="35"/>
+                        <line branch="false" hits="2" number="36"/>
+                        <line branch="false" hits="2" number="37"/>
+                        <line branch="false" hits="2" number="38"/>
+                        <line branch="false" hits="2" number="39"/>
+                        <line branch="false" hits="2" number="40"/>
+                        <line branch="false" hits="2" number="41"/>
+                        <line branch="false" hits="1" number="46"/>
+                        <line branch="false" hits="1" number="47"/>
+                        <line branch="false" hits="1" number="48"/>
+                        <line branch="false" hits="1" number="49"/>
+                        <line branch="false" hits="1" number="50"/>
+                        <line branch="false" hits="1" number="51"/>
+                    </lines>
+                </class>
+                <class branch-rate="0" complexity="0" filename="src\serde\serialization.rs" line-rate="1" name="src.serde.serialization.rs">
+                    <methods>
+                        <method name="csshw_lib::serde::serialization::serialize_input_record_0" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="43" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::serde::serialization::serialize_key_event_record" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="2" number="16" branch="false"/>
+                            </lines>
+                        </method>
+                        <method name="csshw_lib::serde::serialization::serialize_key_event_record_0" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="8" branch="false"/>
+                            </lines>
+                        </method>
+                    </methods>
+                    <lines>
+                        <line branch="false" hits="1" number="8"/>
+                        <line branch="false" hits="1" number="9"/>
+                        <line branch="false" hits="1" number="10"/>
+                        <line branch="false" hits="2" number="16"/>
+                        <line branch="false" hits="2" number="17"/>
+                        <line branch="false" hits="2" number="20"/>
+                        <line branch="false" hits="2" number="23"/>
+                        <line branch="false" hits="2" number="26"/>
+                        <line branch="false" hits="2" number="29"/>
+                        <line branch="false" hits="2" number="32"/>
+                        <line branch="false" hits="2" number="35"/>
+                        <line branch="false" hits="2" number="37"/>
+                        <line branch="false" hits="2" number="38"/>
+                        <line branch="false" hits="1" number="43"/>
+                        <line branch="false" hits="1" number="44"/>
+                        <line branch="false" hits="1" number="45"/>
+                    </lines>
+                </class>
+            </classes>
+        </package>
         <package line-rate="0.32857142857142857" branch-rate="0" name="src.client" complexity="0">
             <classes>
                 <class branch-rate="0" complexity="0" filename="src\client\mod.rs" line-rate="0.32857142857142857" name="src.client.mod.rs">
@@ -345,9 +436,9 @@
                 </class>
             </classes>
         </package>
-        <package line-rate="0.782051282051282" branch-rate="0" name="src" complexity="0">
+        <package line-rate="0.8055555555555556" branch-rate="0" name="src" complexity="0">
             <classes>
-                <class branch-rate="0" complexity="0" filename="src\lib.rs" line-rate="0.7077922077922078" name="src.lib.rs">
+                <class branch-rate="0" complexity="0" filename="src\lib.rs" line-rate="0.7792207792207793" name="src.lib.rs">
                     <methods>
                         <method name="csshw_lib::create_process::&lt;csshw_lib::utils::windows::MockWindowsApi&gt;" signature="" complexity="0" line-rate="1" branch-rate="1">
                             <lines>
@@ -399,9 +490,9 @@
                                 <line hits="12" number="68" branch="false"/>
                             </lines>
                         </method>
-                        <method name="&lt;csshw_lib::DefaultRegistry as csshw_lib::Registry&gt;::set_registry_string_value" signature="" complexity="0" line-rate="0" branch-rate="0">
+                        <method name="&lt;csshw_lib::DefaultRegistry as csshw_lib::Registry&gt;::set_registry_string_value" signature="" complexity="0" line-rate="1" branch-rate="1">
                             <lines>
-                                <line hits="0" number="83" branch="false"/>
+                                <line hits="24" number="83" branch="false"/>
                             </lines>
                         </method>
                         <method name="&lt;csshw_lib::WindowsSettingsDefaultTerminalApplicationGuard&lt;_&gt; as core::default::Default&gt;::default" signature="" complexity="0" line-rate="0" branch-rate="0">
@@ -440,25 +531,25 @@
                         <line branch="false" hits="12" number="69"/>
                         <line branch="false" hits="12" number="70"/>
                         <line branch="false" hits="12" number="71"/>
-                        <line branch="false" hits="0" number="72"/>
-                        <line branch="false" hits="0" number="73"/>
+                        <line branch="false" hits="12" number="72"/>
+                        <line branch="false" hits="8" number="73"/>
                         <line branch="false" hits="0" number="74"/>
-                        <line branch="false" hits="0" number="75"/>
+                        <line branch="false" hits="4" number="75"/>
                         <line branch="false" hits="0" number="76"/>
                         <line branch="false" hits="0" number="77"/>
                         <line branch="false" hits="0" number="78"/>
                         <line branch="false" hits="12" number="81"/>
-                        <line branch="false" hits="0" number="83"/>
-                        <line branch="false" hits="0" number="84"/>
-                        <line branch="false" hits="0" number="85"/>
-                        <line branch="false" hits="0" number="86"/>
-                        <line branch="false" hits="0" number="87"/>
-                        <line branch="false" hits="0" number="88"/>
-                        <line branch="false" hits="0" number="89"/>
+                        <line branch="false" hits="24" number="83"/>
+                        <line branch="false" hits="24" number="84"/>
+                        <line branch="false" hits="24" number="85"/>
+                        <line branch="false" hits="24" number="86"/>
+                        <line branch="false" hits="24" number="87"/>
+                        <line branch="false" hits="24" number="88"/>
+                        <line branch="false" hits="24" number="89"/>
                         <line branch="false" hits="0" number="91"/>
                         <line branch="false" hits="0" number="92"/>
                         <line branch="false" hits="0" number="96"/>
-                        <line branch="false" hits="0" number="98"/>
+                        <line branch="false" hits="24" number="98"/>
                         <line branch="false" hits="5" number="113"/>
                         <line branch="false" hits="5" number="114"/>
                         <line branch="false" hits="5" number="115"/>
@@ -495,27 +586,27 @@
                         <line branch="false" hits="11" number="200"/>
                         <line branch="false" hits="11" number="201"/>
                         <line branch="false" hits="11" number="202"/>
-                        <line branch="false" hits="3" number="204"/>
+                        <line branch="false" hits="9" number="204"/>
                         <line branch="false" hits="11" number="205"/>
                         <line branch="false" hits="11" number="206"/>
                         <line branch="false" hits="11" number="207"/>
                         <line branch="false" hits="11" number="208"/>
                         <line branch="false" hits="11" number="209"/>
                         <line branch="false" hits="11" number="210"/>
-                        <line branch="false" hits="3" number="213"/>
+                        <line branch="false" hits="9" number="213"/>
                         <line branch="false" hits="1" number="214"/>
-                        <line branch="false" hits="2" number="215"/>
-                        <line branch="false" hits="2" number="218"/>
-                        <line branch="false" hits="2" number="219"/>
-                        <line branch="false" hits="2" number="221"/>
-                        <line branch="false" hits="2" number="222"/>
-                        <line branch="false" hits="2" number="223"/>
-                        <line branch="false" hits="2" number="224"/>
-                        <line branch="false" hits="2" number="226"/>
-                        <line branch="false" hits="2" number="227"/>
-                        <line branch="false" hits="2" number="228"/>
-                        <line branch="false" hits="2" number="229"/>
-                        <line branch="false" hits="8" number="232"/>
+                        <line branch="false" hits="8" number="215"/>
+                        <line branch="false" hits="8" number="218"/>
+                        <line branch="false" hits="8" number="219"/>
+                        <line branch="false" hits="8" number="221"/>
+                        <line branch="false" hits="8" number="222"/>
+                        <line branch="false" hits="8" number="223"/>
+                        <line branch="false" hits="8" number="224"/>
+                        <line branch="false" hits="8" number="226"/>
+                        <line branch="false" hits="8" number="227"/>
+                        <line branch="false" hits="8" number="228"/>
+                        <line branch="false" hits="8" number="229"/>
+                        <line branch="false" hits="2" number="232"/>
                         <line branch="false" hits="0" number="233"/>
                         <line branch="false" hits="0" number="234"/>
                         <line branch="false" hits="10" number="239"/>
@@ -530,21 +621,21 @@
                         <line branch="false" hits="0" number="261"/>
                         <line branch="false" hits="0" number="262"/>
                         <line branch="false" hits="11" number="269"/>
-                        <line branch="false" hits="2" number="270"/>
+                        <line branch="false" hits="8" number="270"/>
                         <line branch="false" hits="11" number="271"/>
                         <line branch="false" hits="11" number="272"/>
-                        <line branch="false" hits="2" number="273"/>
-                        <line branch="false" hits="2" number="274"/>
-                        <line branch="false" hits="2" number="275"/>
-                        <line branch="false" hits="2" number="276"/>
-                        <line branch="false" hits="2" number="277"/>
-                        <line branch="false" hits="2" number="278"/>
-                        <line branch="false" hits="2" number="279"/>
-                        <line branch="false" hits="2" number="280"/>
-                        <line branch="false" hits="2" number="281"/>
-                        <line branch="false" hits="2" number="282"/>
-                        <line branch="false" hits="2" number="283"/>
-                        <line branch="false" hits="9" number="284"/>
+                        <line branch="false" hits="8" number="273"/>
+                        <line branch="false" hits="8" number="274"/>
+                        <line branch="false" hits="8" number="275"/>
+                        <line branch="false" hits="8" number="276"/>
+                        <line branch="false" hits="8" number="277"/>
+                        <line branch="false" hits="8" number="278"/>
+                        <line branch="false" hits="8" number="279"/>
+                        <line branch="false" hits="8" number="280"/>
+                        <line branch="false" hits="8" number="281"/>
+                        <line branch="false" hits="8" number="282"/>
+                        <line branch="false" hits="8" number="283"/>
+                        <line branch="false" hits="8" number="284"/>
                         <line branch="false" hits="11" number="285"/>
                         <line branch="false" hits="10" number="305"/>
                         <line branch="false" hits="10" number="306"/>
@@ -1049,18 +1140,18 @@
                 </class>
             </classes>
         </package>
-        <package line-rate="0.17699115044247787" branch-rate="0" name="src.utils" complexity="0">
+        <package line-rate="0.36504424778761063" branch-rate="0" name="src.utils" complexity="0">
             <classes>
-                <class branch-rate="0" complexity="0" filename="src\utils\windows.rs" line-rate="0" name="src.utils.windows.rs">
+                <class branch-rate="0" complexity="0" filename="src\utils\windows.rs" line-rate="0.22849462365591397" name="src.utils.windows.rs">
                     <methods>
                         <method name="csshw_lib::utils::windows::get_std_handle::{closure#0}" signature="" complexity="0" line-rate="0" branch-rate="0">
                             <lines>
                                 <line hits="0" number="1052" branch="false"/>
                             </lines>
                         </method>
-                        <method name="csshw_lib::utils::windows::utf16_buffer_to_string::{closure#0}" signature="" complexity="0" line-rate="0" branch-rate="0">
+                        <method name="csshw_lib::utils::windows::utf16_buffer_to_string::{closure#0}" signature="" complexity="0" line-rate="1" branch-rate="1">
                             <lines>
-                                <line hits="0" number="1007" branch="false"/>
+                                <line hits="49" number="1007" branch="false"/>
                             </lines>
                         </method>
                         <method name="csshw_lib::utils::windows::utf16_buffer_to_string::{closure#1}" signature="" complexity="0" line-rate="0" branch-rate="0">
@@ -1068,14 +1159,14 @@
                                 <line hits="0" number="1009" branch="false"/>
                             </lines>
                         </method>
-                        <method name="csshw_lib::utils::windows::clear_screen" signature="" complexity="0" line-rate="0" branch-rate="0">
+                        <method name="csshw_lib::utils::windows::clear_screen" signature="" complexity="0" line-rate="1" branch-rate="1">
                             <lines>
-                                <line hits="0" number="936" branch="false"/>
+                                <line hits="2" number="936" branch="false"/>
                             </lines>
                         </method>
-                        <method name="csshw_lib::utils::windows::is_windows_10" signature="" complexity="0" line-rate="0" branch-rate="0">
+                        <method name="csshw_lib::utils::windows::is_windows_10" signature="" complexity="0" line-rate="1" branch-rate="1">
                             <lines>
-                                <line hits="0" number="1210" branch="false"/>
+                                <line hits="10" number="1210" branch="false"/>
                             </lines>
                         </method>
                         <method name="csshw_lib::utils::windows::get_std_handle" signature="" complexity="0" line-rate="0" branch-rate="0">
@@ -1093,29 +1184,29 @@
                                 <line hits="0" number="1033" branch="false"/>
                             </lines>
                         </method>
-                        <method name="csshw_lib::utils::windows::set_console_color" signature="" complexity="0" line-rate="0" branch-rate="0">
+                        <method name="csshw_lib::utils::windows::set_console_color" signature="" complexity="0" line-rate="1" branch-rate="1">
                             <lines>
-                                <line hits="0" number="909" branch="false"/>
+                                <line hits="2" number="909" branch="false"/>
                             </lines>
                         </method>
-                        <method name="csshw_lib::utils::windows::build_command_line" signature="" complexity="0" line-rate="0" branch-rate="0">
+                        <method name="csshw_lib::utils::windows::build_command_line" signature="" complexity="0" line-rate="1" branch-rate="1">
                             <lines>
-                                <line hits="0" number="876" branch="false"/>
+                                <line hits="3" number="876" branch="false"/>
                             </lines>
                         </method>
-                        <method name="csshw_lib::utils::windows::read_console_input" signature="" complexity="0" line-rate="0" branch-rate="0">
+                        <method name="csshw_lib::utils::windows::read_console_input" signature="" complexity="0" line-rate="1" branch-rate="1">
                             <lines>
-                                <line hits="0" number="1110" branch="false"/>
+                                <line hits="5" number="1110" branch="false"/>
                             </lines>
                         </method>
-                        <method name="csshw_lib::utils::windows::read_keyboard_input" signature="" complexity="0" line-rate="0" branch-rate="0">
+                        <method name="csshw_lib::utils::windows::read_keyboard_input" signature="" complexity="0" line-rate="1" branch-rate="1">
                             <lines>
-                                <line hits="0" number="1144" branch="false"/>
+                                <line hits="1" number="1144" branch="false"/>
                             </lines>
                         </method>
-                        <method name="csshw_lib::utils::windows::utf16_buffer_to_string" signature="" complexity="0" line-rate="0" branch-rate="0">
+                        <method name="csshw_lib::utils::windows::utf16_buffer_to_string" signature="" complexity="0" line-rate="1" branch-rate="1">
                             <lines>
-                                <line hits="0" number="1003" branch="false"/>
+                                <line hits="5" number="1003" branch="false"/>
                             </lines>
                         </method>
                         <method name="csshw_lib::utils::windows::get_console_input_buffer" signature="" complexity="0" line-rate="0" branch-rate="0">
@@ -1123,9 +1214,9 @@
                                 <line hits="0" number="1069" branch="false"/>
                             </lines>
                         </method>
-                        <method name="csshw_lib::utils::windows::set_console_border_color" signature="" complexity="0" line-rate="0" branch-rate="0">
+                        <method name="csshw_lib::utils::windows::set_console_border_color" signature="" complexity="0" line-rate="1" branch-rate="1">
                             <lines>
-                                <line hits="0" number="978" branch="false"/>
+                                <line hits="3" number="978" branch="false"/>
                             </lines>
                         </method>
                         <method name="csshw_lib::utils::windows::get_console_output_buffer" signature="" complexity="0" line-rate="0" branch-rate="0">
@@ -1587,67 +1678,67 @@
                         <line branch="false" hits="0" number="843"/>
                         <line branch="false" hits="0" number="844"/>
                         <line branch="false" hits="0" number="845"/>
-                        <line branch="false" hits="0" number="876"/>
-                        <line branch="false" hits="0" number="877"/>
-                        <line branch="false" hits="0" number="878"/>
-                        <line branch="false" hits="0" number="879"/>
-                        <line branch="false" hits="0" number="880"/>
-                        <line branch="false" hits="0" number="882"/>
-                        <line branch="false" hits="0" number="883"/>
-                        <line branch="false" hits="0" number="884"/>
-                        <line branch="false" hits="0" number="885"/>
-                        <line branch="false" hits="0" number="886"/>
-                        <line branch="false" hits="0" number="887"/>
-                        <line branch="false" hits="0" number="888"/>
-                        <line branch="false" hits="0" number="890"/>
-                        <line branch="false" hits="0" number="891"/>
-                        <line branch="false" hits="0" number="909"/>
-                        <line branch="false" hits="0" number="910"/>
-                        <line branch="false" hits="0" number="911"/>
-                        <line branch="false" hits="0" number="912"/>
-                        <line branch="false" hits="0" number="913"/>
-                        <line branch="false" hits="0" number="914"/>
-                        <line branch="false" hits="0" number="915"/>
-                        <line branch="false" hits="0" number="916"/>
-                        <line branch="false" hits="0" number="917"/>
-                        <line branch="false" hits="0" number="918"/>
-                        <line branch="false" hits="0" number="919"/>
-                        <line branch="false" hits="0" number="920"/>
-                        <line branch="false" hits="0" number="936"/>
-                        <line branch="false" hits="0" number="937"/>
-                        <line branch="false" hits="0" number="938"/>
-                        <line branch="false" hits="0" number="939"/>
-                        <line branch="false" hits="0" number="940"/>
-                        <line branch="false" hits="0" number="941"/>
-                        <line branch="false" hits="0" number="942"/>
-                        <line branch="false" hits="0" number="943"/>
-                        <line branch="false" hits="0" number="944"/>
-                        <line branch="false" hits="0" number="945"/>
-                        <line branch="false" hits="0" number="946"/>
-                        <line branch="false" hits="0" number="947"/>
-                        <line branch="false" hits="0" number="948"/>
-                        <line branch="false" hits="0" number="949"/>
-                        <line branch="false" hits="0" number="950"/>
-                        <line branch="false" hits="0" number="952"/>
-                        <line branch="false" hits="0" number="953"/>
-                        <line branch="false" hits="0" number="955"/>
-                        <line branch="false" hits="0" number="956"/>
-                        <line branch="false" hits="0" number="957"/>
-                        <line branch="false" hits="0" number="978"/>
-                        <line branch="false" hits="0" number="979"/>
-                        <line branch="false" hits="0" number="980"/>
-                        <line branch="false" hits="0" number="981"/>
-                        <line branch="false" hits="0" number="982"/>
-                        <line branch="false" hits="0" number="1003"/>
-                        <line branch="false" hits="0" number="1004"/>
-                        <line branch="false" hits="0" number="1005"/>
-                        <line branch="false" hits="0" number="1006"/>
-                        <line branch="false" hits="0" number="1007"/>
-                        <line branch="false" hits="0" number="1008"/>
-                        <line branch="false" hits="0" number="1009"/>
+                        <line branch="false" hits="3" number="876"/>
+                        <line branch="false" hits="3" number="877"/>
+                        <line branch="false" hits="3" number="878"/>
+                        <line branch="false" hits="3" number="879"/>
+                        <line branch="false" hits="3" number="880"/>
+                        <line branch="false" hits="7" number="882"/>
+                        <line branch="false" hits="4" number="883"/>
+                        <line branch="false" hits="4" number="884"/>
+                        <line branch="false" hits="4" number="885"/>
+                        <line branch="false" hits="4" number="886"/>
+                        <line branch="false" hits="4" number="887"/>
+                        <line branch="false" hits="3" number="888"/>
+                        <line branch="false" hits="3" number="890"/>
+                        <line branch="false" hits="3" number="891"/>
+                        <line branch="false" hits="2" number="909"/>
+                        <line branch="false" hits="2" number="910"/>
+                        <line branch="false" hits="2" number="911"/>
+                        <line branch="false" hits="24" number="912"/>
+                        <line branch="false" hits="24" number="913"/>
+                        <line branch="false" hits="24" number="914"/>
+                        <line branch="false" hits="24" number="915"/>
+                        <line branch="false" hits="24" number="916"/>
+                        <line branch="false" hits="24" number="917"/>
+                        <line branch="false" hits="24" number="918"/>
+                        <line branch="false" hits="24" number="919"/>
+                        <line branch="false" hits="2" number="920"/>
+                        <line branch="false" hits="2" number="936"/>
+                        <line branch="false" hits="2" number="937"/>
+                        <line branch="false" hits="2" number="938"/>
+                        <line branch="false" hits="2" number="939"/>
+                        <line branch="false" hits="2" number="940"/>
+                        <line branch="false" hits="2" number="941"/>
+                        <line branch="false" hits="2" number="942"/>
+                        <line branch="false" hits="2" number="943"/>
+                        <line branch="false" hits="2" number="944"/>
+                        <line branch="false" hits="2" number="945"/>
+                        <line branch="false" hits="2" number="946"/>
+                        <line branch="false" hits="2" number="947"/>
+                        <line branch="false" hits="2" number="948"/>
+                        <line branch="false" hits="2" number="949"/>
+                        <line branch="false" hits="2" number="950"/>
+                        <line branch="false" hits="2" number="952"/>
+                        <line branch="false" hits="2" number="953"/>
+                        <line branch="false" hits="2" number="955"/>
+                        <line branch="false" hits="2" number="956"/>
+                        <line branch="false" hits="2" number="957"/>
+                        <line branch="false" hits="3" number="978"/>
+                        <line branch="false" hits="3" number="979"/>
+                        <line branch="false" hits="2" number="980"/>
+                        <line branch="false" hits="2" number="981"/>
+                        <line branch="false" hits="3" number="982"/>
+                        <line branch="false" hits="5" number="1003"/>
+                        <line branch="false" hits="5" number="1004"/>
+                        <line branch="false" hits="5" number="1005"/>
+                        <line branch="false" hits="5" number="1006"/>
+                        <line branch="false" hits="49" number="1007"/>
+                        <line branch="false" hits="5" number="1008"/>
+                        <line branch="false" hits="5" number="1009"/>
                         <line branch="false" hits="0" number="1010"/>
                         <line branch="false" hits="0" number="1011"/>
-                        <line branch="false" hits="0" number="1013"/>
+                        <line branch="false" hits="5" number="1013"/>
                         <line branch="false" hits="0" number="1033"/>
                         <line branch="false" hits="0" number="1034"/>
                         <line branch="false" hits="0" number="1035"/>
@@ -1663,35 +1754,35 @@
                         <line branch="false" hits="0" number="1086"/>
                         <line branch="false" hits="0" number="1087"/>
                         <line branch="false" hits="0" number="1088"/>
-                        <line branch="false" hits="0" number="1110"/>
-                        <line branch="false" hits="0" number="1112"/>
-                        <line branch="false" hits="0" number="1114"/>
-                        <line branch="false" hits="0" number="1115"/>
-                        <line branch="false" hits="0" number="1116"/>
-                        <line branch="false" hits="0" number="1117"/>
-                        <line branch="false" hits="0" number="1118"/>
-                        <line branch="false" hits="0" number="1119"/>
-                        <line branch="false" hits="0" number="1121"/>
-                        <line branch="false" hits="0" number="1122"/>
-                        <line branch="false" hits="0" number="1144"/>
-                        <line branch="false" hits="0" number="1146"/>
-                        <line branch="false" hits="0" number="1147"/>
-                        <line branch="false" hits="0" number="1149"/>
-                        <line branch="false" hits="0" number="1152"/>
-                        <line branch="false" hits="0" number="1156"/>
+                        <line branch="false" hits="5" number="1110"/>
+                        <line branch="false" hits="5" number="1112"/>
+                        <line branch="false" hits="6" number="1114"/>
+                        <line branch="false" hits="6" number="1115"/>
+                        <line branch="false" hits="6" number="1116"/>
+                        <line branch="false" hits="6" number="1117"/>
+                        <line branch="false" hits="5" number="1118"/>
+                        <line branch="false" hits="1" number="1119"/>
+                        <line branch="false" hits="5" number="1121"/>
+                        <line branch="false" hits="5" number="1122"/>
+                        <line branch="false" hits="1" number="1144"/>
+                        <line branch="false" hits="2" number="1146"/>
+                        <line branch="false" hits="2" number="1147"/>
+                        <line branch="false" hits="1" number="1149"/>
+                        <line branch="false" hits="1" number="1152"/>
+                        <line branch="false" hits="1" number="1156"/>
                         <line branch="false" hits="0" number="1180"/>
                         <line branch="false" hits="0" number="1184"/>
                         <line branch="false" hits="0" number="1185"/>
-                        <line branch="false" hits="0" number="1210"/>
-                        <line branch="false" hits="0" number="1211"/>
-                        <line branch="false" hits="0" number="1212"/>
-                        <line branch="false" hits="0" number="1213"/>
-                        <line branch="false" hits="0" number="1214"/>
-                        <line branch="false" hits="0" number="1215"/>
-                        <line branch="false" hits="0" number="1216"/>
-                        <line branch="false" hits="0" number="1217"/>
-                        <line branch="false" hits="0" number="1218"/>
-                        <line branch="false" hits="0" number="1219"/>
+                        <line branch="false" hits="10" number="1210"/>
+                        <line branch="false" hits="10" number="1211"/>
+                        <line branch="false" hits="10" number="1212"/>
+                        <line branch="false" hits="10" number="1213"/>
+                        <line branch="false" hits="10" number="1214"/>
+                        <line branch="false" hits="10" number="1215"/>
+                        <line branch="false" hits="10" number="1216"/>
+                        <line branch="false" hits="10" number="1217"/>
+                        <line branch="false" hits="10" number="1218"/>
+                        <line branch="false" hits="10" number="1219"/>
                     </lines>
                 </class>
                 <class branch-rate="0" complexity="0" filename="src\utils\config.rs" line-rate="1" name="src.utils.config.rs">
@@ -1834,6 +1925,38 @@
         </package>
         <package line-rate="0.10792580101180438" branch-rate="0" name="src.daemon" complexity="0">
             <classes>
+                <class branch-rate="0" complexity="0" filename="src\daemon\workspace.rs" line-rate="1" name="src.daemon.workspace.rs">
+                    <methods>
+                        <method name="csshw_lib::daemon::workspace::get_workspace_area::&lt;csshw_lib::utils::windows::MockWindowsApi&gt;" signature="" complexity="0" line-rate="1" branch-rate="1">
+                            <lines>
+                                <line hits="1" number="51" branch="false"/>
+                            </lines>
+                        </method>
+                    </methods>
+                    <lines>
+                        <line branch="false" hits="1" number="51"/>
+                        <line branch="false" hits="1" number="52"/>
+                        <line branch="false" hits="1" number="53"/>
+                        <line branch="false" hits="1" number="54"/>
+                        <line branch="false" hits="1" number="55"/>
+                        <line branch="false" hits="1" number="56"/>
+                        <line branch="false" hits="1" number="57"/>
+                        <line branch="false" hits="1" number="58"/>
+                        <line branch="false" hits="1" number="59"/>
+                        <line branch="false" hits="1" number="60"/>
+                        <line branch="false" hits="1" number="61"/>
+                        <line branch="false" hits="1" number="62"/>
+                        <line branch="false" hits="1" number="63"/>
+                        <line branch="false" hits="1" number="64"/>
+                        <line branch="false" hits="1" number="65"/>
+                        <line branch="false" hits="1" number="66"/>
+                        <line branch="false" hits="1" number="67"/>
+                        <line branch="false" hits="1" number="68"/>
+                        <line branch="false" hits="1" number="69"/>
+                        <line branch="false" hits="1" number="70"/>
+                        <line branch="false" hits="1" number="71"/>
+                    </lines>
+                </class>
                 <class branch-rate="0" complexity="0" filename="src\daemon\mod.rs" line-rate="0.07517482517482517" name="src.daemon.mod.rs">
                     <methods>
                         <method name="&lt;csshw_lib::daemon::Daemon&gt;::quit_control_mode::&lt;_&gt;" signature="" complexity="0" line-rate="0" branch-rate="0">
@@ -2650,129 +2773,6 @@
                         <line branch="false" hits="0" number="1184"/>
                         <line branch="false" hits="0" number="1185"/>
                         <line branch="false" hits="0" number="1186"/>
-                    </lines>
-                </class>
-                <class branch-rate="0" complexity="0" filename="src\daemon\workspace.rs" line-rate="1" name="src.daemon.workspace.rs">
-                    <methods>
-                        <method name="csshw_lib::daemon::workspace::get_workspace_area::&lt;csshw_lib::utils::windows::MockWindowsApi&gt;" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="1" number="51" branch="false"/>
-                            </lines>
-                        </method>
-                    </methods>
-                    <lines>
-                        <line branch="false" hits="1" number="51"/>
-                        <line branch="false" hits="1" number="52"/>
-                        <line branch="false" hits="1" number="53"/>
-                        <line branch="false" hits="1" number="54"/>
-                        <line branch="false" hits="1" number="55"/>
-                        <line branch="false" hits="1" number="56"/>
-                        <line branch="false" hits="1" number="57"/>
-                        <line branch="false" hits="1" number="58"/>
-                        <line branch="false" hits="1" number="59"/>
-                        <line branch="false" hits="1" number="60"/>
-                        <line branch="false" hits="1" number="61"/>
-                        <line branch="false" hits="1" number="62"/>
-                        <line branch="false" hits="1" number="63"/>
-                        <line branch="false" hits="1" number="64"/>
-                        <line branch="false" hits="1" number="65"/>
-                        <line branch="false" hits="1" number="66"/>
-                        <line branch="false" hits="1" number="67"/>
-                        <line branch="false" hits="1" number="68"/>
-                        <line branch="false" hits="1" number="69"/>
-                        <line branch="false" hits="1" number="70"/>
-                        <line branch="false" hits="1" number="71"/>
-                    </lines>
-                </class>
-            </classes>
-        </package>
-        <package line-rate="1" branch-rate="0" name="src.serde" complexity="0">
-            <classes>
-                <class branch-rate="0" complexity="0" filename="src\serde\deserialization.rs" line-rate="1" name="src.serde.deserialization.rs">
-                    <methods>
-                        <method name="csshw_lib::serde::deserialization::deserialize_input_record_0" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="1" number="46" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::serde::deserialization::deserialize_key_event_record" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="2" number="24" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::serde::deserialization::deserialize_key_event_record_0" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="1" number="11" branch="false"/>
-                            </lines>
-                        </method>
-                    </methods>
-                    <lines>
-                        <line branch="false" hits="1" number="11"/>
-                        <line branch="false" hits="1" number="12"/>
-                        <line branch="false" hits="1" number="13"/>
-                        <line branch="false" hits="1" number="14"/>
-                        <line branch="false" hits="1" number="15"/>
-                        <line branch="false" hits="2" number="24"/>
-                        <line branch="false" hits="2" number="25"/>
-                        <line branch="false" hits="2" number="26"/>
-                        <line branch="false" hits="2" number="27"/>
-                        <line branch="false" hits="2" number="28"/>
-                        <line branch="false" hits="2" number="29"/>
-                        <line branch="false" hits="2" number="30"/>
-                        <line branch="false" hits="2" number="31"/>
-                        <line branch="false" hits="2" number="32"/>
-                        <line branch="false" hits="2" number="33"/>
-                        <line branch="false" hits="2" number="34"/>
-                        <line branch="false" hits="2" number="35"/>
-                        <line branch="false" hits="2" number="36"/>
-                        <line branch="false" hits="2" number="37"/>
-                        <line branch="false" hits="2" number="38"/>
-                        <line branch="false" hits="2" number="39"/>
-                        <line branch="false" hits="2" number="40"/>
-                        <line branch="false" hits="2" number="41"/>
-                        <line branch="false" hits="1" number="46"/>
-                        <line branch="false" hits="1" number="47"/>
-                        <line branch="false" hits="1" number="48"/>
-                        <line branch="false" hits="1" number="49"/>
-                        <line branch="false" hits="1" number="50"/>
-                        <line branch="false" hits="1" number="51"/>
-                    </lines>
-                </class>
-                <class branch-rate="0" complexity="0" filename="src\serde\serialization.rs" line-rate="1" name="src.serde.serialization.rs">
-                    <methods>
-                        <method name="csshw_lib::serde::serialization::serialize_input_record_0" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="1" number="43" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::serde::serialization::serialize_key_event_record" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="2" number="16" branch="false"/>
-                            </lines>
-                        </method>
-                        <method name="csshw_lib::serde::serialization::serialize_key_event_record_0" signature="" complexity="0" line-rate="1" branch-rate="1">
-                            <lines>
-                                <line hits="1" number="8" branch="false"/>
-                            </lines>
-                        </method>
-                    </methods>
-                    <lines>
-                        <line branch="false" hits="1" number="8"/>
-                        <line branch="false" hits="1" number="9"/>
-                        <line branch="false" hits="1" number="10"/>
-                        <line branch="false" hits="2" number="16"/>
-                        <line branch="false" hits="2" number="17"/>
-                        <line branch="false" hits="2" number="20"/>
-                        <line branch="false" hits="2" number="23"/>
-                        <line branch="false" hits="2" number="26"/>
-                        <line branch="false" hits="2" number="29"/>
-                        <line branch="false" hits="2" number="32"/>
-                        <line branch="false" hits="2" number="35"/>
-                        <line branch="false" hits="2" number="37"/>
-                        <line branch="false" hits="2" number="38"/>
-                        <line branch="false" hits="1" number="43"/>
-                        <line branch="false" hits="1" number="44"/>
-                        <line branch="false" hits="1" number="45"/>
                     </lines>
                 </class>
             </classes>
