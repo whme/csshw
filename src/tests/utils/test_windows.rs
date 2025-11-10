@@ -4,10 +4,8 @@
 #![allow(clippy::needless_return, clippy::doc_overindented_list_items)]
 
 use crate::utils::windows::{
-    clear_screen, get_console_title, is_windows_10,
-    read_console_input, read_keyboard_input, set_console_border_color,
-    set_console_color, set_console_title, utf16_buffer_to_string, MockWindowsApi,
-    KEY_EVENT,
+    clear_screen, is_windows_10, read_console_input, read_keyboard_input, set_console_border_color,
+    set_console_color, utf16_buffer_to_string, MockWindowsApi, KEY_EVENT,
 };
 use windows::Win32::Foundation::COLORREF;
 use windows::Win32::System::Console::{
@@ -96,115 +94,6 @@ mod version_detection_test {
             result.is_err(),
             "Should panic with malformed version string"
         );
-    }
-}
-
-/// Tests console title management.
-mod console_title_test {
-    use super::*;
-
-    /// Tests console title setting with ASCII strings.
-    /// Validates proper Windows API integration and string handling.
-    #[test]
-    fn test_set_console_title() {
-        let mut mock_api = MockWindowsApi::new();
-        let test_title = "Test Console Title";
-
-        mock_api
-            .expect_set_console_title()
-            .with(mockall::predicate::eq(test_title))
-            .times(1)
-            .returning(|_| return Ok(()));
-
-        set_console_title(&mock_api, test_title);
-    }
-
-    /// Tests console title retrieval with UTF-16 buffer handling.
-    /// Validates proper string conversion and API integration.
-    #[test]
-    fn test_get_console_title() {
-        let mut mock_api = MockWindowsApi::new();
-        let expected_title = "Current Console Title";
-
-        let title_utf16: Vec<u16> = expected_title
-            .encode_utf16()
-            .chain(std::iter::once(0))
-            .collect();
-
-        mock_api
-            .expect_get_console_title()
-            .with(mockall::predicate::always())
-            .times(1)
-            .returning(move |buffer: &mut [u16]| {
-                let copy_len = std::cmp::min(title_utf16.len(), buffer.len());
-                buffer[..copy_len].copy_from_slice(&title_utf16[..copy_len]);
-                return copy_len as i32;
-            });
-
-        let result = get_console_title(&mock_api);
-        assert_eq!(result, expected_title);
-    }
-
-    /// Tests console title retrieval when no title is set.
-    /// Validates handling of empty title buffers.
-    #[test]
-    fn test_get_console_title_with_empty_title() {
-        let mut mock_api = MockWindowsApi::new();
-
-        mock_api
-            .expect_get_console_title()
-            .with(mockall::predicate::always())
-            .times(1)
-            .returning(|_| return 0);
-
-        let result = get_console_title(&mock_api);
-        assert_eq!(result, "");
-    }
-
-    /// Tests console title retrieval with Unicode characters.
-    /// Validates proper UTF-16 encoding and international character support.
-    #[test]
-    fn test_get_console_title_with_unicode() {
-        let mut mock_api = MockWindowsApi::new();
-        let expected_title = "Test 🦀 Rust 中文 Тест";
-
-        let title_utf16: Vec<u16> = expected_title
-            .encode_utf16()
-            .chain(std::iter::once(0))
-            .collect();
-
-        mock_api
-            .expect_get_console_title()
-            .with(mockall::predicate::always())
-            .times(1)
-            .returning(move |buffer: &mut [u16]| {
-                let copy_len = std::cmp::min(title_utf16.len(), buffer.len());
-                buffer[..copy_len].copy_from_slice(&title_utf16[..copy_len]);
-                return copy_len as i32;
-            });
-
-        let result = get_console_title(&mock_api);
-        assert_eq!(result, expected_title);
-    }
-
-    /// Tests console title setting error handling when API calls fail.
-    /// Validates that function panics appropriately on Windows API errors.
-    #[test]
-    fn test_set_console_title_error_handling() {
-        let mut mock_api = MockWindowsApi::new();
-        let test_title = "Test Title";
-
-        mock_api
-            .expect_set_console_title()
-            .with(mockall::predicate::eq(test_title))
-            .times(1)
-            .returning(|_| return Err(windows::core::Error::from_win32()));
-
-        let result = std::panic::catch_unwind(|| {
-            set_console_title(&mock_api, test_title);
-        });
-
-        assert!(result.is_err(), "Should panic when set_console_title fails");
     }
 }
 

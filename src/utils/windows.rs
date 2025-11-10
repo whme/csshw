@@ -1217,3 +1217,7 @@ pub fn is_windows_10(api: &dyn WindowsApi) -> bool {
     );
     return major < 10 || (major == 10 && build < 22000);
 }
+
+#[cfg(test)]
+#[path = "../tests/utils/test_windows.rs"]
+mod test_mod;
