@@ -553,3 +553,29 @@ mod command_line_test {
         );
     }
 }
+
+mod create_process_with_args_test {
+    use windows::Win32::{
+        Foundation::{GetLastError, STILL_ACTIVE},
+        System::Threading::TerminateProcess,
+    };
+
+    use crate::utils::windows::{DefaultWindowsApi, WindowsApi};
+
+    /// Tests create_process_with_args with valid application and arguments.
+    /// Validates that the process creation function is called with correct parameters.
+    /// Note: This test actually creates a process.
+    #[test]
+    fn test_create_process_with_args() {
+        let windows_api = DefaultWindowsApi;
+        let application = r"C:\Windows\System32\timeout.exe";
+        let args = vec!["30".to_string()];
+        let process_info = match windows_api.create_process_with_args(application, args) {
+            None => panic!("Failed to create process: {:?}", unsafe { GetLastError() }),
+            Some(process_info) => process_info,
+        };
+        assert!(windows_api.get_exit_code(process_info.hProcess).unwrap() == STILL_ACTIVE.0 as u32);
+        unsafe { TerminateProcess(process_info.hProcess, 0) }.expect("Failed to terminate process");
+        assert!(windows_api.get_exit_code(process_info.hProcess).unwrap() == 0);
+    }
+}
