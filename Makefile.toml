@@ -10,13 +10,18 @@ default_to_workspace = false
 [tasks.check-readme-help]
 # Task used to check whether the help section of the README.md matches the current `--help` output.
 # As the underlying task creates temporary files a cleanup task is defined to delete them afterwards.
-run_task = { name = ["check-readme-help-task"], fork = true, cleanup_task = "process-readme-help-cleanup"}
+run_task = { name = [
+    "check-readme-help-task",
+], fork = true, cleanup_task = "process-readme-help-cleanup" }
 
 [tasks.process-readme-help-cleanup]
 private = true
 description = "Remove temporary files created by the process-readme-help task"
 command = "CMD"
-args = ["/C", "DEL /F /Q .\\.help.tmp .\\.readme-help.tmp .\\.readme-content.tmp .\\.positions.tmp 2>nul"]
+args = [
+    "/C",
+    "DEL /F /Q .\\.help.tmp .\\.readme-help.tmp .\\.readme-content.tmp .\\.positions.tmp 2>nul",
+]
 
 [tasks.process-readme-help]
 private = true
@@ -136,7 +141,9 @@ end
 # and update the README.md in case it doesn't.
 # As the underlying task creates temporary files a cleanup task is defined to delete them afterwards.
 description = "Update README.md help section with current --help output"
-run_task = { name = ["update-readme-help-task"], fork = true, cleanup_task = "process-readme-help-cleanup"}
+run_task = { name = [
+    "update-readme-help-task",
+], fork = true, cleanup_task = "process-readme-help-cleanup" }
 
 [tasks.update-readme-help-task]
 private = true
