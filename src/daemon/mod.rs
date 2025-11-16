@@ -161,7 +161,7 @@ impl<'a> Daemon<'a> {
             windows_api,
             CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color),
         );
-        set_console_border_color(windows_api, COLORREF(0x000000FF));
+        set_console_border_color(windows_api, COLORREF(0x000000FF), None);
 
         toggle_processed_input_mode(windows_api); // Disable processed input mode
 

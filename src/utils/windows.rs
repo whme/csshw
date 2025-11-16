@@ -213,11 +213,16 @@ pub trait WindowsApi: Send + Sync {
     /// # Arguments
     ///
     /// * `color` - Color to set as border color
+    /// * `window_handle` - Optional handle to the window; if None, uses the console window
     ///
     /// # Returns
     ///
     /// Result indicating success or failure of the operation
-    fn set_console_border_color(&self, color: &COLORREF) -> windows::core::Result<()>;
+    fn set_console_border_color(
+        &self,
+        color: &COLORREF,
+        window_handle: Option<HWND>,
+    ) -> windows::core::Result<()>;
 
     /// Writes input records to the console input buffer.
     ///
@@ -658,10 +663,14 @@ impl WindowsApi for DefaultWindowsApi {
         return Ok(number_read);
     }
 
-    fn set_console_border_color(&self, color: &COLORREF) -> windows::core::Result<()> {
+    fn set_console_border_color(
+        &self,
+        color: &COLORREF,
+        window_handle: Option<HWND>,
+    ) -> windows::core::Result<()> {
         return unsafe {
             DwmSetWindowAttribute(
-                GetConsoleWindow(),
+                window_handle.unwrap_or(self.get_console_window()),
                 DWMWA_BORDER_COLOR,
                 color as *const COLORREF as *const _,
                 mem::size_of::<COLORREF>() as u32,
@@ -1002,6 +1011,7 @@ pub fn clear_screen(api: &dyn WindowsApi) {
 ///
 /// * `api` - The Windows API implementation;
 /// * `color` - RGB [COLORREF][1] to set as border color.
+/// * `window_handle` - Optional handle to the window; if None, uses the console window.
 ///
 /// # Examples
 ///
@@ -1009,13 +1019,17 @@ pub fn clear_screen(api: &dyn WindowsApi) {
 /// use csshw_lib::utils::windows::{set_console_border_color, DefaultWindowsApi};
 /// use windows::Win32::Foundation::COLORREF;
 ///
-/// set_console_border_color(&DefaultWindowsApi, COLORREF(0x001A2B3C));
+/// set_console_border_color(&DefaultWindowsApi, COLORREF(0x001A2B3C), None);
 /// ```
 ///
 /// [1]: https://learn.microsoft.com/en-us/windows/win32/gdi/colorref
-pub fn set_console_border_color(api: &dyn WindowsApi, color: COLORREF) {
+pub fn set_console_border_color(
+    api: &dyn WindowsApi,
+    color: COLORREF,
+    window_handle: Option<HWND>,
+) {
     if !is_windows_10(api) {
-        api.set_console_border_color(&color).unwrap();
+        api.set_console_border_color(&color, window_handle).unwrap();
     }
 }
 

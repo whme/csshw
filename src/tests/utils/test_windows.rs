@@ -293,10 +293,13 @@ mod console_border_color_test {
             .return_const("10.0.19045".to_string());
 
         api.expect_set_console_border_color()
-            .with(mockall::predicate::eq(test_color))
+            .with(
+                mockall::predicate::eq(test_color),
+                mockall::predicate::always(),
+            )
             .times(0);
 
-        set_console_border_color(&api, test_color);
+        set_console_border_color(&api, test_color, None);
     }
 
     /// Tests console border color setting on Windows 11 with DWM integration.
@@ -311,11 +314,14 @@ mod console_border_color_test {
             .return_const("10.0.22000".to_string());
 
         api.expect_set_console_border_color()
-            .with(mockall::predicate::eq(test_color))
+            .with(
+                mockall::predicate::eq(test_color),
+                mockall::predicate::always(),
+            )
             .times(1)
-            .returning(|_| return Ok(()));
+            .returning(|_, _| return Ok(()));
 
-        set_console_border_color(&api, test_color);
+        set_console_border_color(&api, test_color, None);
     }
 
     /// Tests console border color setting error handling when DWM calls fail.
@@ -330,12 +336,15 @@ mod console_border_color_test {
             .return_const("10.0.22000".to_string());
 
         api.expect_set_console_border_color()
-            .with(mockall::predicate::eq(test_color))
+            .with(
+                mockall::predicate::eq(test_color),
+                mockall::predicate::always(),
+            )
             .times(1)
-            .returning(|_| return Err(windows::core::Error::from_win32()));
+            .returning(|_, _| return Err(windows::core::Error::from_win32()));
 
         let result = std::panic::catch_unwind(|| {
-            set_console_border_color(&api, test_color);
+            set_console_border_color(&api, test_color, None);
         });
 
         assert!(
@@ -699,14 +708,15 @@ mod default_windows_api_tests {
         }
 
         /// Tests getting console window handle.
-        /// Validates that the console window handle is non-null.
         #[test]
         fn test_get_console_window_handle() {
             let windows_api = DefaultWindowsApi;
 
-            let window_handle = windows_api.get_console_window();
-
-            assert!(windows_api.is_window(window_handle));
+            // Depending on whether or not the calling process has a console
+            // window attached, this may return a valid handle or null.
+            // As long as it doesn't panic, the test passes.
+            // Locally running tests usually have a console, CI environments do not.
+            let _ = windows_api.get_console_window();
         }
 
         /// Tests arrange_console.
@@ -717,7 +727,7 @@ mod default_windows_api_tests {
             let (handle, _guard) = get_test_window_handle(&windows_api);
 
             let original_placement = windows_api
-                .get_window_placement(windows_api.get_console_window())
+                .get_window_placement(handle)
                 .expect("Failed to get window placement");
             let x = original_placement.rcNormalPosition.left;
             let y = original_placement.rcNormalPosition.top;
@@ -729,7 +739,7 @@ mod default_windows_api_tests {
                 .arrange_console(x, y, width, height, Some(handle))
                 .unwrap();
             let arranged_placement = windows_api
-                .get_window_placement(windows_api.get_console_window())
+                .get_window_placement(handle)
                 .expect("Failed to get window placement after arrange");
             assert_eq!(arranged_placement.rcNormalPosition.left, x);
             assert_eq!(arranged_placement.rcNormalPosition.top, y);
