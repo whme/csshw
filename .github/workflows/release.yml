@@ -10,7 +10,7 @@ name: Release
 on:
   push:
     tags:
-      - '[0-9]+.[0-9]+.[0-9]+'
+      - "[0-9]+.[0-9]+.[0-9]+"
 
 env:
   CARGO_TERM_COLOR: always
@@ -19,23 +19,20 @@ jobs:
   build-release:
     runs-on: windows-latest
     steps:
-      - uses: &checkout-action
-          actions/checkout@v5
+      - uses: &checkout-action actions/checkout@v5
 
       - name: Build release binary
         run: cargo release
 
       - name: Upload release binary
-        uses: &upload-artifact-action
-          actions/upload-artifact@v4
+        uses: &upload-artifact-action actions/upload-artifact@v4
         with:
           name: csshw-binary
           path: target/release/csshw.exe
           retention-days: 1
 
   package-release:
-    runs-on: &ubuntu-runner
-      ubuntu-latest
+    runs-on: &ubuntu-runner ubuntu-latest
     permissions:
       id-token: write
       contents: read
@@ -45,8 +42,7 @@ jobs:
       - uses: *checkout-action
 
       - name: Download release binary
-        uses: &download-artifact-action
-          actions/download-artifact@v4
+        uses: &download-artifact-action actions/download-artifact@v4
         with:
           name: csshw-binary
           path: ./artifacts
@@ -74,7 +70,7 @@ jobs:
 
       - uses: actions/attest-build-provenance@v3
         with:
-          subject-path: 'csshw.${{ github.ref_name }}.zip'
+          subject-path: "csshw.${{ github.ref_name }}.zip"
 
       - name: Upload release package
         uses: *upload-artifact-action

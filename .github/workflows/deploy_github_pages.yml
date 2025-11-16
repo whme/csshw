@@ -18,41 +18,41 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-    - name: Build docs
-      run: cargo docs
+      - name: Build docs
+        run: cargo docs
 
-    - name: Download Coverage HTML Report
-      uses: actions/download-artifact@v4
-      with:
-        name: coverage-html-report
-        path: coverage_html/
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        repository: ${{ github.repository }}
-        run-id: ${{ github.event.workflow_run.id }}
+      - name: Download Coverage HTML Report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-html-report
+          path: coverage_html/
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
 
-    - name: Create unified site structure
-      shell: bash
-      run: |
-        mkdir -p unified_site
+      - name: Create unified site structure
+        shell: bash
+        run: |
+          mkdir -p unified_site
 
-        mkdir -p unified_site/docs
-        cp -r target/doc/* unified_site/docs/
+          mkdir -p unified_site/docs
+          cp -r target/doc/* unified_site/docs/
 
-        cp -r coverage_html unified_site/coverage
+          cp -r coverage_html unified_site/coverage
 
-        cp templates/github-pages-index.html unified_site/index.html
-        cp res/csshw.ico unified_site/favicon.ico
+          cp templates/github-pages-index.html unified_site/index.html
+          cp res/csshw.ico unified_site/favicon.ico
 
-        echo "<meta http-equiv=\"refresh\" content=\"0; url=csshw_lib/index.html\">" > unified_site/docs/index.html
+          echo "<meta http-equiv=\"refresh\" content=\"0; url=csshw_lib/index.html\">" > unified_site/docs/index.html
 
-    - name: Upload unified site
-      uses: actions/upload-pages-artifact@v3
-      with:
-        retention-days: 1
-        path: unified_site/
+      - name: Upload unified site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          retention-days: 1
+          path: unified_site/
 
-    - name: Deploy to GitHub Pages
-      id: deployment
-      uses: actions/deploy-pages@v4
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
