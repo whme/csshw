@@ -16,118 +16,114 @@ env:
 
 jobs:
   build:
-    runs-on: &runner-version
-      windows-latest
+    runs-on: &runner-version windows-latest
     steps:
-    - uses: &checkout-action
-        actions/checkout@v5
+      - uses: &checkout-action actions/checkout@v5
 
-    - uses: &rust-cache-action
-        Swatinem/rust-cache@v2
-      with: &rust-cache-shared-key
-        shared-key: ${{ hashFiles('Cargo.toml', 'rust-toolchain.toml') }}
+      - uses: &rust-cache-action Swatinem/rust-cache@v2
+        with: &rust-cache-shared-key
+          shared-key: ${{ hashFiles('Cargo.toml', 'rust-toolchain.toml') }}
 
-    - uses: &build-cache
-        actions/cache@v4
-      with: &build-cache-paths
-        path: |
-          ~\.cargo\git
-          ~\.cargo\registry
-          target
-        key: ${{runner.os}}-build-cache-${{ hashFiles('Cargo.toml', 'rust-toolchain.toml') }}
+      - uses: &build-cache actions/cache@v4
+        with: &build-cache-paths
+          path: |
+            ~\.cargo\git
+            ~\.cargo\registry
+            target
+          key: ${{runner.os}}-build-cache-${{ hashFiles('Cargo.toml', 'rust-toolchain.toml') }}
 
-    - name: Build
-      run: |
-        cargo build --all-targets --profile dev --verbose
-        cargo build --all-targets --profile test --verbose
+      - name: Build
+        run: |
+          cargo build --all-targets --profile dev --verbose
+          cargo build --all-targets --profile test --verbose
 
-    - name: Build docs
-      run: cargo docs
+      - name: Build docs
+        run: cargo docs
 
   check-format:
     runs-on: *runner-version
     steps:
-    - uses: *checkout-action
-    - name: Check format
-      run: cargo fmt -- --check
+      - uses: *checkout-action
+      - name: Check format
+        run: cargo fmt -- --check
 
   check-lint:
     runs-on: *runner-version
     needs: build
     steps:
-    - uses: *checkout-action
-    - uses: *rust-cache-action
-      with: *rust-cache-shared-key
-    - uses: *build-cache
-      with: *build-cache-paths
-    - name: Run linter
-      run: cargo lint
+      - uses: *checkout-action
+      - uses: *rust-cache-action
+        with: *rust-cache-shared-key
+      - uses: *build-cache
+        with: *build-cache-paths
+      - name: Run linter
+        run: cargo lint
 
   tests:
+    timeout-minutes: 30
     runs-on: *runner-version
     needs: build
     steps:
-    - uses: *checkout-action
-    - uses: *rust-cache-action
-      with: *rust-cache-shared-key
-    - uses: *build-cache
-      with: *build-cache-paths
+      - uses: *checkout-action
+      - uses: *rust-cache-action
+        with: *rust-cache-shared-key
+      - uses: *build-cache
+        with: *build-cache-paths
 
-    - name: Install cargo-llvm-cov
-      uses: &cargo-install-action
-        baptiste0928/cargo-install@v3
-      with:
-        crate: cargo-llvm-cov
-        version: '^0.6'
+      - name: Install cargo-llvm-cov
+        uses: &cargo-install-action baptiste0928/cargo-install@v3
+        with:
+          crate: cargo-llvm-cov
+          version: "^0.6"
 
-    - name: Run tests with coverage
-      run: |
-        # Run tests with coverage - Total coverage
-        cargo llvm-cov clean --workspace
-        cargo llvm-cov --all-features --workspace --no-report
-        cargo llvm-cov report --cobertura --output-path coverage.xml --ignore-filename-regex $env:IGNORE_COVERAGE
-        cargo llvm-cov report --html --output-dir coverage_html --ignore-filename-regex $env:IGNORE_COVERAGE
+      - name: Run tests with coverage
+        run: |
+          # Run tests with coverage - Total coverage
+          cargo llvm-cov clean --workspace
+          cargo llvm-cov --all-features --workspace --no-report
+          cargo llvm-cov report --cobertura --output-path coverage.xml --ignore-filename-regex $env:IGNORE_COVERAGE
+          cargo llvm-cov report --html --output-dir coverage_html --ignore-filename-regex $env:IGNORE_COVERAGE
 
-    - name: Upload Coverage XML Data
-      uses: &upload-artifact-action
-        actions/upload-artifact@v4
-      with:
-        name: coverage-xml-data
-        path: coverage.xml
-        retention-days: 1
+      - name: Upload Coverage XML Data
+        uses: &upload-artifact-action actions/upload-artifact@v4
+        with:
+          name: coverage-xml-data
+          path: coverage.xml
+          retention-days: 1
 
-    - name: Upload Coverage HTML Report
-      uses: *upload-artifact-action
-      with:
-        name: coverage-html-report
-        path: coverage_html/
-        retention-days: 90
+      - name: Upload Coverage HTML Report
+        uses: *upload-artifact-action
+        with:
+          name: coverage-html-report
+          path: coverage_html/
+          retention-days: 90
 
   tests-docs:
+    timeout-minutes: 15
     runs-on: *runner-version
     needs: build
     steps:
-    - uses: *checkout-action
-    - uses: *rust-cache-action
-      with: *rust-cache-shared-key
-    - uses: *build-cache
-      with: *build-cache-paths
-    - name: Run tests docs
-      run: cargo doc-tests
+      - uses: *checkout-action
+      - uses: *rust-cache-action
+        with: *rust-cache-shared-key
+      - uses: *build-cache
+        with: *build-cache-paths
+      - name: Run tests docs
+        run: cargo doc-tests
 
   make-checks:
     runs-on: *runner-version
     needs: build
     steps:
-    - uses: *checkout-action
-    - uses: *rust-cache-action
-      with: *rust-cache-shared-key
-    - uses: *build-cache
-      with: *build-cache-paths
-    - name: Install cargo-make
-      uses: *cargo-install-action
-      with:
-        crate: cargo-make
-        version: '^0.37'
-    - name: Run check-readme-help
-      run: cargo make check-readme-help
+      - uses: *checkout-action
+      - uses: *rust-cache-action
+        with: *rust-cache-shared-key
+      - uses: *build-cache
+        with: *build-cache-paths
+      - name: Install cargo-make
+        uses: *cargo-install-action
+        with:
+          crate: cargo-make
+          version: "^0.37"
+      - name: Run check-readme-help
+        run: cargo make check-readme-help

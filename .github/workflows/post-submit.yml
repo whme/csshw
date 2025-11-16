@@ -9,7 +9,7 @@ name: Post-Submit CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   ci:
@@ -19,45 +19,45 @@ jobs:
     needs: ci
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
-    - name: Download Coverage XML Data
-      uses: actions/download-artifact@v4
-      with:
-        name: coverage-xml-data
-        path: coverage-data/
+      - name: Download Coverage XML Data
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-xml-data
+          path: coverage-data/
 
-    - name: Generate Code Coverage Summary
-      uses: insightsengineering/coverage-action@v3
-      with:
-        # Path to the Cobertura XML report.
-        path: coverage-data/coverage.xml
-        # Minimum total coverage, if you want to the
-        # workflow to enforce it as a standard.
-        # This has no effect if the `fail` arg is set to `false`.
-        threshold: 80
-        # Fail the workflow if the minimum code coverage
-        # requirements are not satisfied.
-        fail: false
-        # Publish the rendered output as a PR comment
-        publish: false
-        # Create a coverage diff report.
-        diff: true
-        # Branch to diff against.
-        # Compare the current coverage to the coverage
-        # determined on this branch.
-        diff-branch: main
-        # This is where the coverage reports for the
-        # `diff-branch` are stored.
-        # Branch is created if it doesn't already exist'.
-        diff-storage: _xml_coverage_reports
-        # A custom title that can be added to the code
-        # coverage summary in the PR comment.
-        coverage-summary-title: "Code Coverage Summary"
-        # Failure modes for coverage regression detection:
-        # Fail if any changed file has more uncovered lines (pycobertura exit code 2)
-        uncovered-statements-increase-failure: false
-        # Fail if new uncovered statements are introduced despite overall improvement (pycobertura exit code 3)
-        new-uncovered-statements-failure: false
-        # Fail if the overall coverage percentage decreases (more forgiving approach)
-        coverage-rate-reduction-failure: false
+      - name: Generate Code Coverage Summary
+        uses: insightsengineering/coverage-action@v3
+        with:
+          # Path to the Cobertura XML report.
+          path: coverage-data/coverage.xml
+          # Minimum total coverage, if you want to the
+          # workflow to enforce it as a standard.
+          # This has no effect if the `fail` arg is set to `false`.
+          threshold: 80
+          # Fail the workflow if the minimum code coverage
+          # requirements are not satisfied.
+          fail: false
+          # Publish the rendered output as a PR comment
+          publish: false
+          # Create a coverage diff report.
+          diff: true
+          # Branch to diff against.
+          # Compare the current coverage to the coverage
+          # determined on this branch.
+          diff-branch: main
+          # This is where the coverage reports for the
+          # `diff-branch` are stored.
+          # Branch is created if it doesn't already exist'.
+          diff-storage: _xml_coverage_reports
+          # A custom title that can be added to the code
+          # coverage summary in the PR comment.
+          coverage-summary-title: "Code Coverage Summary"
+          # Failure modes for coverage regression detection:
+          # Fail if any changed file has more uncovered lines (pycobertura exit code 2)
+          uncovered-statements-increase-failure: false
+          # Fail if new uncovered statements are introduced despite overall improvement (pycobertura exit code 3)
+          new-uncovered-statements-failure: false
+          # Fail if the overall coverage percentage decreases (more forgiving approach)
+          coverage-rate-reduction-failure: false
