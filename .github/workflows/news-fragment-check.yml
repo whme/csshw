@@ -12,7 +12,7 @@ on:
     branches: [main]
 
 env:
-  OVERRIDE_LABEL: 'no-news-fragment-needed'
+  OVERRIDE_LABEL: "no-news-fragment-needed"
   NEWS_FRAGMENT_PATTERN: '^news/.*\.(feature|bugfix|security|deprecation|removal)\.md$'
 
 jobs:
