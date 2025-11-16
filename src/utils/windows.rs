@@ -18,6 +18,10 @@ use std::{mem, ptr};
 use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::Foundation::{BOOL, COLORREF, FALSE, HANDLE, HWND, LPARAM, TRUE};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
+use windows::Win32::Storage::FileSystem::{
+    CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_DELETE,
+    FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 use windows::Win32::System::Console::{
     FillConsoleOutputAttribute, GetConsoleScreenBufferInfo, GetConsoleWindow, GetStdHandle,
@@ -1036,7 +1040,11 @@ pub fn get_console_title(api: &dyn WindowsApi) -> String {
     return utf16_buffer_to_string(&title);
 }
 
-/// Returns a [HANDLE] to the requested [STD_HANDLE] of the current process.
+/// Returns a [HANDLE] to the requested [STD_HANDLE] of the current process' console window.
+///
+/// We use CreateFileW here instead of GetStdHandle because the latter will return redirected handles
+/// if the standard handles of a process have been redirected by a call to SetStdHandle.
+/// <https://learn.microsoft.com/en-us/windows/console/getstdhandle#remarks>
 ///
 /// # Arguments
 ///
@@ -1047,10 +1055,23 @@ pub fn get_console_title(api: &dyn WindowsApi) -> String {
 ///
 /// The [HANDLE] to the requested [STD_HANDLE].
 fn get_std_handle(nstdhandle: STD_HANDLE) -> HANDLE {
-    return unsafe {
-        GetStdHandle(nstdhandle)
-            .unwrap_or_else(|_| panic!("Failed to retrieve standard handle: {nstdhandle:?}"))
+    let special_name = match nstdhandle {
+        STD_INPUT_HANDLE => "CONIN$",
+        STD_OUTPUT_HANDLE => "CONOUT$",
+        _ => panic!("Invalid standard handle requested: {nstdhandle:?}"),
     };
+    return unsafe {
+        CreateFileW(
+            &HSTRING::from(special_name),
+            (FILE_GENERIC_READ | FILE_GENERIC_WRITE).0,
+            FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
+            None,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            None,
+        )
+    }
+    .expect("Failed to open handle.");
 }
 
 /// Returns a [HANDLE] to the [STD_INPUT_HANDLE] of the current process.
