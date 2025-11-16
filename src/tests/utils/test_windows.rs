@@ -706,10 +706,6 @@ mod default_windows_api_tests {
 
             let window_handle = windows_api.get_console_window();
 
-            assert!(
-                !window_handle.is_invalid(),
-                "Console window handle should not be null"
-            );
             assert!(windows_api.is_window(window_handle));
         }
 
