@@ -66,22 +66,28 @@ pub trait WindowsApi: Send + Sync {
     /// # Arguments
     ///
     /// * `title` - The string to be set as window title
+    /// * `window_handle` - Optional handle to the window; if None, uses the console window
     ///
     /// # Returns
     ///
     /// Result indicating success or failure of the operation
-    fn set_console_title(&self, title: &str) -> windows::core::Result<()>;
+    fn set_console_title(
+        &self,
+        title: &str,
+        window_handle: Option<HWND>,
+    ) -> windows::core::Result<()>;
 
     /// Gets the console window title as UTF-16 buffer.
     ///
     /// # Arguments
     ///
     /// * `buffer` - Mutable buffer to store the UTF-16 encoded title
+    /// * `window_handle` - Optional handle to the window; if None, uses the console window
     ///
     /// # Returns
     ///
     /// Number of characters copied to the buffer
-    fn get_console_title(&self, buffer: &mut [u16]) -> i32;
+    fn get_console_title(&self, buffer: &mut [u16], window_handle: Option<HWND>) -> i32;
 
     /// Gets OS version string.
     ///
@@ -98,12 +104,19 @@ pub trait WindowsApi: Send + Sync {
     /// * `y` - The y coordinate to move the window to
     /// * `width` - The width in pixels to resize the window to
     /// * `height` - The height in pixels to resize the window to
+    /// * `window_handle` - Optional handle to the window; if None, uses the console window
     ///
     /// # Returns
     ///
     /// Result indicating success or failure of the operation
-    fn arrange_console(&self, x: i32, y: i32, width: i32, height: i32)
-        -> windows::core::Result<()>;
+    fn arrange_console(
+        &self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        window_handle: Option<HWND>,
+    ) -> windows::core::Result<()>;
 
     /// Sets console text attribute.
     ///
@@ -533,12 +546,23 @@ impl Clone for MockWindowsApi {
 pub struct DefaultWindowsApi;
 
 impl WindowsApi for DefaultWindowsApi {
-    fn set_console_title(&self, title: &str) -> windows::core::Result<()> {
-        return unsafe { SetWindowTextW(GetConsoleWindow(), &HSTRING::from(title)) };
+    fn set_console_title(
+        &self,
+        title: &str,
+        window_handle: Option<HWND>,
+    ) -> windows::core::Result<()> {
+        return unsafe {
+            SetWindowTextW(
+                window_handle.unwrap_or(self.get_console_window()),
+                &HSTRING::from(title),
+            )
+        };
     }
 
-    fn get_console_title(&self, buffer: &mut [u16]) -> i32 {
-        return unsafe { GetWindowTextW(GetConsoleWindow(), buffer) };
+    fn get_console_title(&self, buffer: &mut [u16], window_handle: Option<HWND>) -> i32 {
+        return unsafe {
+            GetWindowTextW(window_handle.unwrap_or(self.get_console_window()), buffer)
+        };
     }
 
     fn get_os_version(&self) -> String {
@@ -551,8 +575,18 @@ impl WindowsApi for DefaultWindowsApi {
         y: i32,
         width: i32,
         height: i32,
+        window_handle: Option<HWND>,
     ) -> windows::core::Result<()> {
-        return unsafe { MoveWindow(GetConsoleWindow(), x, y, width, height, true) };
+        return unsafe {
+            MoveWindow(
+                window_handle.unwrap_or(self.get_console_window()),
+                x,
+                y,
+                width,
+                height,
+                true,
+            )
+        };
     }
 
     fn set_console_text_attribute(
@@ -1036,7 +1070,7 @@ pub fn utf16_buffer_to_string(buffer: &[u16]) -> String {
 /// ```
 pub fn get_console_title(api: &dyn WindowsApi) -> String {
     let mut title: [u16; MAX_WINDOW_TITLE_LENGTH] = [0; MAX_WINDOW_TITLE_LENGTH];
-    api.get_console_title(&mut title);
+    api.get_console_title(&mut title, None);
     return utf16_buffer_to_string(&title);
 }
 
@@ -1202,7 +1236,7 @@ pub fn arrange_console(api: &dyn WindowsApi, x: i32, y: i32, width: i32, height:
     // FIXME: sometimes a daemon or client console isn't being arrange correctly
     // when this simply retrying doesn't solve the issue. Maybe it has something to do
     // with DPI awareness => https://docs.rs/embed-manifest/latest/embed_manifest/
-    api.arrange_console(x, y, width, height).unwrap();
+    api.arrange_console(x, y, width, height, None).unwrap();
 }
 
 /// Detects if the current windows installation is Windows 10 or not using the provided API.

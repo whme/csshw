@@ -586,26 +586,6 @@ mod default_windows_api_tests {
         }
     }
 
-    mod console_title_test {
-        use crate::utils::windows::{get_console_title, DefaultWindowsApi, WindowsApi};
-
-        /// Tests setting and getting console title.
-        /// Validates that the console title is correctly set and retrieved.
-        #[test]
-        fn test_set_and_get_console_title() {
-            let windows_api = DefaultWindowsApi;
-            let test_title = "Test Console Title";
-
-            windows_api
-                .set_console_title(test_title)
-                .expect("Failed to set console title");
-
-            let retrieved_title = get_console_title(&windows_api);
-
-            assert_eq!(retrieved_title, test_title);
-        }
-    }
-
     mod get_os_version_test {
         use crate::utils::windows::{DefaultWindowsApi, WindowsApi};
 
@@ -692,6 +672,30 @@ mod default_windows_api_tests {
                 .expect("Failed to create process");
             let hwnd = windows_api.get_window_handle_for_process(process_info.dwProcessId);
             return (hwnd, TestProcessGuard { process_info });
+        }
+
+        mod console_title_test {
+            use crate::utils::windows::{
+                get_console_title,
+                test_mod::default_windows_api_tests::window_handle_tests::get_test_window_handle,
+                DefaultWindowsApi, WindowsApi,
+            };
+
+            /// Tests setting and getting console title.
+            /// Validates that the console title is correctly set and retrieved.
+            #[test]
+            fn test_set_and_get_console_title() {
+                let windows_api = DefaultWindowsApi;
+                let (handle, _guard) = get_test_window_handle(&windows_api);
+                let test_title = "Test Console Title";
+
+                windows_api
+                    .set_console_title(test_title, Some(handle))
+                    .expect("Failed to set console title");
+
+                let set_title = get_console_title(&windows_api);
+                assert_eq!(set_title, test_title);
+            }
         }
 
         /// Tests getting console window handle.
