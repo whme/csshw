@@ -21,10 +21,7 @@ use crate::{
     spawn_console_process,
     utils::{
         constants::{PIPE_NAME, PKG_NAME},
-        windows::{
-            arrange_console, get_console_input_buffer, read_keyboard_input,
-            set_console_border_color,
-        },
+        windows::{get_console_input_buffer, read_keyboard_input, set_console_border_color},
     },
     WindowsSettingsDefaultTerminalApplicationGuard,
 };
@@ -158,13 +155,13 @@ impl<'a> Daemon<'a> {
     /// is moved to the foreground and receives focus.
     async fn launch<W: WindowsApi + Clone + 'static>(mut self, windows_api: &W) {
         windows_api
-            .set_console_title(format!("{PKG_NAME} daemon").as_str())
+            .set_console_title(format!("{PKG_NAME} daemon").as_str(), None)
             .unwrap();
         set_console_color(
             windows_api,
             CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color),
         );
-        set_console_border_color(windows_api, COLORREF(0x000000FF));
+        set_console_border_color(windows_api, COLORREF(0x000000FF), None);
 
         toggle_processed_input_mode(windows_api); // Disable processed input mode
 
@@ -598,7 +595,9 @@ impl<'a> Daemon<'a> {
             self.config.height,
             workspace_area,
         );
-        arrange_console(windows_api, x, y, width, height);
+        windows_api
+            .arrange_console(x, y, width, height, None)
+            .unwrap();
     }
 }
 
