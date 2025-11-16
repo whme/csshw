@@ -1210,35 +1210,6 @@ pub fn read_keyboard_input(api: &dyn WindowsApi) -> INPUT_RECORD_0 {
     }
 }
 
-/// Changes size and position of the current console window using the provided API.
-///
-/// # Arguments
-///
-/// * `api` - The Windows API implementation to use.
-/// * `x`       - The x coordinate to move the window to.
-///               From the top left corner of the screen.
-/// * `y`       - The y coordinate to move the window to.
-///               From the top left corner of the screen.
-/// * `width`   - The width in pixels to resize the window to.
-///               In logical scaling.
-/// * `height`  - The height in pixels to resize the window to.
-///               In logical scaling.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::{arrange_console, DefaultWindowsApi};
-///
-/// let api = DefaultWindowsApi;
-/// arrange_console(&api, 100, 100, 800, 600);
-/// ```
-pub fn arrange_console(api: &dyn WindowsApi, x: i32, y: i32, width: i32, height: i32) {
-    // FIXME: sometimes a daemon or client console isn't being arrange correctly
-    // when this simply retrying doesn't solve the issue. Maybe it has something to do
-    // with DPI awareness => https://docs.rs/embed-manifest/latest/embed_manifest/
-    api.arrange_console(x, y, width, height, None).unwrap();
-}
-
 /// Detects if the current windows installation is Windows 10 or not using the provided API.
 ///
 /// Uses the os version, Windows 10 is < `10._.22000`. Windows 11 started with build 22000.

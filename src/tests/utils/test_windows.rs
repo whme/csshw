@@ -636,7 +636,7 @@ mod default_windows_api_tests {
             UI::WindowsAndMessaging::GetWindowThreadProcessId,
         };
 
-        use crate::utils::windows::{arrange_console, DefaultWindowsApi, WindowsApi};
+        use crate::utils::windows::{DefaultWindowsApi, WindowsApi};
 
         struct TestProcessGuard {
             process_info: windows::Win32::System::Threading::PROCESS_INFORMATION,
@@ -714,6 +714,7 @@ mod default_windows_api_tests {
         #[test]
         fn test_arrange_console() {
             let windows_api = DefaultWindowsApi;
+            let (handle, _guard) = get_test_window_handle(&windows_api);
 
             let original_placement = windows_api
                 .get_window_placement(windows_api.get_console_window())
@@ -724,7 +725,9 @@ mod default_windows_api_tests {
                 - original_placement.rcNormalPosition.left;
             let height = original_placement.rcNormalPosition.bottom
                 - original_placement.rcNormalPosition.top;
-            arrange_console(&windows_api, x, y, width, height);
+            windows_api
+                .arrange_console(x, y, width, height, Some(handle))
+                .unwrap();
             let arranged_placement = windows_api
                 .get_window_placement(windows_api.get_console_window())
                 .expect("Failed to get window placement after arrange");

@@ -21,10 +21,7 @@ use crate::{
     spawn_console_process,
     utils::{
         constants::{PIPE_NAME, PKG_NAME},
-        windows::{
-            arrange_console, get_console_input_buffer, read_keyboard_input,
-            set_console_border_color,
-        },
+        windows::{get_console_input_buffer, read_keyboard_input, set_console_border_color},
     },
     WindowsSettingsDefaultTerminalApplicationGuard,
 };
@@ -598,7 +595,9 @@ impl<'a> Daemon<'a> {
             self.config.height,
             workspace_area,
         );
-        arrange_console(windows_api, x, y, width, height);
+        windows_api
+            .arrange_console(x, y, width, height, None)
+            .unwrap();
     }
 }
 
