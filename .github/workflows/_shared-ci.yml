@@ -64,6 +64,7 @@ jobs:
       run: cargo lint
 
   tests:
+    timeout-minutes: 30
     runs-on: *runner-version
     needs: build
     steps:
@@ -104,6 +105,7 @@ jobs:
         retention-days: 90
 
   tests-docs:
+    timeout-minutes: 15
     runs-on: *runner-version
     needs: build
     steps:
