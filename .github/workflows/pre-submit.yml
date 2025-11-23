@@ -88,8 +88,39 @@ jobs:
           # Fail if the overall coverage percentage decreases (more forgiving approach)
           coverage-rate-reduction-failure: false
 
+  diff-cover:
+    needs: ci
+    if: always() && needs.ci.result == 'success'
+    runs-on: *runner
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download Coverage XML Data
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-xml-data
+          path: coverage-data/
+
+      - name: Run diff-cover
+        id: diff-cover
+        run: |
+          diff-cover coverage-data/coverage.xml --format markdown:diff-cover.md
+          echo "report<<EOF" >> "$GITHUB_OUTPUT"
+          cat diff-cover.md >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Update PR comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: diff-cover
+          message: |
+            🤖 **diff-cover report**
+
+            ${{ steps.diff-cover.outputs.report }}
+
+
   ci-summary:
-    needs: [detect-changes, ci, coverage-report]
+    needs: [detect-changes, ci, coverage-report, diff-cover]
     if: always()
     runs-on: *runner
     steps:
