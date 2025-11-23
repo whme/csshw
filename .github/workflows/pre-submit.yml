@@ -144,7 +144,7 @@ jobs:
         with:
           header: diff-cover
           message: |
-            🤖 **diff-cover report**
+            🤖 **Diff Coverage Check**
 
             ${{ steps.diff-cover.outputs.result == 'success' && '✅ **Success!**' || '❌ **Failed!**' }}
 
