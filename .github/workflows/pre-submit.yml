@@ -97,7 +97,7 @@ jobs:
 
       - name: Fetch origin/main (shallow)
         run: |
-          git fetch --depth=1 origin main:origin/main
+          git fetch --depth=1 origin main
 
       - uses: actions/setup-python@v6
         with:
