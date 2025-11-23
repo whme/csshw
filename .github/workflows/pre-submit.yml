@@ -128,19 +128,30 @@ jobs:
       - name: Run diff-cover
         id: diff-cover
         run: |
-          diff-cover coverage-data/coverage.xml --format markdown:diff-cover.md
+          if diff-cover coverage-data/coverage.xml --fail-under=80 --format markdown:diff-cover.md; then
+            echo "result=success" >> $GITHUB_OUTPUT
+          else
+            echo "result=failed" >> $GITHUB_OUTPUT
+          fi
+
           echo "report<<EOF" >> "$GITHUB_OUTPUT"
           cat diff-cover.md >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Update PR comment
+        if: always()
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: diff-cover
           message: |
             🤖 **diff-cover report**
 
+            ${{ steps.diff-cover.outputs.result == 'success' && '✅ **Success!**' || '❌ **Failed!**' }}
+
             ${{ steps.diff-cover.outputs.report }}
+
+      - if: steps.check.outputs.result == 'failed'
+        run: exit 1
 
   ci-summary:
     needs: [detect-changes, ci, coverage-report, diff-cover]
