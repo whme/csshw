@@ -95,6 +95,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Fetch origin/main (shallow)
+        run: |
+          git fetch --depth=1 origin main:origin/main
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.x"
