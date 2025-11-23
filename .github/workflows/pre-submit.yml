@@ -95,6 +95,28 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Read diff-cover version
+        id: diffcover
+        run: |
+          echo "version=$(cat diff-cover.version)" >> $GITHUB_OUTPUT
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        id: pip-cache
+        with:
+          path: ~/.cache/pip
+          key: |
+            pip-diff-cover-${{ runner.os }}-v1-${{ steps.diffcover.outputs.version }}
+          restore-keys: |
+            pip-diff-cover-${{ runner.os }}-v1-
+
+      - name: Install diff-cover
+        run: pip install diff-cover==${{ steps.diffcover.outputs.version }}
+
       - name: Download Coverage XML Data
         uses: actions/download-artifact@v4
         with:
@@ -117,7 +139,6 @@ jobs:
             🤖 **diff-cover report**
 
             ${{ steps.diff-cover.outputs.report }}
-
 
   ci-summary:
     needs: [detect-changes, ci, coverage-report, diff-cover]
