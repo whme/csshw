@@ -88,8 +88,73 @@ jobs:
           # Fail if the overall coverage percentage decreases (more forgiving approach)
           coverage-rate-reduction-failure: false
 
+  diff-cover:
+    needs: ci
+    if: always() && needs.ci.result == 'success'
+    runs-on: *runner
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Read diff-cover version
+        id: diffcover
+        run: |
+          echo "version=$(cat diff-cover.version)" >> $GITHUB_OUTPUT
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        id: pip-cache
+        with:
+          path: ~/.cache/pip
+          key: |
+            pip-diff-cover-${{ runner.os }}-v1-${{ steps.diffcover.outputs.version }}
+          restore-keys: |
+            pip-diff-cover-${{ runner.os }}-v1-
+
+      - name: Install diff-cover
+        run: pip install diff-cover==${{ steps.diffcover.outputs.version }}
+
+      - name: Download Coverage XML Data
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-xml-data
+          path: coverage-data/
+
+      - name: Run diff-cover
+        id: diff-cover
+        run: |
+          if diff-cover coverage-data/coverage.xml --fail-under=80 --format markdown:diff-cover.md; then
+            echo "result=success" >> $GITHUB_OUTPUT
+          else
+            echo "result=failed" >> $GITHUB_OUTPUT
+          fi
+
+          echo "report<<EOF" >> "$GITHUB_OUTPUT"
+          cat diff-cover.md >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Update PR comment
+        if: always()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: diff-cover
+          message: |
+            🤖 **Diff Coverage Check**
+
+            ${{ steps.diff-cover.outputs.result == 'success' && '✅ **Success!**' || '❌ **Failed!**' }}
+
+            ${{ steps.diff-cover.outputs.report }}
+
+      - if: steps.check.outputs.result == 'failed'
+        run: exit 1
+
   ci-summary:
-    needs: [detect-changes, ci, coverage-report]
+    needs: [detect-changes, ci, coverage-report, diff-cover]
     if: always()
     runs-on: *runner
     steps:
