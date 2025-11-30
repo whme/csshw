@@ -714,3 +714,65 @@ fn main() {
     info!("Check: https://github.com/whme/csshw/actions/workflows/release.yml");
 }
 '''
+
+
+############################################################
+# ░█▀▀░█▀█░█▀▀░▀█▀░█▀█░█░░░░░░░█▀█░█▀▄░█▀▀░█░█░▀█▀░█▀▀░█░█ #
+# ░▀▀█░█░█░█░░░░█░░█▀█░█░░░▄▄▄░█▀▀░█▀▄░█▀▀░▀▄▀░░█░░█▀▀░█▄█ #
+# ░▀▀▀░▀▀▀░▀▀▀░▀▀▀░▀░▀░▀▀▀░░░░░▀░░░▀░▀░▀▀▀░░▀░░▀▀▀░▀▀▀░▀░▀ #
+############################################################
+
+[tasks.generate_social_preview]
+description = "Generate the social-preview image based on the template and the current number of GitHub stars"
+script_runner = "@rust"
+script = '''
+//! ```cargo
+//! [dependencies]
+//! image = "0.25"
+//! imageproc = "0.25"
+//! ab_glyph = "0.2"
+//! ureq = "2"
+//! serde_json = "1"
+//! ```
+
+use image::{open, Rgba};
+use imageproc::drawing::draw_text_mut;
+use ab_glyph::{FontArc, PxScale};
+use std::fs;
+
+fn main() {
+    let url = format!("https://api.github.com/repos/whme/csshw");
+    let body = ureq::get(&url)
+        .set("User-Agent", "csshw-social-preview-cargo-make-task")
+        .call()
+        .unwrap()
+        .into_string()
+        .unwrap();
+    let response: serde_json::Value =
+        serde_json::from_str(&body).expect("invalid JSON from GitHub API");
+    let stars = response["stargazers_count"]
+        .as_u64()
+        .unwrap_or(0)
+        .to_string();
+
+
+    let mut img = open("res/social-preview-template.png")
+        .unwrap()
+        .to_rgba8();
+
+    let font_data = fs::read("res/dejavu-sans-mono.book.ttf").unwrap();
+    let font = FontArc::try_from_vec(font_data).expect("invalid font");
+
+    draw_text_mut(
+        &mut img,
+        Rgba([255, 255, 255, 255]),
+        960,
+        153,
+        PxScale::from(25.0),
+        &font,
+        &stars,
+    );
+
+    img.save("res/social-preview.png").unwrap();
+}
+'''
