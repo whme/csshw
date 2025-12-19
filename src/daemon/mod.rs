@@ -43,7 +43,9 @@ use windows::Win32::System::Console::{
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     VIRTUAL_KEY, VK_A, VK_C, VK_E, VK_ESCAPE, VK_H, VK_R, VK_T,
 };
-use windows::Win32::UI::WindowsAndMessaging::{SW_RESTORE, SW_SHOWMINIMIZED};
+use windows::Win32::UI::WindowsAndMessaging::{
+    HWND_NOTOPMOST, HWND_TOPMOST, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SW_RESTORE, SW_SHOWMINIMIZED,
+};
 use windows::Win32::{
     Foundation::{COLORREF, HANDLE, HWND, STILL_ACTIVE},
     System::{Console::ENABLE_PROCESSED_INPUT, Threading::PROCESS_QUERY_INFORMATION},
@@ -168,11 +170,6 @@ impl<'a> Daemon<'a> {
 
         toggle_processed_input_mode(windows_api); // Disable processed input mode
 
-        // Initialize the COM library so we can use UI automation
-        windows_api
-            .initialize_com_library(windows::Win32::System::Com::COINIT_MULTITHREADED)
-            .unwrap();
-
         let workspace_area = workspace::get_workspace_area(windows_api, self.config.height);
 
         self.arrange_daemon_console(windows_api, &workspace_area);
@@ -200,7 +197,6 @@ impl<'a> Daemon<'a> {
         // Now that all clients started, focus the daemon console again.
         let daemon_console = windows_api.get_console_window();
         let _ = windows_api.set_foreground_window(daemon_console);
-        let _ = windows_api.focus_window_with_automation(daemon_console);
 
         self.print_instructions(windows_api);
         self.run(windows_api, &mut clients, &workspace_area).await;
@@ -443,7 +439,6 @@ impl<'a> Daemon<'a> {
                     // Focus the daemon console again.
                     let daemon_window = windows_api.get_console_window();
                     let _ = windows_api.set_foreground_window(daemon_window);
-                    let _ = windows_api.focus_window_with_automation(daemon_window);
                     self.quit_control_mode(windows_api);
                 }
                 (VK_H, 0) => {
@@ -1137,8 +1132,22 @@ fn defer_windows<W: WindowsApi>(windows_api: &W, clients: &[Client], daemon_hand
         if placement.showCmd == SW_SHOWMINIMIZED.0.try_into().unwrap() {
             let _ = windows_api.show_window(client.window_handle, SW_RESTORE);
         }
-        // Then bring it to front using UI automation
-        let _ = windows_api.focus_window_with_automation(client.window_handle);
+        // Make the window a top most window, putting it at the top, without activating it
+        let _ = windows_api.set_window_pos(
+            client.window_handle,
+            HWND_TOPMOST,
+            None,
+            SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE,
+        );
+
+        // Now that the window is at the top, turn it back into a non-top window
+        // (otherwise, other windows cannot go on top of it it again)
+        _ = windows_api.set_window_pos(
+            client.window_handle,
+            HWND_NOTOPMOST,
+            None,
+            SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE,
+        );
     }
 }
 
