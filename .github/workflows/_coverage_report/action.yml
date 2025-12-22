@@ -53,7 +53,7 @@ runs:
 
         # Generate markdown output for summary
         pycobertura show --format markdown ${{ inputs.path }} --output .coverage-output
-        pycobertura show --format github-action ${{ inputs.path }}
+        pycobertura show --format github-annotation ${{ inputs.path }}
 
         # Extract total coverage percentage from XML directly
         total_coverage=$(python3 -c '
