@@ -7,7 +7,7 @@
 name: News Fragment Check
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, labeled, unlabeled]
     branches: [main]
 
