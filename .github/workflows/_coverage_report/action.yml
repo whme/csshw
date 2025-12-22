@@ -42,6 +42,7 @@ runs:
 
     - name: Install pycobertura
       run: pip install pycobertura==3.0.0
+      shell: bash
 
     - name: Generate text report
       id: create-output

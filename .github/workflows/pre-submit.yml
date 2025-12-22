@@ -55,7 +55,7 @@ jobs:
 
       - name: Generate Code Coverage Summary
         id: coverage
-        uses: ./.github/workflows/_coverage-report.yml
+        uses: ./.github/workflows/_coverage_report
         with:
           path: coverage-data/coverage.xml
 
