@@ -11,5 +11,4 @@ pub const PIPE_NAME: &str = concat!(r"\\.\pipe\", env!("CARGO_PKG_NAME"), "-name
 /// Only used as fixed buffer size when reading the current window title
 /// to check if we need to reset it.
 /// If the actual window title exceeds this length it just be cut off at that point.
-/// Dummy.
 pub const MAX_WINDOW_TITLE_LENGTH: usize = 2048;
