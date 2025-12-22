@@ -47,17 +47,26 @@ runs:
     - name: Generate text report
       id: create-output
       run: |
+        echo mkdir
         mkdir -p coverage-action
+        echo cp
         cp ${{ inputs.path }} coverage-action/
+        echo pycobertura
         pycobertura show --format markdown ${{ inputs.path }} --output .coverage-output
 
+        echo grep
         # Extract total coverage percentage from the output file
         total_coverage=$(grep -E "^TOTAL" .coverage-output | awk '{print $NF}' | tr -d '%')
+        echo echo
         echo "percentage=$total_coverage" >> $GITHUB_OUTPUT
 
         # Output summary
+        echo EOF
         EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+        echo echo
         echo "summary<<$EOF" >> $GITHUB_OUTPUT
+        echo cat
         echo "$(cat .coverage-output)" >> $GITHUB_OUTPUT
+        echo EOF
         echo "$EOF" >> $GITHUB_OUTPUT
       shell: bash
