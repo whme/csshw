@@ -66,6 +66,7 @@ runs:
         echo "percentage=$total_coverage" >> $GITHUB_OUTPUT
 
         # Output summary
-        echo "summary<<EOF" >> $GITHUB_OUTPUT
+        EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+        echo "summary<<$EOF" >> $GITHUB_OUTPUT
         cat .coverage-output >> $GITHUB_OUTPUT
-        echo "EOF" >> $GITHUB_OUTPUT
+        echo "$EOF" >> $GITHUB_OUTPUT
