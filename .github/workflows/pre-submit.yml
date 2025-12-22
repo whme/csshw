@@ -68,6 +68,8 @@ jobs:
 
           # The coverage action outputs the report in the step outputs
           cat > comment/body.txt << 'EOF'
+          🤖 **Coverage Check**
+          Total Coverage: ${{ steps.coverage.outputs.percentage }}%
           ${{ steps.coverage.outputs.summary }}
           EOF
 
