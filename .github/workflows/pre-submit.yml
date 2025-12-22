@@ -134,23 +134,37 @@ jobs:
             echo "result=failed" >> $GITHUB_OUTPUT
           fi
 
-          echo "report<<EOF" >> "$GITHUB_OUTPUT"
-          cat diff-cover.md >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-
-      - name: Update PR comment
+      - name: Prepare comment content
         if: always()
-        uses: marocchino/sticky-pull-request-comment@v2
+        run: |
+          mkdir -p comment
+          echo "${{ github.event.number }}" > comment/pr_number.txt
+          echo "diff-cover" > comment/header.txt
+
+          # Write the header
+          echo "🤖 **Diff Coverage Check**" > comment/body.txt
+          echo "" >> comment/body.txt
+
+          # Add status
+          if [[ "${{ steps.diff-cover.outputs.result }}" == "success" ]]; then
+            echo "✅ **Success!**" >> comment/body.txt
+          else
+            echo "❌ **Failed!**" >> comment/body.txt
+          fi
+
+          echo "" >> comment/body.txt
+
+          # Add the diff-cover report
+          cat diff-cover.md >> comment/body.txt
+
+      - name: Upload comment artifact
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          header: diff-cover
-          message: |
-            🤖 **Diff Coverage Check**
+          name: comment
+          path: comment/
 
-            ${{ steps.diff-cover.outputs.result == 'success' && '✅ **Success!**' || '❌ **Failed!**' }}
-
-            ${{ steps.diff-cover.outputs.report }}
-
-      - if: steps.check.outputs.result == 'failed'
+      - if: steps.diff-cover.outputs.result == 'failed'
         run: exit 1
 
   ci-summary:
