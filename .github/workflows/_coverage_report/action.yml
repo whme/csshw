@@ -50,7 +50,7 @@ runs:
         mkdir -p coverage-action
         cp ${{ inputs.path }} coverage-action/
         pycobertura show --format markdown ${{ inputs.path }} --output .coverage-output
-        pycobertura show --format github-annotations ${{ inputs.path }}
+        pycobertura show --format github-annotation ${{ inputs.path }}
 
         # Extract total coverage percentage from the output file
         total_coverage=$(grep -E "^TOTAL" .coverage-output | awk '{print $NF}' | tr -d '%')
