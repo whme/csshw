@@ -46,24 +46,26 @@ runs:
 
     - name: Generate text report
       id: create-output
+      shell: bash
       run: |
-        echo mkdir
         mkdir -p coverage-action
-        echo cp
         cp ${{ inputs.path }} coverage-action/
-        echo pycobertura
+
+        # Generate markdown output for summary
         pycobertura show --format markdown ${{ inputs.path }} --output .coverage-output
 
-        echo grep
-        # Extract total coverage percentage from the output file
-        total_coverage=$(grep -E "^TOTAL" .coverage-output | awk '{print $NF}' | tr -d '%')
-        echo echo
+        # Extract total coverage percentage from XML directly
+        total_coverage=$(python3 -c '
+        import xml.etree.ElementTree as ET
+        tree = ET.parse("${{ inputs.path }}")
+        root = tree.getroot()
+        line_rate = float(root.attrib.get("line-rate", 0))
+        percentage = line_rate * 100
+        print(f"{percentage:.2f}")
+        ')
         echo "percentage=$total_coverage" >> $GITHUB_OUTPUT
 
         # Output summary
-        echo echo
         echo "summary<<EOF" >> $GITHUB_OUTPUT
-        echo cat
-        echo "$(cat .coverage-output)" >> $GITHUB_OUTPUT
+        cat .coverage-output >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
-      shell: bash
