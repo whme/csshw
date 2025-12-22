@@ -53,6 +53,7 @@ runs:
 
         # Generate markdown output for summary
         pycobertura show --format markdown ${{ inputs.path }} --output .coverage-output
+        pycobertura show --format github-action ${{ inputs.path }}
 
         # Extract total coverage percentage from XML directly
         total_coverage=$(python3 -c '
@@ -68,5 +69,5 @@ runs:
         # Output summary
         EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
         echo "summary<<$EOF" >> $GITHUB_OUTPUT
-        echo "$(cat .coverage-output.final)" >> $GITHUB_OUTPUT
+        echo "$(cat .coverage-output)" >> $GITHUB_OUTPUT
         echo "$EOF" >> $GITHUB_OUTPUT
