@@ -42,7 +42,7 @@ jobs:
           # Publish the rendered output as a PR comment
           publish: false
           # Create a coverage diff report.
-          diff: true
+          diff: false
           # Branch to diff against.
           # Compare the current coverage to the coverage
           # determined on this branch.
