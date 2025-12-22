@@ -54,6 +54,7 @@ jobs:
           path: coverage-data/
 
       - name: Generate Code Coverage Summary
+        id: coverage
         uses: insightsengineering/coverage-action@v3
         with:
           # Path to the Cobertura XML report.
@@ -66,7 +67,7 @@ jobs:
           # requirements are not satisfied.
           fail: false
           # Publish the rendered output as a PR comment
-          publish: true
+          publish: false
           # Create a coverage diff report.
           diff: true
           # Branch to diff against.
@@ -87,6 +88,25 @@ jobs:
           new-uncovered-statements-failure: false
           # Fail if the overall coverage percentage decreases (more forgiving approach)
           coverage-rate-reduction-failure: false
+
+      - name: Prepare comment content
+        if: always()
+        run: |
+          mkdir -p comment
+          echo "${{ github.event.number }}" > comment/pr_number.txt
+          echo "coverage-report" > comment/header.txt
+
+          # The coverage action outputs the report in the step outputs
+          cat > comment/body.txt << 'EOF'
+          ${{ steps.coverage.outputs.report }}
+          EOF
+
+      - name: Upload comment artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-comment
+          path: comment/
 
   diff-cover:
     needs: ci
@@ -161,7 +181,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: comment
+          name: diff-cover-comment
           path: comment/
 
       - if: steps.diff-cover.outputs.result == 'failed'
