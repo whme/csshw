@@ -13,7 +13,7 @@ name: Post PR Comment
 
 on:
   workflow_run:
-    workflows: ["News Fragment Check"]
+    workflows: ["News Fragment Check", "Pre-Submit CI"]
     types: [completed]
 
 permissions:
