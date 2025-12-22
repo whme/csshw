@@ -1,0 +1,62 @@
+#
+#   csshw coverage-report
+#
+# Based on https://github.com/insightsengineering/coverage-action
+# but simplified to only generate the coverage report without
+# attempting to create diffs or pushing things.
+
+name: Code Coverage Report Action
+description: Action that converts a Cobertura XML report into a markdown report.
+
+inputs:
+  path:
+    description: Path to the Cobertura coverage XML report.
+    required: false
+    default: coverage.xml
+
+outputs:
+  summary:
+    description: Summary of coverage report
+    value: ${{ steps.create-output.outputs.summary }}
+  percentage:
+    description: Total coverage percentage as a number
+    value: ${{ steps.create-output.outputs.percentage }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.x"
+
+    - name: Cache pip packages
+      uses: actions/cache@v4
+      id: pip-cache
+      with:
+        path: ~/.cache/pip
+        key: |
+          pip-diff-cover-${{ runner.os }}-v1-3.0.0
+        restore-keys: |
+          pip-diff-cover-${{ runner.os }}-v1-
+
+    - name: Install pycobertura
+      run: pip install pycobertura==3.0.0
+
+    - name: Generate text report
+      id: create-output
+      run: |
+        mkdir -p coverage-action
+        cp ${{ inputs.path }} coverage-action/
+        pycobertura show ${{ inputs.path }} --output .coverage-output
+
+        # Extract total coverage percentage from the output file
+        total_coverage=$(grep -E "^TOTAL" .coverage-output | awk '{print $NF}' | tr -d '%')
+        echo "percentage=$total_coverage" >> $GITHUB_OUTPUT
+
+        # Output summary
+        EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+        echo "summary<<$EOF" >> $GITHUB_OUTPUT
+        echo "$(cat .coverage-output)" >> $GITHUB_OUTPUT
+        echo "$EOF" >> $GITHUB_OUTPUT
+      shell: bash
