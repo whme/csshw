@@ -68,5 +68,5 @@ runs:
         # Output summary
         EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
         echo "summary<<$EOF" >> $GITHUB_OUTPUT
-        cat .coverage-output >> $GITHUB_OUTPUT
+        echo "$(cat .coverage-output.final)" >> $GITHUB_OUTPUT
         echo "$EOF" >> $GITHUB_OUTPUT
