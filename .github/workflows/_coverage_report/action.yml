@@ -36,12 +36,12 @@ runs:
       with:
         path: ~/.cache/pip
         key: |
-          pip-diff-cover-${{ runner.os }}-v1-3.0.0
+          pip-diff-cover-${{ runner.os }}-v1-4.1.0
         restore-keys: |
           pip-diff-cover-${{ runner.os }}-v1-
 
     - name: Install pycobertura
-      run: pip install pycobertura==3.0.0
+      run: pip install pycobertura==4.1.0
       shell: bash
 
     - name: Generate text report
