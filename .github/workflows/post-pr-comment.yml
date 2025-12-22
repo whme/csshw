@@ -1,0 +1,48 @@
+#
+#   Post PR Comment
+#
+# Generic workflow that posts comments to PRs from artifacts.
+# Runs after workflows that produce comment artifacts complete.
+#
+# Artifact structure expected:
+#   comment/body.txt - The comment body (markdown)
+#   comment/pr_number.txt - The PR number
+#   comment/header.txt - A unique header identifier for the comment
+
+name: Post PR Comment
+
+on:
+  workflow_run:
+    workflows: ["News Fragment Check"]
+    types: [completed]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  post-comment:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.event == 'pull_request'
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: comment
+          path: comment
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read comment data
+        id: comment
+        run: |
+          echo "pr_number=$(cat comment/pr_number.txt)" >> $GITHUB_OUTPUT
+          echo "header=$(cat comment/header.txt)" >> $GITHUB_OUTPUT
+          echo "Comment will be posted to PR #$pr_number with header: $header"
+
+      - name: Post comment
+        if: steps.comment.outputs.pr_number != ''
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          number: ${{ steps.comment.outputs.pr_number }}
+          header: ${{ steps.comment.outputs.header }}
+          path: comment/body.txt
