@@ -1079,12 +1079,12 @@ pub fn utf16_buffer_to_string(buffer: &[u16]) -> String {
 /// ```no_run
 /// use csshw_lib::utils::windows::{get_console_title, DefaultWindowsApi};
 ///
-/// let title = get_console_title(&DefaultWindowsApi);
+/// let title = get_console_title(&DefaultWindowsApi, None);
 /// println!("Console title: {}", title);
 /// ```
-pub fn get_console_title(api: &dyn WindowsApi) -> String {
+pub fn get_console_title(api: &dyn WindowsApi, window_handle: Option<HWND>) -> String {
     let mut title: [u16; MAX_WINDOW_TITLE_LENGTH] = [0; MAX_WINDOW_TITLE_LENGTH];
-    api.get_console_title(&mut title, None);
+    api.get_console_title(&mut title, window_handle);
     return utf16_buffer_to_string(&title);
 }
 

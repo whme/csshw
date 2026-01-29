@@ -702,7 +702,7 @@ mod default_windows_api_tests {
                     .set_console_title(test_title, Some(handle))
                     .expect("Failed to set console title");
 
-                let set_title = get_console_title(&windows_api);
+                let set_title = get_console_title(&windows_api, Some(handle));
                 assert_eq!(set_title, test_title);
             }
         }
