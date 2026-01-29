@@ -54,39 +54,41 @@ jobs:
           path: coverage-data/
 
       - name: Generate Code Coverage Summary
-        uses: insightsengineering/coverage-action@v3
+        id: coverage
+        uses: ./.github/workflows/_coverage_report
         with:
-          # Path to the Cobertura XML report.
           path: coverage-data/coverage.xml
-          # Minimum total coverage, if you want to the
-          # workflow to enforce it as a standard.
-          # This has no effect if the `fail` arg is set to `false`.
-          threshold: 80
-          # Fail the workflow if the minimum code coverage
-          # requirements are not satisfied.
-          fail: false
-          # Publish the rendered output as a PR comment
-          publish: true
-          # Create a coverage diff report.
-          diff: true
-          # Branch to diff against.
-          # Compare the current coverage to the coverage
-          # determined on this branch.
-          diff-branch: main
-          # This is where the coverage reports for the
-          # `diff-branch` are stored.
-          # Branch is created if it doesn't already exist'.
-          diff-storage: _xml_coverage_reports
-          # A custom title that can be added to the code
-          # coverage summary in the PR comment.
-          coverage-summary-title: "Code Coverage Summary"
-          # Failure modes for coverage regression detection:
-          # Fail if any changed file has more uncovered lines (pycobertura exit code 2)
-          uncovered-statements-increase-failure: false
-          # Fail if new uncovered statements are introduced despite overall improvement (pycobertura exit code 3)
-          new-uncovered-statements-failure: false
-          # Fail if the overall coverage percentage decreases (more forgiving approach)
-          coverage-rate-reduction-failure: false
+
+      - name: Prepare comment content
+        if: always()
+        run: |
+          mkdir -p comment
+          echo "${{ github.event.number }}" > comment/pr_number.txt
+          echo "coverage-report" > comment/header.txt
+
+          # The coverage action outputs the report in the step outputs
+          cat > comment/body.txt << 'EOF'
+          🤖 **Coverage Check**
+          Total Coverage: ${{ steps.coverage.outputs.percentage }}%
+          ${{ steps.coverage.outputs.summary }}
+          EOF
+
+      - name: Upload comment artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-comment
+          path: comment/
+
+      - name: Check coverage threshold
+        if: always()
+        run: |
+          echo Coverage is currently not being enforced.
+          exit 0
+
+          if (( $(bc -l <<< "${{ steps.coverage.outputs.percentage }} < 80") )); then
+            exit 1
+          fi
 
   diff-cover:
     needs: ci
@@ -134,23 +136,37 @@ jobs:
             echo "result=failed" >> $GITHUB_OUTPUT
           fi
 
-          echo "report<<EOF" >> "$GITHUB_OUTPUT"
-          cat diff-cover.md >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-
-      - name: Update PR comment
+      - name: Prepare comment content
         if: always()
-        uses: marocchino/sticky-pull-request-comment@v2
+        run: |
+          mkdir -p comment
+          echo "${{ github.event.number }}" > comment/pr_number.txt
+          echo "diff-cover" > comment/header.txt
+
+          # Write the header
+          echo "🤖 **Diff Coverage Check**" > comment/body.txt
+          echo "" >> comment/body.txt
+
+          # Add status
+          if [[ "${{ steps.diff-cover.outputs.result }}" == "success" ]]; then
+            echo "✅ **Success!**" >> comment/body.txt
+          else
+            echo "❌ **Failed!**" >> comment/body.txt
+          fi
+
+          echo "" >> comment/body.txt
+
+          # Add the diff-cover report
+          cat diff-cover.md >> comment/body.txt
+
+      - name: Upload comment artifact
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          header: diff-cover
-          message: |
-            🤖 **Diff Coverage Check**
+          name: diff-cover-comment
+          path: comment/
 
-            ${{ steps.diff-cover.outputs.result == 'success' && '✅ **Success!**' || '❌ **Failed!**' }}
-
-            ${{ steps.diff-cover.outputs.report }}
-
-      - if: steps.check.outputs.result == 'failed'
+      - if: steps.diff-cover.outputs.result == 'failed'
         run: exit 1
 
   ci-summary:

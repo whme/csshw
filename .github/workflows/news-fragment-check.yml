@@ -20,7 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -57,34 +56,44 @@ jobs:
           echo "❌ No news fragment found and no acknowledgment label present"
           echo "status=failed" >> $GITHUB_OUTPUT
 
-      - name: Update PR comment - Success
+      - name: Prepare comment content
+        run: |
+          mkdir -p comment
+          echo "${{ github.event.number }}" > comment/pr_number.txt
+          echo "news-fragment-check" > comment/header.txt
+
+      - name: Prepare comment content - Success
         if: steps.check.outputs.status == 'success'
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          header: news-fragment-check
-          message: |
-            🤖 **News Fragment Check**
+        run: |
+          cat > comment/body.txt << 'EOF'
+          🤖 **News Fragment Check**
 
-            ✅ **Success!** This PR meets the news fragment requirements.
+          ✅ **Success!** This PR meets the news fragment requirements.
+          EOF
 
-      - name: Update PR comment - Missing news fragment
+      - name: Prepare comment content - Missing news fragment
         if: steps.check.outputs.status == 'failed'
-        uses: marocchino/sticky-pull-request-comment@v2
+        run: |
+          cat > comment/body.txt << 'EOF'
+          🤖 **News Fragment Check**
+
+          ❌ This PR appears to be missing a news fragment.
+
+          **If this change affects users** (new features, bug fixes, security fixes):
+          → Add a news fragment in the `news/` directory
+          → Example: `news/123.feature.md` or `news/~fix-issue.bugfix.md`
+
+          **If this change doesn't need a news fragment** (docs, CI, internal changes):
+          → Add the ![](https://img.shields.io/github/labels/${{ github.repository }}/${{ env.OVERRIDE_LABEL }}) label to this PR
+
+          For more information about news fragments, see: https://github.com/nekitdev/changelogging
+          EOF
+
+      - name: Upload comment artifact
+        uses: actions/upload-artifact@v4
         with:
-          header: news-fragment-check
-          message: |
-            🤖 **News Fragment Check**
-
-            ❌ This PR appears to be missing a news fragment.
-
-            **If this change affects users** (new features, bug fixes, security fixes):
-            → Add a news fragment in the `news/` directory
-            → Example: `news/123.feature.md` or `news/~fix-issue.bugfix.md`
-
-            **If this change doesn't need a news fragment** (docs, CI, internal changes):
-            → Add the ![](https://img.shields.io/github/labels/${{ github.repository }}/${{ env.OVERRIDE_LABEL }}) label to this PR
-
-            For more information about news fragments, see: https://github.com/nekitdev/changelogging
+          name: comment
+          path: comment/
 
       - if: steps.check.outputs.status == 'failed'
         run: exit 1
