@@ -579,9 +579,6 @@ mod logger_test {
 /// Test module for GUI launch detection functionality.
 mod gui_launch_detection_test {
     use super::*;
-    use windows::Win32::Foundation::HANDLE;
-    use windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO;
-
     /// Tests is_launched_from_gui with cursor at origin (GUI launch).
     /// Validates detection of GUI launch when console cursor is at (0,0).
     #[test]
@@ -589,18 +586,10 @@ mod gui_launch_detection_test {
         let mut mock_windows_api = MockWindowsApi::new();
 
         mock_windows_api
-            .expect_get_stdout_handle()
+            .expect_get_console_attached_process_count()
             .times(1)
-            .returning(|| return Ok(HANDLE(0x1234 as *mut std::ffi::c_void)));
-
-        mock_windows_api
-            .expect_get_console_screen_buffer_info_with_handle()
-            .times(1)
-            .returning(|_| {
-                let mut csbi = CONSOLE_SCREEN_BUFFER_INFO::default();
-                csbi.dwCursorPosition.X = 0;
-                csbi.dwCursorPosition.Y = 0;
-                return Ok(csbi);
+            .returning(|| {
+                return 1;
             });
 
         let result = is_launched_from_gui(&mock_windows_api);
@@ -614,54 +603,11 @@ mod gui_launch_detection_test {
         let mut mock_windows_api = MockWindowsApi::new();
 
         mock_windows_api
-            .expect_get_stdout_handle()
+            .expect_get_console_attached_process_count()
             .times(1)
-            .returning(|| return Ok(HANDLE(0x1234 as *mut std::ffi::c_void)));
-
-        mock_windows_api
-            .expect_get_console_screen_buffer_info_with_handle()
-            .times(1)
-            .returning(|_| {
-                let mut csbi = CONSOLE_SCREEN_BUFFER_INFO::default();
-                csbi.dwCursorPosition.X = 5;
-                csbi.dwCursorPosition.Y = 2;
-                return Ok(csbi);
+            .returning(|| {
+                return 2;
             });
-
-        let result = is_launched_from_gui(&mock_windows_api);
-        assert!(!result);
-    }
-
-    /// Tests is_launched_from_gui with GetStdHandle failure.
-    /// Validates proper error handling when GetStdHandle fails.
-    #[test]
-    fn test_is_launched_from_gui_get_std_handle_failure() {
-        let mut mock_windows_api = MockWindowsApi::new();
-
-        mock_windows_api
-            .expect_get_stdout_handle()
-            .times(1)
-            .returning(|| return Err(windows::core::Error::from_win32()));
-
-        let result = is_launched_from_gui(&mock_windows_api);
-        assert!(!result);
-    }
-
-    /// Tests is_launched_from_gui with GetConsoleScreenBufferInfo failure.
-    /// Validates proper error handling when GetConsoleScreenBufferInfo fails.
-    #[test]
-    fn test_is_launched_from_gui_get_console_info_failure() {
-        let mut mock_windows_api = MockWindowsApi::new();
-
-        mock_windows_api
-            .expect_get_stdout_handle()
-            .times(1)
-            .returning(|| return Ok(HANDLE(0x1234 as *mut std::ffi::c_void)));
-
-        mock_windows_api
-            .expect_get_console_screen_buffer_info_with_handle()
-            .times(1)
-            .returning(|_| return Err(windows::core::Error::from_win32()));
 
         let result = is_launched_from_gui(&mock_windows_api);
         assert!(!result);

@@ -20,10 +20,10 @@ use windows::Win32::Foundation::{BOOL, COLORREF, FALSE, HANDLE, HWND, LPARAM, TR
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 use windows::Win32::System::Console::{
-    FillConsoleOutputAttribute, GetConsoleScreenBufferInfo, GetConsoleWindow, GetStdHandle,
-    ReadConsoleInputW, SetConsoleTextAttribute, CONSOLE_CHARACTER_ATTRIBUTES,
-    CONSOLE_SCREEN_BUFFER_INFO, COORD, INPUT_RECORD, INPUT_RECORD_0, STD_HANDLE, STD_INPUT_HANDLE,
-    STD_OUTPUT_HANDLE,
+    FillConsoleOutputAttribute, GetConsoleProcessList, GetConsoleScreenBufferInfo,
+    GetConsoleWindow, GetStdHandle, ReadConsoleInputW, SetConsoleTextAttribute,
+    CONSOLE_CHARACTER_ATTRIBUTES, CONSOLE_SCREEN_BUFFER_INFO, COORD, INPUT_RECORD, INPUT_RECORD_0,
+    STD_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
 };
 use windows::Win32::System::Console::{GetConsoleMode, SetConsoleMode, CONSOLE_MODE};
 use windows::Win32::System::Console::{
@@ -257,10 +257,7 @@ pub trait WindowsApi: Send + Sync {
     /// # Returns
     ///
     /// Console screen buffer information or error
-    fn get_console_screen_buffer_info_with_handle(
-        &self,
-        handle: HANDLE,
-    ) -> windows::core::Result<CONSOLE_SCREEN_BUFFER_INFO>;
+    fn get_console_attached_process_count(&self) -> u32;
 
     /// Create a new process
     ///
@@ -664,13 +661,9 @@ impl WindowsApi for DefaultWindowsApi {
         return self.get_std_handle(STD_OUTPUT_HANDLE);
     }
 
-    fn get_console_screen_buffer_info_with_handle(
-        &self,
-        handle: HANDLE,
-    ) -> windows::core::Result<CONSOLE_SCREEN_BUFFER_INFO> {
-        let mut csbi = CONSOLE_SCREEN_BUFFER_INFO::default();
-        unsafe { GetConsoleScreenBufferInfo(handle, &mut csbi) }?;
-        return Ok(csbi);
+    fn get_console_attached_process_count(&self) -> u32 {
+        let mut value: [u32; 1] = [0];
+        unsafe { return GetConsoleProcessList(&mut value) };
     }
 
     fn get_window_handle_for_process(&self, process_id: u32) -> HWND {

@@ -356,7 +356,7 @@ pub fn init_logger_with_fs<F: FileSystem>(fs: &F, name: &str) {
 /// Detect if application was launched from Windows Explorer (GUI) vs command line using the provided console API.
 ///
 /// Returns true if launched from GUI (separate console), false if from existing console.
-/// Based on: <https://stackoverflow.com/a/513574>
+/// Based on: <https://devblogs.microsoft.com/oldnewthing/20160125-00/?p=92922>
 ///
 /// # Arguments
 ///
@@ -367,24 +367,7 @@ pub fn init_logger_with_fs<F: FileSystem>(fs: &F, name: &str) {
 /// * `true` - Application was launched from GUI (Explorer, double-click, etc.)
 /// * `false` - Application was launched from existing console (command line)
 pub fn is_launched_from_gui<W: WindowsApi>(windows_api: &W) -> bool {
-    match windows_api.get_stdout_handle() {
-        Ok(handle) => {
-            match windows_api.get_console_screen_buffer_info_with_handle(handle) {
-                Ok(csbi) => {
-                    // The cursor has not moved from the initial 0,0 position -> launched in separate console
-                    return csbi.dwCursorPosition.X == 0 && csbi.dwCursorPosition.Y == 0;
-                }
-                Err(err) => {
-                    warn!("GetConsoleScreenBufferInfo failed: {:?}", err);
-                    return false;
-                }
-            }
-        }
-        Err(err) => {
-            warn!("Failed to get stdout handle: {:?}", err);
-            return false;
-        }
-    }
+    return windows_api.get_console_attached_process_count() == 1;
 }
 
 #[cfg(test)]

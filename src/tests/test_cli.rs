@@ -271,8 +271,13 @@ mod cli_main_test {
         /// Whether launched from GUI
         launched_from_gui: bool,
         /// Expected behavior verification function
-        verify_fn:
-            fn(&mut MockEntrypoint, &mut MockWindowsApi, &mut MockOutput, &mut MockArgsCommand),
+        verify_fn: fn(
+            &mut MockEntrypoint,
+            &mut MockWindowsApi,
+            &mut MockOutput,
+            &mut MockInput,
+            &mut MockArgsCommand,
+        ),
     }
 
     /// Helper function to set up common Windows API mocks
@@ -282,42 +287,15 @@ mod cli_main_test {
         launched_from_gui: bool,
     ) {
         // Mock the is_launched_from_gui call
-        mock_windows_api.expect_get_stdout_handle().returning(|| {
-            return Ok(windows::Win32::Foundation::HANDLE(
-                std::ptr::dangling_mut::<std::ffi::c_void>(),
-            ));
-        });
         mock_windows_api
-            .expect_get_console_screen_buffer_info_with_handle()
-            .returning(move |_| {
+            .expect_get_console_attached_process_count()
+            .returning(move || {
                 if launched_from_gui {
-                    // Return error to simulate GUI launch
-                    return Err(windows::core::Error::from(
-                        windows::Win32::Foundation::E_FAIL,
-                    ));
+                    // Return 1 to simulate GUI launch
+                    return 1;
                 } else {
-                    // Return success to simulate console launch
-                    return Ok(
-                        windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO {
-                            dwSize: windows::Win32::System::Console::COORD { X: 80, Y: 25 },
-                            dwCursorPosition: windows::Win32::System::Console::COORD {
-                                X: 10,
-                                Y: 5,
-                            },
-                            wAttributes:
-                                windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES(0),
-                            srWindow: windows::Win32::System::Console::SMALL_RECT {
-                                Left: 0,
-                                Top: 0,
-                                Right: 79,
-                                Bottom: 24,
-                            },
-                            dwMaximumWindowSize: windows::Win32::System::Console::COORD {
-                                X: 80,
-                                Y: 25,
-                            },
-                        },
-                    );
+                    // Return any other number to simulate console launch
+                    return 2;
                 }
             });
         // Mock the set_process_dpi_awareness call
@@ -371,7 +349,11 @@ mod cli_main_test {
                     debug: false,
                 },
                 launched_from_gui: false,
-                verify_fn: |mock, mock_windows_api, _mock_output, _mock_args_command| {
+                verify_fn: |mock,
+                            mock_windows_api,
+                            _mock_output,
+                            _mock_input,
+                            _mock_args_command| {
                     // Mock the create_process_with_args call that will be made by the main method
                     mock_windows_api
                         .expect_create_process_with_args()
@@ -429,7 +411,11 @@ mod cli_main_test {
                     debug: false,
                 },
                 launched_from_gui: false,
-                verify_fn: |_mock, _mock_windows_api, _mock_output, mock_args_command| {
+                verify_fn: |_mock,
+                            _mock_windows_api,
+                            _mock_output,
+                            _mock_input,
+                            mock_args_command| {
                     // Set up mock for help printing in empty hosts cases
                     mock_args_command
                         .expect_print_help()
@@ -447,12 +433,55 @@ mod cli_main_test {
                     debug: false,
                 },
                 launched_from_gui: true,
-                verify_fn: |_mock, _mock_windows_api, _mock_output, mock_args_command| {
+                verify_fn: |_mock,
+                            _mock_windows_api,
+                            mock_output,
+                            mock_input,
+                            mock_args_command| {
+                    use mockall::predicate::eq;
+
                     // Set up mock for help printing in empty hosts cases
                     mock_args_command
                         .expect_print_help()
                         .times(1)
                         .returning(|| return Ok(()));
+
+                    mock_output
+                        .expect_println()
+                        .with(eq("\n=== Interactive Mode ==="))
+                        .times(1)
+                        .returning(|_| {});
+
+                    mock_output
+                        .expect_println()
+                        .with(eq("Enter your csshw arguments (or press Enter to exit):"))
+                        .times(1)
+                        .returning(|_| {});
+
+                    mock_output
+                        .expect_println()
+                        .with(eq("Example: -u myuser host1 host2 host3"))
+                        .times(1)
+                        .returning(|_| {});
+
+                    mock_output
+                        .expect_println()
+                        .with(eq("Example: --help"))
+                        .times(1)
+                        .returning(|_| {});
+
+                    mock_output
+                        .expect_print()
+                        .with(eq("> "))
+                        .times(1)
+                        .returning(|_| {});
+
+                    mock_output.expect_flush().times(1).returning(|| {});
+
+                    mock_input
+                        .expect_read_line()
+                        .times(1)
+                        .returning(|| return Ok("\n".to_string()));
                 },
             },
         ];
@@ -481,6 +510,7 @@ mod cli_main_test {
                 &mut mock,
                 &mut mock_windows_api,
                 &mut mock_output,
+                &mut mock_input,
                 &mut mock_args_command,
             );
 
@@ -509,34 +539,9 @@ mod cli_main_test {
         let mut mock_config_manager = MockConfigManager::new();
 
         // Set up Windows API mocks without the DPI error expectation
-        mock_windows_api.expect_get_stdout_handle().returning(|| {
-            return Ok(windows::Win32::Foundation::HANDLE(
-                std::ptr::dangling_mut::<std::ffi::c_void>(),
-            ));
-        });
         mock_windows_api
-            .expect_get_console_screen_buffer_info_with_handle()
-            .returning(|_| {
-                return Ok(
-                    windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO {
-                        dwSize: windows::Win32::System::Console::COORD { X: 80, Y: 25 },
-                        dwCursorPosition: windows::Win32::System::Console::COORD { X: 10, Y: 5 },
-                        wAttributes: windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES(
-                            0,
-                        ),
-                        srWindow: windows::Win32::System::Console::SMALL_RECT {
-                            Left: 0,
-                            Top: 0,
-                            Right: 79,
-                            Bottom: 24,
-                        },
-                        dwMaximumWindowSize: windows::Win32::System::Console::COORD {
-                            X: 80,
-                            Y: 25,
-                        },
-                    },
-                );
-            });
+            .expect_get_console_attached_process_count()
+            .returning(|| return 2);
 
         // Mock the set_process_dpi_awareness call to succeed for this test
         mock_windows_api
@@ -595,28 +600,8 @@ mod cli_main_test {
             ));
         });
         mock_windows_api
-            .expect_get_console_screen_buffer_info_with_handle()
-            .returning(|_| {
-                return Ok(
-                    windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO {
-                        dwSize: windows::Win32::System::Console::COORD { X: 80, Y: 25 },
-                        dwCursorPosition: windows::Win32::System::Console::COORD { X: 10, Y: 5 },
-                        wAttributes: windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES(
-                            0,
-                        ),
-                        srWindow: windows::Win32::System::Console::SMALL_RECT {
-                            Left: 0,
-                            Top: 0,
-                            Right: 79,
-                            Bottom: 24,
-                        },
-                        dwMaximumWindowSize: windows::Win32::System::Console::COORD {
-                            X: 80,
-                            Y: 25,
-                        },
-                    },
-                );
-            });
+            .expect_get_console_attached_process_count()
+            .returning(|| return 2);
 
         // Mock the set_process_dpi_awareness call to succeed for this test
         mock_windows_api
@@ -678,28 +663,8 @@ mod cli_main_test {
             ));
         });
         mock_windows_api
-            .expect_get_console_screen_buffer_info_with_handle()
-            .returning(|_| {
-                return Ok(
-                    windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO {
-                        dwSize: windows::Win32::System::Console::COORD { X: 80, Y: 25 },
-                        dwCursorPosition: windows::Win32::System::Console::COORD { X: 10, Y: 5 },
-                        wAttributes: windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES(
-                            0,
-                        ),
-                        srWindow: windows::Win32::System::Console::SMALL_RECT {
-                            Left: 0,
-                            Top: 0,
-                            Right: 79,
-                            Bottom: 24,
-                        },
-                        dwMaximumWindowSize: windows::Win32::System::Console::COORD {
-                            X: 80,
-                            Y: 25,
-                        },
-                    },
-                );
-            });
+            .expect_get_console_attached_process_count()
+            .returning(|| return 2);
 
         mock_windows_api
             .expect_set_process_dpi_awareness()
@@ -768,28 +733,8 @@ mod cli_main_test {
             ));
         });
         mock_windows_api
-            .expect_get_console_screen_buffer_info_with_handle()
-            .returning(|_| {
-                return Ok(
-                    windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO {
-                        dwSize: windows::Win32::System::Console::COORD { X: 80, Y: 25 },
-                        dwCursorPosition: windows::Win32::System::Console::COORD { X: 10, Y: 5 },
-                        wAttributes: windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES(
-                            0,
-                        ),
-                        srWindow: windows::Win32::System::Console::SMALL_RECT {
-                            Left: 0,
-                            Top: 0,
-                            Right: 79,
-                            Bottom: 24,
-                        },
-                        dwMaximumWindowSize: windows::Win32::System::Console::COORD {
-                            X: 80,
-                            Y: 25,
-                        },
-                    },
-                );
-            });
+            .expect_get_console_attached_process_count()
+            .returning(|| return 2);
 
         mock_windows_api
             .expect_set_process_dpi_awareness()
@@ -856,28 +801,8 @@ mod cli_main_test {
             ));
         });
         mock_windows_api
-            .expect_get_console_screen_buffer_info_with_handle()
-            .returning(|_| {
-                return Ok(
-                    windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO {
-                        dwSize: windows::Win32::System::Console::COORD { X: 80, Y: 25 },
-                        dwCursorPosition: windows::Win32::System::Console::COORD { X: 10, Y: 5 },
-                        wAttributes: windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES(
-                            0,
-                        ),
-                        srWindow: windows::Win32::System::Console::SMALL_RECT {
-                            Left: 0,
-                            Top: 0,
-                            Right: 79,
-                            Bottom: 24,
-                        },
-                        dwMaximumWindowSize: windows::Win32::System::Console::COORD {
-                            X: 80,
-                            Y: 25,
-                        },
-                    },
-                );
-            });
+            .expect_get_console_attached_process_count()
+            .returning(|| return 2);
 
         mock_windows_api
             .expect_set_process_dpi_awareness()
@@ -947,28 +872,8 @@ mod cli_main_test {
             ));
         });
         mock_windows_api
-            .expect_get_console_screen_buffer_info_with_handle()
-            .returning(|_| {
-                return Ok(
-                    windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO {
-                        dwSize: windows::Win32::System::Console::COORD { X: 80, Y: 25 },
-                        dwCursorPosition: windows::Win32::System::Console::COORD { X: 10, Y: 5 },
-                        wAttributes: windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES(
-                            0,
-                        ),
-                        srWindow: windows::Win32::System::Console::SMALL_RECT {
-                            Left: 0,
-                            Top: 0,
-                            Right: 79,
-                            Bottom: 24,
-                        },
-                        dwMaximumWindowSize: windows::Win32::System::Console::COORD {
-                            X: 80,
-                            Y: 25,
-                        },
-                    },
-                );
-            });
+            .expect_get_console_attached_process_count()
+            .returning(|| return 2);
 
         mock_windows_api
             .expect_set_process_dpi_awareness()
@@ -1039,29 +944,8 @@ mod cli_main_test {
             ));
         });
         mock_windows_api
-            .expect_get_console_screen_buffer_info_with_handle()
-            .returning(|_| {
-                // Return cursor at (0,0) to simulate GUI launch
-                return Ok(
-                    windows::Win32::System::Console::CONSOLE_SCREEN_BUFFER_INFO {
-                        dwSize: windows::Win32::System::Console::COORD { X: 80, Y: 25 },
-                        dwCursorPosition: windows::Win32::System::Console::COORD { X: 0, Y: 0 },
-                        wAttributes: windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES(
-                            0,
-                        ),
-                        srWindow: windows::Win32::System::Console::SMALL_RECT {
-                            Left: 0,
-                            Top: 0,
-                            Right: 79,
-                            Bottom: 24,
-                        },
-                        dwMaximumWindowSize: windows::Win32::System::Console::COORD {
-                            X: 80,
-                            Y: 25,
-                        },
-                    },
-                );
-            });
+            .expect_get_console_attached_process_count()
+            .returning(|| return 1);
 
         // Mock the set_process_dpi_awareness call
         mock_windows_api
