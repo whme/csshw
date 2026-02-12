@@ -1,5 +1,9 @@
 mod daemon_test {
-    use std::{ffi::c_void, io};
+    use std::{
+        ffi::c_void,
+        io,
+        sync::{Arc, Mutex},
+    };
 
     use tokio::{
         net::windows::named_pipe::{ClientOptions, PipeMode, ServerOptions},
@@ -88,9 +92,23 @@ mod daemon_test {
             .create(PIPE_NAME)?;
         let named_pipe_client = ClientOptions::new().open(PIPE_NAME)?;
         // Spawn named pipe server routine
+        let clients = Arc::new(Mutex::new(Vec::new()));
         let future = tokio::spawn(async move {
-            named_pipe_server_routine(named_pipe_server, &mut receiver).await;
+            named_pipe_server_routine(named_pipe_server, &mut receiver, 0, clients).await;
         });
+
+        // Send client identification (8 bytes)
+        let client_id: isize = 0x12345678;
+        let id_bytes = client_id.to_le_bytes();
+        loop {
+            named_pipe_client.writable().await?;
+            match named_pipe_client.try_write(&id_bytes) {
+                Ok(8) => break,
+                Ok(_) => continue,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                Err(e) => return Err(e.into()),
+            }
+        }
 
         let mut keep_alive_received = false;
         let mut successful_iterations = 0;
@@ -150,9 +168,24 @@ mod daemon_test {
             .create(PIPE_NAME)?;
         let named_pipe_client = ClientOptions::new().open(PIPE_NAME)?;
         // Spawn named pipe server routine
+        let clients = Arc::new(Mutex::new(Vec::new()));
         let future = tokio::spawn(async move {
-            named_pipe_server_routine(named_pipe_server, &mut receiver).await;
+            named_pipe_server_routine(named_pipe_server, &mut receiver, 0, clients).await;
         });
+
+        // Send client identification (8 bytes)
+        let client_id: isize = 0x12345678;
+        let id_bytes = client_id.to_le_bytes();
+        loop {
+            named_pipe_client.writable().await?;
+            match named_pipe_client.try_write(&id_bytes) {
+                Ok(8) => break,
+                Ok(_) => continue,
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                Err(e) => return Err(e.into()),
+            }
+        }
+
         // Send data to the routine
         sender.send([2; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
         // Verify the routine forwards the data through the pipe

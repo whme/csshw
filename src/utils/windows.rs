@@ -202,6 +202,18 @@ pub trait WindowsApi: Send + Sync {
     /// Result indicating success or failure of the operation
     fn set_console_border_color(&self, color: &COLORREF) -> windows::core::Result<()>;
 
+    /// Sets DWM window attribute for border color on a specific window.
+    ///
+    /// # Arguments
+    ///
+    /// * `hwnd` - Handle to the window
+    /// * `color` - Color to set as border color
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or failure of the operation
+    fn set_window_border_color(&self, hwnd: HWND, color: &COLORREF) -> windows::core::Result<()>;
+
     /// Writes input records to the console input buffer.
     ///
     /// # Arguments
@@ -628,6 +640,17 @@ impl WindowsApi for DefaultWindowsApi {
         };
     }
 
+    fn set_window_border_color(&self, hwnd: HWND, color: &COLORREF) -> windows::core::Result<()> {
+        return unsafe {
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_BORDER_COLOR,
+                color as *const COLORREF as *const _,
+                mem::size_of::<COLORREF>() as u32,
+            )
+        };
+    }
+
     fn write_console_input(
         &self,
         buffer: &[INPUT_RECORD],
@@ -968,9 +991,20 @@ pub fn clear_screen(api: &dyn WindowsApi) {
 /// ```
 ///
 /// [1]: https://learn.microsoft.com/en-us/windows/win32/gdi/colorref
-pub fn set_console_border_color(api: &dyn WindowsApi, color: COLORREF) {
+pub fn set_console_border_color(
+    api: &dyn WindowsApi,
+    color: COLORREF,
+) -> windows::core::Result<()> {
     if !is_windows_10(api) {
-        api.set_console_border_color(&color).unwrap();
+        // Windows 11+: Use border colors
+        log::debug!("Attempting to set border color (Windows 11+): {:?}", color);
+        api.set_console_border_color(&color)?;
+        log::debug!("Successfully set border color");
+        return Ok(());
+    } else {
+        // Windows 10: Border colors not supported
+        log::debug!("Border colors not supported on Windows 10");
+        return Err(windows::core::Error::from_win32());
     }
 }
 

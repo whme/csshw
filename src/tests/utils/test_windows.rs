@@ -296,7 +296,7 @@ mod console_border_color_test {
             .with(mockall::predicate::eq(test_color))
             .times(0);
 
-        set_console_border_color(&api, test_color);
+        let _ = set_console_border_color(&api, test_color);
     }
 
     /// Tests console border color setting on Windows 11 with DWM integration.
@@ -315,11 +315,11 @@ mod console_border_color_test {
             .times(1)
             .returning(|_| return Ok(()));
 
-        set_console_border_color(&api, test_color);
+        let _ = set_console_border_color(&api, test_color);
     }
 
     /// Tests console border color setting error handling when DWM calls fail.
-    /// Validates that function panics appropriately on DWM API errors.
+    /// Validates that function returns error appropriately on DWM API errors.
     #[test]
     fn test_set_console_border_color_error_handling() {
         let mut api = MockWindowsApi::new();
@@ -334,13 +334,11 @@ mod console_border_color_test {
             .times(1)
             .returning(|_| return Err(windows::core::Error::from_win32()));
 
-        let result = std::panic::catch_unwind(|| {
-            set_console_border_color(&api, test_color);
-        });
+        let result = set_console_border_color(&api, test_color);
 
         assert!(
             result.is_err(),
-            "Should panic when set_console_border_color fails"
+            "Should return error when set_console_border_color fails"
         );
     }
 }

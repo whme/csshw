@@ -8,22 +8,34 @@ use log::{error, info, warn};
 use std::fs::File;
 use std::io::{self, BufReader};
 use std::path::Path;
+use std::sync::OnceLock;
 use std::time::Duration;
+use windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::utils::config::ClientConfig;
-use crate::utils::windows::{get_console_title, WindowsApi};
+use crate::utils::windows::{
+    get_console_title, set_console_border_color, set_console_color, WindowsApi,
+};
+
+/// Stores the original console text attributes to restore later
+static ORIGINAL_CONSOLE_ATTRIBUTES: OnceLock<CONSOLE_CHARACTER_ATTRIBUTES> = OnceLock::new();
 use ssh2_config::{ParseRule, SshConfig};
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::process::{Child, Command};
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
+use windows::Win32::Foundation::COLORREF;
 use windows::Win32::System::Console::{
     INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT, KEY_EVENT_RECORD, LEFT_ALT_PRESSED, RIGHT_ALT_PRESSED,
     SHIFT_PRESSED,
 };
 
 use crate::{
-    serde::{deserialization::deserialize_input_record_0, SERIALIZED_INPUT_RECORD_0_LENGTH},
+    serde::{
+        deserialization::deserialize_input_record_0, is_control_sequence,
+        CONTROL_SEQ_STATE_DISABLED, CONTROL_SEQ_STATE_ENABLED, CONTROL_SEQ_STATE_SELECTED,
+        SERIALIZED_INPUT_RECORD_0_LENGTH,
+    },
     utils::constants::{PIPE_NAME, PKG_NAME},
 };
 
@@ -79,6 +91,88 @@ fn write_console_input(api: &dyn WindowsApi, input_record: INPUT_RECORD_0) {
             error!("{:?}", api.get_last_error());
         }
     };
+}
+
+/// Handle a control sequence by updating the client's visual state.
+///
+/// # Arguments
+///
+/// * `api` - The Windows API implementation to use.
+/// * `control_seq` - The control sequence bytes.
+fn handle_control_sequence(api: &dyn WindowsApi, control_seq: &[u8]) {
+    // ENABLED state: restore default console appearance (no special color)
+    if control_seq == CONTROL_SEQ_STATE_ENABLED {
+        log::debug!("Restoring original console appearance (ENABLED)");
+        // Restore default border color on Windows 11+
+        let _ = set_console_border_color(api, COLORREF(0x00000000)); // Black = default
+                                                                     // Restore original console colors that were saved at startup
+        if let Some(&original_attrs) = ORIGINAL_CONSOLE_ATTRIBUTES.get() {
+            log::debug!("Restoring original attributes: {:?}", original_attrs);
+            set_console_color(api, original_attrs);
+        } else {
+            log::warn!("Original console attributes not saved, using default");
+            use windows::Win32::System::Console::*;
+            let default_color = CONSOLE_CHARACTER_ATTRIBUTES(
+                FOREGROUND_RED.0 | FOREGROUND_GREEN.0 | FOREGROUND_BLUE.0,
+            );
+            set_console_color(api, default_color);
+        }
+        return;
+    }
+
+    let (color, state_name) = if control_seq == CONTROL_SEQ_STATE_DISABLED {
+        (COLORREF(0x00808080), "DISABLED") // Grey border
+    } else if control_seq == CONTROL_SEQ_STATE_SELECTED {
+        (COLORREF(0x00B0E0E6), "SELECTED") // Powder blue border
+    } else {
+        log::debug!("Unknown control sequence: {:?}", control_seq);
+        return; // Unknown control sequence
+    };
+
+    log::debug!("Setting border color for state {}: {:?}", state_name, color);
+
+    // Try to set border color (Windows 11+), fallback to background color (Windows 10)
+    match set_console_border_color(api, color) {
+        Ok(_) => {
+            log::debug!("Border color set successfully");
+        }
+        Err(_) => {
+            // Fallback to background colors on Windows 10
+            use windows::Win32::System::Console::*;
+
+            let color_attributes = if color.0 == 0x00808080 {
+                // Grey (DISABLED) -> Grey background with white text
+                CONSOLE_CHARACTER_ATTRIBUTES(
+                    BACKGROUND_INTENSITY.0
+                        | FOREGROUND_RED.0
+                        | FOREGROUND_GREEN.0
+                        | FOREGROUND_BLUE.0,
+                )
+            } else if color.0 == 0x00B0E0E6 {
+                // Powder blue (SELECTED) -> Blue background with bright white text
+                CONSOLE_CHARACTER_ATTRIBUTES(
+                    BACKGROUND_BLUE.0
+                        | BACKGROUND_INTENSITY.0
+                        | FOREGROUND_RED.0
+                        | FOREGROUND_GREEN.0
+                        | FOREGROUND_BLUE.0
+                        | FOREGROUND_INTENSITY.0,
+                )
+            } else {
+                // Default
+                CONSOLE_CHARACTER_ATTRIBUTES(
+                    FOREGROUND_RED.0 | FOREGROUND_GREEN.0 | FOREGROUND_BLUE.0,
+                )
+            };
+
+            log::debug!(
+                "Using background color fallback (Windows 10): {:?}",
+                color_attributes
+            );
+            set_console_color(api, color_attributes);
+            log::debug!("Background color set successfully");
+        }
+    }
 }
 
 /// Resolve the username from the provided value or SSH config.
@@ -226,7 +320,15 @@ async fn read_write_loop(
             for serialzied_input_record in iter.clone() {
                 if is_keep_alive_packet(serialzied_input_record) {
                     continue;
-                };
+                }
+
+                // Check if this is a control sequence
+                if is_control_sequence(serialzied_input_record) {
+                    log::debug!("Received control sequence: {:?}", serialzied_input_record);
+                    handle_control_sequence(api, serialzied_input_record);
+                    continue;
+                }
+
                 let input_record = deserialize_input_record_0(serialzied_input_record);
                 write_console_input(api, input_record);
                 key_event_records.push(unsafe { input_record.KeyEvent });
@@ -309,6 +411,9 @@ fn replace_argument_placeholders(
 /// * `api` - The Windows API implementation to use.
 /// * `child` - Handle to the running SSH process.
 async fn run(api: &dyn WindowsApi, child: &mut Child) {
+    // Get our own window handle to send as identification
+    let own_window_handle_raw = api.get_console_window().0 as isize;
+
     // Many clients trying to open the pipe at the same time can cause
     // a file not found error, so keep trying until we managed to open it
     let named_pipe_client: NamedPipeClient = loop {
@@ -317,10 +422,38 @@ async fn run(api: &dyn WindowsApi, child: &mut Child) {
                 break named_pipe_client;
             }
             Err(_) => {
+                tokio::time::sleep(Duration::from_millis(10)).await;
                 continue;
             }
         }
     };
+
+    // Send our window handle as identification
+    let id_bytes = own_window_handle_raw.to_le_bytes();
+    loop {
+        named_pipe_client.writable().await.unwrap();
+        match named_pipe_client.try_write(&id_bytes) {
+            Ok(8) => {
+                log::debug!(
+                    "Sent client identification: HWND 0x{:X}",
+                    own_window_handle_raw
+                );
+                break;
+            }
+            Ok(n) => {
+                log::warn!("Partially sent identification: {} bytes", n);
+                continue;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                continue;
+            }
+            Err(e) => {
+                log::error!("Failed to send identification: {}", e);
+                return;
+            }
+        }
+    }
+
     let mut child_error = false;
     let mut internal_buffer: Vec<u8> = Vec::new();
     loop {
@@ -406,6 +539,17 @@ pub async fn main(
     cli_port: Option<u16>,
     config: &ClientConfig,
 ) {
+    // Save original console attributes at startup so we can restore them later
+    if ORIGINAL_CONSOLE_ATTRIBUTES.get().is_none() {
+        if let Ok(buffer_info) = api.get_console_screen_buffer_info() {
+            let _ = ORIGINAL_CONSOLE_ATTRIBUTES.set(buffer_info.wAttributes);
+            log::debug!(
+                "Saved original console attributes: {:?}",
+                buffer_info.wAttributes
+            );
+        }
+    }
+
     let (host, inline_port) =
         host.rsplit_once(':')
             .map_or((host.as_str(), None), |(host, port)| {
