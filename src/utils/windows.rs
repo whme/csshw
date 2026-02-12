@@ -16,9 +16,8 @@ use std::os::windows::ffi::OsStrExt;
 use std::{mem, ptr};
 
 use windows::core::{HSTRING, PCWSTR};
-use windows::Win32::Foundation::{BOOL, COLORREF, FALSE, HANDLE, HWND, LPARAM, TRUE};
+use windows::Win32::Foundation::{BOOL, COLORREF, FALSE, HANDLE, HWND, LPARAM, RECT, TRUE};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
-use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 use windows::Win32::System::Console::{
     FillConsoleOutputAttribute, GetConsoleProcessList, GetConsoleScreenBufferInfo,
     GetConsoleWindow, GetStdHandle, ReadConsoleInputW, SetConsoleTextAttribute,
@@ -35,13 +34,10 @@ use windows::Win32::System::Threading::{
     CreateProcessW, CREATE_NEW_CONSOLE, PROCESS_INFORMATION, STARTUPINFOW,
 };
 use windows::Win32::System::Threading::{GetExitCodeProcess, OpenProcess};
-use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowTextW, GetWindowThreadProcessId, MoveWindow, SetWindowTextW,
-    SYSTEM_METRICS_INDEX,
-};
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowPlacement, SetForegroundWindow, ShowWindow, SHOW_WINDOW_CMD,
+    EnumWindows, GetForegroundWindow, GetWindowPlacement, GetWindowTextW, GetWindowThreadProcessId,
+    MoveWindow, SetForegroundWindow, SetWindowPos, SetWindowTextW, ShowWindow,
+    SET_WINDOW_POS_FLAGS, SHOW_WINDOW_CMD, SWP_NOMOVE, SWP_NOSIZE, SYSTEM_METRICS_INDEX,
     WINDOWPLACEMENT,
 };
 
@@ -339,6 +335,24 @@ pub trait WindowsApi: Send + Sync {
     /// Handle to the foreground window
     fn get_foreground_window(&self) -> HWND;
 
+    /// Used to set the z-position of a Window.
+    /// # Arguments
+    ///
+    /// * `hwnd` - Handle to the window to set as foreground
+    /// * `insert_after` - The window which will go underneath (or special predefined constants)
+    /// * `size_and_pos` - A rectangle describing the dimensions of the window (in screen coordinates).
+    /// * `flags` - Flags which affect which values to set.
+    /// # Returns
+    ///
+    /// Result indicating success or failure of the operation
+    fn set_window_pos(
+        &self,
+        hwnd: HWND,
+        insert_after: HWND,
+        size_and_pos: Option<RECT>,
+        flags: SET_WINDOW_POS_FLAGS,
+    ) -> windows::core::Result<()>;
+
     /// Sets the foreground window.
     ///
     /// # Arguments
@@ -431,17 +445,6 @@ pub trait WindowsApi: Send + Sync {
     /// Result indicating success or failure of the operation
     fn show_window(&self, hwnd: HWND, cmd_show: SHOW_WINDOW_CMD) -> windows::core::Result<bool>;
 
-    /// Focuses a window using UI Automation.
-    ///
-    /// # Arguments
-    ///
-    /// * `hwnd` - Handle to the window to focus
-    ///
-    /// # Returns
-    ///
-    /// Result indicating success or failure of the operation
-    fn focus_window_with_automation(&self, hwnd: HWND) -> windows::core::Result<()>;
-
     /// Checks if a window handle is valid.
     ///
     /// # Arguments
@@ -470,20 +473,6 @@ pub trait WindowsApi: Send + Sync {
         inherit: bool,
         process_id: u32,
     ) -> windows::core::Result<HANDLE>;
-
-    /// Initializes the COM library for use by the calling thread.
-    ///
-    /// # Arguments
-    ///
-    /// * `coinit` - Initialization options for the COM library
-    ///
-    /// # Returns
-    ///
-    /// Result indicating success or failure of the operation
-    fn initialize_com_library(
-        &self,
-        coinit: windows::Win32::System::Com::COINIT,
-    ) -> windows::core::Result<()>;
 
     /// Gets system metrics information.
     ///
@@ -751,6 +740,39 @@ impl WindowsApi for DefaultWindowsApi {
         }
     }
 
+    fn set_window_pos(
+        &self,
+        hwnd: HWND,
+        insert_after: HWND,
+        size_and_pos: Option<RECT>,
+        flags: SET_WINDOW_POS_FLAGS,
+    ) -> windows::core::Result<()> {
+        return match size_and_pos {
+            Some(s) => unsafe {
+                SetWindowPos(
+                    hwnd,
+                    Some(insert_after),
+                    s.left,
+                    s.top,
+                    s.right - s.left,
+                    s.bottom - s.top,
+                    flags,
+                )
+            },
+            None => unsafe {
+                SetWindowPos(
+                    hwnd,
+                    Some(insert_after),
+                    0,
+                    0,
+                    0,
+                    0,
+                    flags | SWP_NOMOVE | SWP_NOSIZE,
+                )
+            },
+        };
+    }
+
     fn get_console_mode(&self, handle: HANDLE) -> windows::core::Result<CONSOLE_MODE> {
         let mut mode = CONSOLE_MODE(0u32);
         unsafe { GetConsoleMode(handle, &mut mode)? };
@@ -793,14 +815,6 @@ impl WindowsApi for DefaultWindowsApi {
         return Ok(result.as_bool());
     }
 
-    fn focus_window_with_automation(&self, hwnd: HWND) -> windows::core::Result<()> {
-        let automation: IUIAutomation =
-            unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL)? };
-        let window = unsafe { automation.ElementFromHandle(hwnd)? };
-        unsafe { window.SetFocus()? };
-        return Ok(());
-    }
-
     fn is_window(&self, hwnd: HWND) -> bool {
         return unsafe { windows::Win32::UI::WindowsAndMessaging::IsWindow(Some(hwnd)).as_bool() };
     }
@@ -812,18 +826,6 @@ impl WindowsApi for DefaultWindowsApi {
         process_id: u32,
     ) -> windows::core::Result<HANDLE> {
         return unsafe { OpenProcess(PROCESS_ACCESS_RIGHTS(access), inherit, process_id) };
-    }
-
-    fn initialize_com_library(
-        &self,
-        coinit: windows::Win32::System::Com::COINIT,
-    ) -> windows::core::Result<()> {
-        let result = unsafe { windows::Win32::System::Com::CoInitializeEx(None, coinit) };
-        if result.is_ok() {
-            return Ok(());
-        } else {
-            return Err(windows::core::Error::from(result));
-        }
     }
 
     fn get_system_metrics(&self, index: SYSTEM_METRICS_INDEX) -> i32 {
