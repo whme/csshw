@@ -438,8 +438,8 @@ pub async fn main(
         async move {
             loop {
                 // Set the console title (child might overwrite it, so we have to keep checking it)
-                if console_title != get_console_title(api) {
-                    api.set_console_title(console_title.as_str())
+                if console_title != get_console_title(api, None) {
+                    api.set_console_title(console_title.as_str(), None)
                         .unwrap_or_else(|err| {
                             error!("Failed to set console title: {}", err);
                         });

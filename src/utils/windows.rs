@@ -18,6 +18,10 @@ use std::{mem, ptr};
 use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::Foundation::{BOOL, COLORREF, FALSE, HANDLE, HWND, LPARAM, TRUE};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
+use windows::Win32::Storage::FileSystem::{
+    CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_DELETE,
+    FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+};
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 use windows::Win32::System::Console::{
     FillConsoleOutputAttribute, GetConsoleProcessList, GetConsoleScreenBufferInfo,
@@ -62,22 +66,28 @@ pub trait WindowsApi: Send + Sync {
     /// # Arguments
     ///
     /// * `title` - The string to be set as window title
+    /// * `window_handle` - Optional handle to the window; if None, uses the console window
     ///
     /// # Returns
     ///
     /// Result indicating success or failure of the operation
-    fn set_console_title(&self, title: &str) -> windows::core::Result<()>;
+    fn set_console_title(
+        &self,
+        title: &str,
+        window_handle: Option<HWND>,
+    ) -> windows::core::Result<()>;
 
     /// Gets the console window title as UTF-16 buffer.
     ///
     /// # Arguments
     ///
     /// * `buffer` - Mutable buffer to store the UTF-16 encoded title
+    /// * `window_handle` - Optional handle to the window; if None, uses the console window
     ///
     /// # Returns
     ///
     /// Number of characters copied to the buffer
-    fn get_console_title(&self, buffer: &mut [u16]) -> i32;
+    fn get_console_title(&self, buffer: &mut [u16], window_handle: Option<HWND>) -> i32;
 
     /// Gets OS version string.
     ///
@@ -94,12 +104,19 @@ pub trait WindowsApi: Send + Sync {
     /// * `y` - The y coordinate to move the window to
     /// * `width` - The width in pixels to resize the window to
     /// * `height` - The height in pixels to resize the window to
+    /// * `window_handle` - Optional handle to the window; if None, uses the console window
     ///
     /// # Returns
     ///
     /// Result indicating success or failure of the operation
-    fn arrange_console(&self, x: i32, y: i32, width: i32, height: i32)
-        -> windows::core::Result<()>;
+    fn arrange_console(
+        &self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        window_handle: Option<HWND>,
+    ) -> windows::core::Result<()>;
 
     /// Sets console text attribute.
     ///
@@ -196,11 +213,16 @@ pub trait WindowsApi: Send + Sync {
     /// # Arguments
     ///
     /// * `color` - Color to set as border color
+    /// * `window_handle` - Optional handle to the window; if None, uses the console window
     ///
     /// # Returns
     ///
     /// Result indicating success or failure of the operation
-    fn set_console_border_color(&self, color: &COLORREF) -> windows::core::Result<()>;
+    fn set_console_border_color(
+        &self,
+        color: &COLORREF,
+        window_handle: Option<HWND>,
+    ) -> windows::core::Result<()>;
 
     /// Writes input records to the console input buffer.
     ///
@@ -526,12 +548,23 @@ impl Clone for MockWindowsApi {
 pub struct DefaultWindowsApi;
 
 impl WindowsApi for DefaultWindowsApi {
-    fn set_console_title(&self, title: &str) -> windows::core::Result<()> {
-        return unsafe { SetWindowTextW(GetConsoleWindow(), &HSTRING::from(title)) };
+    fn set_console_title(
+        &self,
+        title: &str,
+        window_handle: Option<HWND>,
+    ) -> windows::core::Result<()> {
+        return unsafe {
+            SetWindowTextW(
+                window_handle.unwrap_or(self.get_console_window()),
+                &HSTRING::from(title),
+            )
+        };
     }
 
-    fn get_console_title(&self, buffer: &mut [u16]) -> i32 {
-        return unsafe { GetWindowTextW(GetConsoleWindow(), buffer) };
+    fn get_console_title(&self, buffer: &mut [u16], window_handle: Option<HWND>) -> i32 {
+        return unsafe {
+            GetWindowTextW(window_handle.unwrap_or(self.get_console_window()), buffer)
+        };
     }
 
     fn get_os_version(&self) -> String {
@@ -544,8 +577,18 @@ impl WindowsApi for DefaultWindowsApi {
         y: i32,
         width: i32,
         height: i32,
+        window_handle: Option<HWND>,
     ) -> windows::core::Result<()> {
-        return unsafe { MoveWindow(GetConsoleWindow(), x, y, width, height, true) };
+        return unsafe {
+            MoveWindow(
+                window_handle.unwrap_or(self.get_console_window()),
+                x,
+                y,
+                width,
+                height,
+                true,
+            )
+        };
     }
 
     fn set_console_text_attribute(
@@ -617,10 +660,14 @@ impl WindowsApi for DefaultWindowsApi {
         return Ok(number_read);
     }
 
-    fn set_console_border_color(&self, color: &COLORREF) -> windows::core::Result<()> {
+    fn set_console_border_color(
+        &self,
+        color: &COLORREF,
+        window_handle: Option<HWND>,
+    ) -> windows::core::Result<()> {
         return unsafe {
             DwmSetWindowAttribute(
-                GetConsoleWindow(),
+                window_handle.unwrap_or(self.get_console_window()),
                 DWMWA_BORDER_COLOR,
                 color as *const COLORREF as *const _,
                 mem::size_of::<COLORREF>() as u32,
@@ -957,6 +1004,7 @@ pub fn clear_screen(api: &dyn WindowsApi) {
 ///
 /// * `api` - The Windows API implementation;
 /// * `color` - RGB [COLORREF][1] to set as border color.
+/// * `window_handle` - Optional handle to the window; if None, uses the console window.
 ///
 /// # Examples
 ///
@@ -964,13 +1012,17 @@ pub fn clear_screen(api: &dyn WindowsApi) {
 /// use csshw_lib::utils::windows::{set_console_border_color, DefaultWindowsApi};
 /// use windows::Win32::Foundation::COLORREF;
 ///
-/// set_console_border_color(&DefaultWindowsApi, COLORREF(0x001A2B3C));
+/// set_console_border_color(&DefaultWindowsApi, COLORREF(0x001A2B3C), None);
 /// ```
 ///
 /// [1]: https://learn.microsoft.com/en-us/windows/win32/gdi/colorref
-pub fn set_console_border_color(api: &dyn WindowsApi, color: COLORREF) {
+pub fn set_console_border_color(
+    api: &dyn WindowsApi,
+    color: COLORREF,
+    window_handle: Option<HWND>,
+) {
     if !is_windows_10(api) {
-        api.set_console_border_color(&color).unwrap();
+        api.set_console_border_color(&color, window_handle).unwrap();
     }
 }
 
@@ -1020,16 +1072,20 @@ pub fn utf16_buffer_to_string(buffer: &[u16]) -> String {
 /// ```no_run
 /// use csshw_lib::utils::windows::{get_console_title, DefaultWindowsApi};
 ///
-/// let title = get_console_title(&DefaultWindowsApi);
+/// let title = get_console_title(&DefaultWindowsApi, None);
 /// println!("Console title: {}", title);
 /// ```
-pub fn get_console_title(api: &dyn WindowsApi) -> String {
+pub fn get_console_title(api: &dyn WindowsApi, window_handle: Option<HWND>) -> String {
     let mut title: [u16; MAX_WINDOW_TITLE_LENGTH] = [0; MAX_WINDOW_TITLE_LENGTH];
-    api.get_console_title(&mut title);
+    api.get_console_title(&mut title, window_handle);
     return utf16_buffer_to_string(&title);
 }
 
-/// Returns a [HANDLE] to the requested [STD_HANDLE] of the current process.
+/// Returns a [HANDLE] to the requested [STD_HANDLE] of the current process' console window.
+///
+/// We use CreateFileW here instead of GetStdHandle because the latter will return redirected handles
+/// if the standard handles of a process have been redirected by a call to SetStdHandle.
+/// <https://learn.microsoft.com/en-us/windows/console/getstdhandle#remarks>
 ///
 /// # Arguments
 ///
@@ -1040,10 +1096,23 @@ pub fn get_console_title(api: &dyn WindowsApi) -> String {
 ///
 /// The [HANDLE] to the requested [STD_HANDLE].
 fn get_std_handle(nstdhandle: STD_HANDLE) -> HANDLE {
-    return unsafe {
-        GetStdHandle(nstdhandle)
-            .unwrap_or_else(|_| panic!("Failed to retrieve standard handle: {nstdhandle:?}"))
+    let special_name = match nstdhandle {
+        STD_INPUT_HANDLE => "CONIN$",
+        STD_OUTPUT_HANDLE => "CONOUT$",
+        _ => panic!("Invalid standard handle requested: {nstdhandle:?}"),
     };
+    return unsafe {
+        CreateFileW(
+            &HSTRING::from(special_name),
+            (FILE_GENERIC_READ | FILE_GENERIC_WRITE).0,
+            FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
+            None,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            None,
+        )
+    }
+    .expect("Failed to open handle.");
 }
 
 /// Returns a [HANDLE] to the [STD_INPUT_HANDLE] of the current process.
@@ -1146,35 +1215,6 @@ pub fn read_keyboard_input(api: &dyn WindowsApi) -> INPUT_RECORD_0 {
             }
         }
     }
-}
-
-/// Changes size and position of the current console window using the provided API.
-///
-/// # Arguments
-///
-/// * `api` - The Windows API implementation to use.
-/// * `x`       - The x coordinate to move the window to.
-///               From the top left corner of the screen.
-/// * `y`       - The y coordinate to move the window to.
-///               From the top left corner of the screen.
-/// * `width`   - The width in pixels to resize the window to.
-///               In logical scaling.
-/// * `height`  - The height in pixels to resize the window to.
-///               In logical scaling.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::{arrange_console, DefaultWindowsApi};
-///
-/// let api = DefaultWindowsApi;
-/// arrange_console(&api, 100, 100, 800, 600);
-/// ```
-pub fn arrange_console(api: &dyn WindowsApi, x: i32, y: i32, width: i32, height: i32) {
-    // FIXME: sometimes a daemon or client console isn't being arrange correctly
-    // when this simply retrying doesn't solve the issue. Maybe it has something to do
-    // with DPI awareness => https://docs.rs/embed-manifest/latest/embed_manifest/
-    api.arrange_console(x, y, width, height).unwrap();
 }
 
 /// Detects if the current windows installation is Windows 10 or not using the provided API.
