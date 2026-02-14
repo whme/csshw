@@ -49,27 +49,16 @@ use windows::Win32::{
     System::{Console::ENABLE_PROCESSED_INPUT, Threading::PROCESS_QUERY_INFORMATION},
 };
 
+use self::client_registry::{new_shared_registry, Client, SharedClientRegistry};
 use self::workspace::WorkspaceArea;
 
+mod client_registry;
 mod workspace;
 
 /// The capacity of the broadcast channel used
 /// to send the input records read from the console input buffer
 /// to the named pipe servers connected to each client in parallel.
 const SENDER_CAPACITY: usize = 1024 * 1024;
-
-/// Representation of a client
-#[derive(Clone)]
-struct Client {
-    /// Hostname the client is connect to (or supposed to connect to).
-    hostname: String,
-    /// Window handle to the clients console window.
-    window_handle: HWND,
-    /// Process handle to the client process.
-    process_handle: HANDLE,
-}
-
-unsafe impl Send for Client {}
 
 /// Hacky wrapper around a window handle.
 ///
@@ -183,8 +172,9 @@ impl<'a> Daemon<'a> {
             CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color),
         );
 
-        let mut clients = Arc::new(Mutex::new(
-            launch_clients(
+        let mut clients = new_shared_registry();
+        {
+            let client_list = launch_clients(
                 windows_api,
                 self.hosts.to_vec(),
                 &self.username,
@@ -194,8 +184,12 @@ impl<'a> Daemon<'a> {
                 self.config.aspect_ratio_adjustement,
                 0,
             )
-            .await,
-        ));
+            .await;
+            let mut registry = clients.lock().unwrap();
+            for client in client_list {
+                registry.insert(client);
+            }
+        }
 
         // Now that all clients started, focus the daemon console again.
         let daemon_console = windows_api.get_console_window();
@@ -233,7 +227,7 @@ impl<'a> Daemon<'a> {
     async fn run<W: WindowsApi + Clone + 'static>(
         &mut self,
         windows_api: &W,
-        clients: &mut Arc<Mutex<Vec<Client>>>,
+        clients: &mut SharedClientRegistry,
         workspace_area: &workspace::WorkspaceArea,
     ) {
         let (sender, _) =
@@ -361,7 +355,7 @@ impl<'a> Daemon<'a> {
         windows_api: &W,
         sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
         input_record: INPUT_RECORD_0,
-        clients: &mut Arc<Mutex<Vec<Client>>>,
+        clients: &mut SharedClientRegistry,
         workspace_area: &workspace::WorkspaceArea,
         servers: &mut Arc<Mutex<Vec<JoinHandle<()>>>>,
     ) {
@@ -382,11 +376,9 @@ impl<'a> Daemon<'a> {
                 key_event.dwControlKeyState,
             ) {
                 (VK_R, 0) => {
-                    self.rearrange_client_windows(
-                        windows_api,
-                        &clients.lock().unwrap(),
-                        workspace_area,
-                    );
+                    let clients_vec: Vec<Client> =
+                        clients.lock().unwrap().iter().cloned().collect();
+                    self.rearrange_client_windows(windows_api, &clients_vec, workspace_area);
                     self.arrange_daemon_console(windows_api, workspace_area);
                 }
                 (VK_E, 0) => {
@@ -425,7 +417,7 @@ impl<'a> Daemon<'a> {
                             )
                             .await;
                             for client in new_clients.into_iter() {
-                                clients.lock().unwrap().push(client);
+                                clients.lock().unwrap().insert(client);
                                 self.launch_named_pipe_server(&mut servers.lock().unwrap(), sender);
                             }
                         }
@@ -434,11 +426,9 @@ impl<'a> Daemon<'a> {
                         }
                     }
                     toggle_processed_input_mode(windows_api); // Re-disable processed input mode.
-                    self.rearrange_client_windows(
-                        windows_api,
-                        &clients.lock().unwrap(),
-                        workspace_area,
-                    );
+                    let clients_vec: Vec<Client> =
+                        clients.lock().unwrap().iter().cloned().collect();
+                    self.rearrange_client_windows(windows_api, &clients_vec, workspace_area);
                     self.arrange_daemon_console(windows_api, workspace_area);
                     // Focus the daemon console again.
                     let daemon_window = windows_api.get_console_window();
@@ -1079,7 +1069,7 @@ fn get_console_rect(
 ///                   background thread.
 fn ensure_client_z_order_in_sync_with_daemon<W: WindowsApi + Send + Sync + 'static>(
     windows_api: Arc<W>,
-    clients: Arc<Mutex<Vec<Client>>>,
+    clients: SharedClientRegistry,
 ) {
     tokio::spawn(async move {
         let daemon_handle = get_console_window_wrapper(windows_api.as_ref());
@@ -1096,11 +1086,8 @@ fn ensure_client_z_order_in_sync_with_daemon<W: WindowsApi + Send + Sync + 'stat
                         || client.window_handle == daemon_handle.hwdn;
                 })
             {
-                defer_windows(
-                    windows_api.as_ref(),
-                    &clients.lock().unwrap(),
-                    &daemon_handle.hwdn,
-                );
+                let clients_vec: Vec<Client> = clients.lock().unwrap().iter().cloned().collect();
+                defer_windows(windows_api.as_ref(), &clients_vec, &daemon_handle.hwdn);
             }
             previous_foreground_window = foreground_window;
         }
