@@ -28,7 +28,7 @@ jobs:
               - 'build.rs'
               - 'Cargo.toml'
               - 'clippy.toml'
-              - 'Makefile.toml'
+              - 'xtask/**'
               - 'rustfmt.toml'
             workflows:
               - '.github/workflows/pre-submit.yml'

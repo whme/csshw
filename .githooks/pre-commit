@@ -2,6 +2,6 @@
 set -e
 cargo fmt
 cargo lint
-cargo build
+cargo build --workspace --all-targets
 cargo docs
-cargo make update-readme-help
+cargo xtask update-readme-help

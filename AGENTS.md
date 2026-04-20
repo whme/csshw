@@ -25,15 +25,22 @@ multiple hosts simultaneously with synchronized keystroke distribution.
 - **Library**: `csshw_lib` — Core functionality (`src/lib.rs`)
 - **Modules**: `src/client/`, `src/daemon/`, `src/serde/`, `src/utils/`
 - **Tests**: `src/tests/` with component-based organization (`test_*.rs` naming)
+- **xtask**: `xtask/` — Developer automation tasks (README checks, release, changelog, social preview)
 
 ## Build & Test Commands
 
 ```sh
-cargo build                 # build
-cargo fmt                   # format (run before submitting)
-cargo lint                  # clippy (alias defined in Makefile.toml)
-cargo test                  # unit + integration tests
-cargo doc-tests             # documentation tests
+cargo build                       # build
+cargo fmt                         # format (run before submitting)
+cargo lint                        # clippy (alias defined in .cargo/config.toml)
+cargo test                        # unit + integration tests
+cargo doc-tests                   # documentation tests
+cargo xtask check-readme-help     # verify README help section is current
+cargo xtask update-readme-help    # update README help section
+cargo xtask prepare-release       # bump version, create maintenance branch, commit, push
+cargo xtask create-release-tag    # create and push an annotated release tag
+cargo xtask generate-changelog    # generate changelog for the current version
+cargo xtask generate-social-preview  # regenerate res/social-preview.png
 ```
 
 Always run `cargo fmt`, `cargo lint`, and both test commands before considering any task complete.

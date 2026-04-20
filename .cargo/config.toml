@@ -1,10 +1,11 @@
 [alias]
-lint = "clippy --all-targets --all-features -- -D warnings"
+lint = "clippy --workspace --all-targets --all-features -- -D warnings"
+xtask = "run --package xtask --"
 docs = "doc --bins --lib --no-deps"
 # There is currently no single command to run all tests
 # https://github.com/rust-lang/cargo/issues/6669
 doc-tests = "test --doc"
-tests = "test --all-targets"
+tests = "test --workspace --all-targets"
 release = "build -r"
 
 [build]
