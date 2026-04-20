@@ -1,3 +1,4 @@
+<p align="center"><a href="https://github.com/whme/csshw"><img src="https://raw.githubusercontent.com/whme/csshw/refs/heads/main/res/csshw.svg" width="100" alt="csshW Logo"></img></a></p>
 <h1 align="center">csshW</h3>
 <p align="center"><i>Cluster SSH tool for Windows inspired by <a href="https://github.com/brockgr/csshx">csshX</a></i></p>
 <p align="center">
