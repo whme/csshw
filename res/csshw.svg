@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--
+  csshw — Cluster SSH for Windows
+
+  App icon, designed to match the visual language of the official
+  Windows Terminal icon (microsoft/terminal, res/terminal/Terminal.svg).
+
+  Canvas: 60x60. Two terminal windows:
+    - secondary  → the back window (dark, dimmed)
+    - leader     → the front window (red, bright, with underscore
+                    cursor), offset by (+16, +12) to form the
+                    "leader + secondaries" stack.
+
+  The leader is tinted red (Campbell "red" #C50F1F from the Windows
+  Terminal default scheme) to mark the broadcasting session.
+
+  Single source of truth
+  ======================
+  All theming values — colors, gradient stops, opacity — are declared
+  exactly once as CSS class rules in the <style> block. Glyph paths
+  (title bar shell, body shell, chevron arms, underscore cursor) are
+  defined once in <defs> and referenced via <use> from both windows.
+
+  The shadow offset (1.6 SVG units, south-east) is expressed as an
+  SVG transform attribute rather than CSS — CSS transforms on SVG
+  elements are not reliably applied by all renderers. It appears
+  twice: once wrapping the secondary chevron shadows, and once
+  wrapping the leader's combined chevron + cursor shadows.
+
+  Chevron arm thickness is ~20% greater than a naïve mitred join
+  would give, to better match the 5u height of the underscore.
+-->
+<svg width="60" height="60" viewBox="0 0 60 60"
+     xmlns="http://www.w3.org/2000/svg">
+
+  <style><![CDATA[
+    /* =====================================================================
+       SINGLE SOURCE OF TRUTH — all theming values declared exactly once.
+       ===================================================================== */
+
+    /* Secondary (back) window: dark gray, dimmed, no cursor. */
+    .secondaryTitlebar      { fill: #3A3A3A; }
+    .secondaryBody          { fill: url(#bodyGradSecondary); }
+    .secondaryCtl           { stroke: #8A8A8A; }
+    .secondaryChevronFg     { fill: #B0B0B0; }
+    .secondaryChevronShadow { fill: #1F1F1F; }
+    .secondaryChevronStack  { opacity: 0.7; }
+    .secondaryGradStart     { stop-color: #333333; }
+    .secondaryGradEnd       { stop-color: #4D4D4D; }
+
+    /* Leader (front) window: red, bright, with underscore cursor. */
+    .leaderTitlebar         { fill: #7A0A14; }
+    .leaderBody             { fill: url(#bodyGradLeader); }
+    .leaderCtlMin           { stroke: #FEBC2E; }
+    .leaderCtlMax           { stroke: #28C840; }
+    .leaderCtlClose         { stroke: #FF5F57; }
+    .leaderChevronFg        { fill: #FFFFFF; }
+    .leaderChevronShadow    { fill: #5A0710; }
+    .leaderGradStart        { stop-color: #9A0C18; }
+    .leaderGradEnd          { stop-color: #C50F1F; }
+
+    /* Shared. */
+    .ctlGroup               { stroke-width: 0.7; stroke-linecap: round; fill: none; }
+  ]]></style>
+
+  <defs>
+    <!-- ========================= GLYPH PATHS =========================
+         Each path is defined once and referenced by both windows.
+         No colors here — fill/stroke come from the CSS classes above. -->
+
+    <!-- Title bar shell. -->
+    <path id="titleBar"
+          d="M0 13H44V8C44 6.9 43.1 6 42 6H2C0.9 6 0 6.9 0 8V13Z"/>
+
+    <!-- Window body shell. -->
+    <path id="bodyShape"
+          d="M42 42H2C0.9 42 0 41.1 0 40V12H44V40C44 41.1 43.1 42 42 42Z"/>
+
+    <!-- Chevron, lower arm (apex → bottom-left).
+         Perpendicular thickness ~4.9u (≈20% thicker than a default
+         mitred join) to better match the 5u-tall underscore. -->
+    <path id="chLower"
+          d="M13.92 22.52L6.12 30.32C5.62 30.82 5.62 31.52 6.12 31.92L7.98 33.78C8.48 34.28 9.18 34.28 9.58 33.78L17.38 25.98C17.88 25.48 17.88 24.78 17.38 24.38L15.52 22.52C15.12 22.12 14.32 22.12 13.92 22.52Z"/>
+
+    <!-- Chevron, upper arm (top-left → apex). Mirrors chLower across
+         the horizontal. -->
+    <path id="chUpper"
+          d="M9.58 16.02L17.38 23.82C17.88 24.32 17.88 25.02 17.38 25.42L15.52 27.28C15.02 27.78 14.32 27.78 13.92 27.28L6.12 19.48C5.62 18.98 5.62 18.28 6.12 17.88L7.98 16.02C8.38 15.62 9.18 15.62 9.58 16.02Z"/>
+
+    <!-- Underscore cursor. -->
+    <path id="underscore"
+          d="M40 32H24C23.4 32 23 32.4 23 33V36C23 36.6 23.4 37 24 37H40C40.6 37 41 36.6 41 36V33C41 32.4 40.6 32 40 32Z"/>
+
+    <!-- ========================= BODY GRADIENTS =========================
+         Stop colors are applied via CSS classes so every hex value
+         lives only in the <style> block above. -->
+    <linearGradient id="bodyGradSecondary"
+                    x1="36" y1="47" x2="11" y2="5"
+                    gradientUnits="userSpaceOnUse">
+      <stop class="secondaryGradStart" offset="0"/>
+      <stop class="secondaryGradEnd"   offset="1"/>
+    </linearGradient>
+    <linearGradient id="bodyGradLeader"
+                    x1="36" y1="47" x2="11" y2="5"
+                    gradientUnits="userSpaceOnUse">
+      <stop class="leaderGradStart" offset="0"/>
+      <stop class="leaderGradEnd"   offset="1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ========================= SECONDARY WINDOW =========================
+       Back window: dark gray, dimmed to 0.7 opacity on the chevron,
+       no cursor. Sits at the canvas origin. -->
+  <g>
+    <!-- 1. Title bar. -->
+    <use href="#titleBar" class="secondaryTitlebar"/>
+
+    <!-- 2. Controls: minimize dash, maximize square, close cross. -->
+    <g class="ctlGroup">
+      <line class="secondaryCtl" x1="29.3" y1="10.4" x2="31.7" y2="10.4"/>
+      <rect class="secondaryCtl" x="34.3"  y="8.3"   width="2.4" height="2.4" rx="0.2"/>
+      <line class="secondaryCtl" x1="39.3" y1="8.3"  x2="41.7" y2="10.7"/>
+      <line class="secondaryCtl" x1="41.7" y1="8.3"  x2="39.3" y2="10.7"/>
+    </g>
+
+    <!-- 3. Body. -->
+    <use href="#bodyShape" class="secondaryBody"/>
+
+    <!-- 4. Chevron: shadow (south-east offset) then foreground, dimmed. -->
+    <g class="secondaryChevronStack">
+      <g transform="translate(1.6, 1.6)">
+        <g class="secondaryChevronShadow">
+          <use href="#chUpper"/>
+          <use href="#chLower"/>
+        </g>
+      </g>
+      <g class="secondaryChevronFg">
+        <use href="#chUpper"/>
+        <use href="#chLower"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- ========================= LEADER WINDOW =========================
+       Front window: red, full opacity, with underscore cursor.
+       Offset (+16, +12) to form the "leader + secondaries" stack. -->
+  <g transform="translate(16, 12)">
+    <!-- 1. Title bar. -->
+    <use href="#titleBar" class="leaderTitlebar"/>
+
+    <!-- 2. Controls: yellow minimize, green maximize, red close. -->
+    <g class="ctlGroup">
+      <line class="leaderCtlMin"   x1="29.3" y1="10.4" x2="31.7" y2="10.4"/>
+      <rect class="leaderCtlMax"   x="34.3"  y="8.3"   width="2.4" height="2.4" rx="0.2"/>
+      <line class="leaderCtlClose" x1="39.3" y1="8.3"  x2="41.7" y2="10.7"/>
+      <line class="leaderCtlClose" x1="41.7" y1="8.3"  x2="39.3" y2="10.7"/>
+    </g>
+
+    <!-- 3. Body. -->
+    <use href="#bodyShape" class="leaderBody"/>
+
+    <!-- 4. Chevron shadows and cursor shadow share one translate group,
+            then foregrounds are drawn on top. -->
+    <g transform="translate(1.6, 1.6)">
+      <g class="leaderChevronShadow">
+        <use href="#chUpper"/>
+        <use href="#chLower"/>
+      </g>
+      <use href="#underscore" class="leaderChevronShadow"/>
+    </g>
+    <g class="leaderChevronFg">
+      <use href="#chUpper"/>
+      <use href="#chLower"/>
+    </g>
+    <use href="#underscore" class="leaderChevronFg"/>
+  </g>
+
+</svg>
