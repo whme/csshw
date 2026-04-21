@@ -34,8 +34,8 @@ jobs:
 
       - name: Build
         run: |
-          cargo build --all-targets --profile dev --verbose
-          cargo build --all-targets --profile test --verbose
+          cargo build --workspace --all-targets --profile dev --verbose
+          cargo build --workspace --all-targets --profile test --verbose
 
       - name: Build docs
         run: cargo docs
@@ -71,7 +71,7 @@ jobs:
         with: *build-cache-paths
 
       - name: Install cargo-llvm-cov
-        uses: &cargo-install-action baptiste0928/cargo-install@v3
+        uses: baptiste0928/cargo-install@v3
         with:
           crate: cargo-llvm-cov
           version: "^0.6"
@@ -111,7 +111,7 @@ jobs:
       - name: Run tests docs
         run: cargo doc-tests
 
-  make-checks:
+  check-readme-help:
     runs-on: *runner-version
     needs: build
     steps:
@@ -120,10 +120,5 @@ jobs:
         with: *rust-cache-shared-key
       - uses: *build-cache
         with: *build-cache-paths
-      - name: Install cargo-make
-        uses: *cargo-install-action
-        with:
-          crate: cargo-make
-          version: "^0.37"
       - name: Run check-readme-help
-        run: cargo make check-readme-help
+        run: cargo xtask check-readme-help

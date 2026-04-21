@@ -1,0 +1,26 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "xtask"
+path = "src/main.rs"
+
+[dependencies]
+# Shared: CLI parsing, error handling, TOML editing, semver bumps.
+anyhow     = "1"
+clap       = { version = "4", features = ["derive"] }
+toml_edit  = "0.21"
+semver     = "1.0"
+
+# generate-social-preview: image/font rendering and GitHub API fetch.
+image      = "0.25"
+imageproc  = "0.25"
+ab_glyph   = "0.2"
+ureq       = "2"
+serde_json = "1"
+
+[dev-dependencies]
+mockall = "0.13"
