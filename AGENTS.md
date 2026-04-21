@@ -30,17 +30,11 @@ multiple hosts simultaneously with synchronized keystroke distribution.
 ## Build & Test Commands
 
 ```sh
-cargo build                       # build
-cargo fmt                         # format (run before submitting)
-cargo lint                        # clippy (alias defined in .cargo/config.toml)
-cargo test                        # unit + integration tests
-cargo doc-tests                   # documentation tests
-cargo xtask check-readme-help     # verify README help section is current
-cargo xtask update-readme-help    # update README help section
-cargo xtask prepare-release       # bump version, create maintenance branch, commit, push
-cargo xtask create-release-tag    # create and push an annotated release tag
-cargo xtask generate-changelog    # generate changelog for the current version
-cargo xtask generate-social-preview  # regenerate res/social-preview.png
+cargo build                 # build
+cargo fmt                   # format (run before submitting)
+cargo lint                  # clippy (alias defined in .cargo/config.toml)
+cargo test                  # unit + integration tests
+cargo doc-tests             # documentation tests
 ```
 
 Always run `cargo fmt`, `cargo lint`, and both test commands before considering any task complete.

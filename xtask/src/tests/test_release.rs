@@ -15,7 +15,7 @@ mock! {
         fn git_current_branch(&self) -> anyhow::Result<String>;
         fn git_checkout_new_branch(&self, name: &str) -> anyhow::Result<()>;
         fn git_add(&self, files: &[String]) -> anyhow::Result<()>;
-        fn git_commit(&self, message: &str) -> anyhow::Result<()>;
+        fn git_commit(&self, message: &str, no_verify: bool) -> anyhow::Result<()>;
         fn git_push(&self, args: &[String]) -> anyhow::Result<()>;
         fn git_tag_list(&self, tag: &str) -> anyhow::Result<String>;
         fn git_log_latest_subject(&self) -> anyhow::Result<String>;
@@ -198,9 +198,9 @@ fn test_prepare_release_happy_path_main_branch() {
         .returning(|| Ok(()));
     mock.expect_git_add().times(1).returning(|_| Ok(()));
     mock.expect_git_commit()
-        .withf(|msg| msg == "Version 0.19.0")
+        .withf(|msg, no_verify| msg == "Version 0.19.0" && *no_verify)
         .times(1)
-        .returning(|_| Ok(()));
+        .returning(|_, _| Ok(()));
     mock.expect_git_push()
         .withf(|args| {
             args == [
@@ -243,9 +243,9 @@ fn test_prepare_release_happy_path_maintenance_branch() {
         .returning(|| Ok(()));
     mock.expect_git_add().times(1).returning(|_| Ok(()));
     mock.expect_git_commit()
-        .withf(|msg| msg == "Version 0.18.2")
+        .withf(|msg, no_verify| msg == "Version 0.18.2" && *no_verify)
         .times(1)
-        .returning(|_| Ok(()));
+        .returning(|_, _| Ok(()));
     mock.expect_git_push()
         .withf(|args| args.is_empty())
         .times(1)

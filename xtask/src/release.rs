@@ -77,11 +77,12 @@ pub trait ReleaseSystem {
     /// # Arguments
     ///
     /// * `message` - Commit message.
+    /// * `no_verify` - When `true`, pass `--no-verify` to bypass git hooks.
     ///
     /// # Errors
     ///
     /// Returns an error if the process fails.
-    fn git_commit(&self, message: &str) -> Result<()>;
+    fn git_commit(&self, message: &str, no_verify: bool) -> Result<()>;
 
     /// Run `git push` with the given extra arguments.
     ///
@@ -241,11 +242,13 @@ impl ReleaseSystem for RealSystem {
         Ok(())
     }
 
-    fn git_commit(&self, message: &str) -> Result<()> {
-        let status = std::process::Command::new("git")
-            .args(["commit", "-m", message])
-            .status()
-            .context("failed to run `git commit`")?;
+    fn git_commit(&self, message: &str, no_verify: bool) -> Result<()> {
+        let mut cmd = std::process::Command::new("git");
+        cmd.args(["commit", "-m", message]);
+        if no_verify {
+            cmd.arg("--no-verify");
+        }
+        let status = cmd.status().context("failed to run `git commit`")?;
         if !status.success() {
             bail!("`git commit` failed with status {status}");
         }
@@ -537,7 +540,10 @@ pub fn prepare_release<S: ReleaseSystem>(system: &S) -> Result<()> {
         "CHANGELOG.md".to_owned(),
         "changelogging.toml".to_owned(),
     ])?;
-    system.git_commit(&commit_message)?;
+    // Skip pre-commit hooks: the project's hook runs `cargo build --workspace
+    // --all-targets`, which would try to replace the running xtask.exe and
+    // fail on Windows with an access-denied error.
+    system.git_commit(&commit_message, true)?;
 
     println!("INFO - Pushing to remote");
     if current_branch == "main" {

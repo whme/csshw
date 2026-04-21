@@ -111,7 +111,7 @@ jobs:
       - name: Run tests docs
         run: cargo doc-tests
 
-  xtask-checks:
+  check-readme-help:
     runs-on: *runner-version
     needs: build
     steps:

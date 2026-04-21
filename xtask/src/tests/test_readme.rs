@@ -31,27 +31,7 @@ fn test_normalize_help_output_strips_whitespace_only_lines() {
     let result = normalize_help_output(raw);
 
     // Assert
-    assert!(
-        result.contains("\r\n\r\n"),
-        "whitespace-only line should become empty"
-    );
-    assert!(
-        !result.contains("   "),
-        "trailing spaces on blank line should be gone"
-    );
-}
-
-#[test]
-fn test_normalize_help_output_trims_outer_whitespace() {
-    // Arrange
-    let raw = "\n\nUsage: tool\n\n";
-
-    // Act
-    let result = normalize_help_output(raw);
-
-    // Assert
-    assert!(!result.starts_with("\r\n"), "should not start with newline");
-    assert!(!result.ends_with("\r\n"), "should not end with newline");
+    assert_eq!(result, "Usage: tool\r\n\r\n  -h  help");
 }
 
 #[test]
@@ -63,8 +43,7 @@ fn test_normalize_help_output_normalizes_line_endings() {
     let result = normalize_help_output(raw);
 
     // Assert
-    assert!(result.contains("\r\n"), "should use CRLF line endings");
-    assert!(!result.contains("\r\n\r\n"), "no blank lines in this input");
+    assert_eq!(result, "line one\r\nline two");
 }
 
 #[test]
@@ -112,24 +91,14 @@ fn test_extract_readme_help_section_missing_end_marker() {
 #[test]
 fn test_replace_readme_help_section_replaces_correctly() {
     // Arrange
-    let old_help = "old help text";
     let new_help = "new help text";
-    let readme = make_readme(old_help);
+    let readme = make_readme("old help text");
 
     // Act
     let result = replace_readme_help_section(&readme, new_help).unwrap();
 
     // Assert
-    assert!(result.contains(new_help), "new help should be present");
-    assert!(!result.contains(old_help), "old help should be gone");
-    assert!(
-        result.starts_with("# Title"),
-        "content before START should be unchanged"
-    );
-    assert!(
-        result.ends_with("More content."),
-        "content after END should be unchanged"
-    );
+    assert_eq!(result, make_readme(new_help));
 }
 
 #[test]
@@ -184,27 +153,9 @@ fn test_update_readme_help_returns_false_when_up_to_date() {
 }
 
 #[test]
-fn test_update_readme_help_returns_true_and_writes_when_different() {
+fn test_update_readme_help_returns_true_and_writes_new_content_when_different() {
     // Arrange
     let new_help = "new help text";
-    let mut mock = MockReadmeSystemMock::new();
-    mock.expect_get_help_output()
-        .returning(move || Ok(new_help.to_owned()));
-    mock.expect_read_readme()
-        .returning(|| Ok(make_readme("old help")));
-    mock.expect_write_readme().times(1).returning(|_| Ok(()));
-
-    // Act
-    let result = update_readme_help(&mock).unwrap();
-
-    // Assert
-    assert!(result, "should return true when README was updated");
-}
-
-#[test]
-fn test_update_readme_help_writes_new_help_content() {
-    // Arrange
-    let new_help = "updated help content";
     let mut mock = MockReadmeSystemMock::new();
     mock.expect_get_help_output()
         .returning(move || Ok(new_help.to_owned()));
@@ -213,22 +164,17 @@ fn test_update_readme_help_writes_new_help_content() {
 
     let written = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
     let written_clone = written.clone();
-    mock.expect_write_readme().returning(move |content| {
-        *written_clone.lock().unwrap() = content.to_owned();
-        Ok(())
-    });
+    mock.expect_write_readme()
+        .times(1)
+        .returning(move |content| {
+            *written_clone.lock().unwrap() = content.to_owned();
+            Ok(())
+        });
 
     // Act
-    update_readme_help(&mock).unwrap();
+    let result = update_readme_help(&mock).unwrap();
 
     // Assert
-    let written_content = written.lock().unwrap().clone();
-    assert!(
-        written_content.contains(new_help),
-        "written README should contain new help"
-    );
-    assert!(
-        !written_content.contains("old help"),
-        "written README should not contain old help"
-    );
+    assert!(result, "should return true when README was updated");
+    assert_eq!(*written.lock().unwrap(), make_readme(new_help));
 }
