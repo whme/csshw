@@ -9,4 +9,4 @@
 csshW is a portable application and is not installed.
 Just download the `.zip` archive, extract it and run `csshw.exe`
 
-# [csshw.{{VERSION}}.zip](https://github.com/whme/csshw/releases/download/{{VERSION}}/csshw.{{VERSION}}.zip) [![Downloads](https://img.shields.io/github/downloads/whme/csshw/{{VERSION}}/total?label=downloads)](https://github.com/whme/csshw/releases/download/{{VERSION}}/csshw.{{VERSION}}.zip)
+# <a href="https://github.com/whme/csshw/releases/download/{{VERSION}}/csshw.{{VERSION}}.zip"><img src="https://raw.githubusercontent.com/whme/csshw/refs/heads/main/res/csshw.svg" width="20" alt="csshW Logo"></img> csshw.{{VERSION}}.zip</a> [![Downloads](https://img.shields.io/github/downloads/whme/csshw/{{VERSION}}/total?label=downloads)](https://github.com/whme/csshw/releases/download/{{VERSION}}/csshw.{{VERSION}}.zip)
