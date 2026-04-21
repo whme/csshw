@@ -44,6 +44,7 @@ jobs:
 
           cp templates/github-pages-index.html unified_site/index.html
           cp res/csshw.ico unified_site/favicon.ico
+          cp res/csshw.svg unified_site/csshw.svg
 
           echo "<meta http-equiv=\"refresh\" content=\"0; url=csshw_lib/index.html\">" > unified_site/docs/index.html
 
