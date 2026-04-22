@@ -269,6 +269,23 @@ mod daemon_test {
     }
 
     #[test]
+    #[should_panic(expected = "Duplicate client PID")]
+    fn test_clients_push_duplicate_pid_panics() {
+        let mut clients = Clients::new();
+        let make_client = |pid: u32| {
+            return Client {
+                hostname: "host".to_owned(),
+                window_handle: HWND(std::ptr::null_mut()),
+                process_handle: HANDLE::default(),
+                process_id: pid,
+                pipe_server_state: Arc::new(Mutex::new(PipeServerState::Enabled)),
+            };
+        };
+        clients.push(make_client(1000));
+        clients.push(make_client(1000)); // duplicate — must panic
+    }
+
+    #[test]
     fn test_clients_push_and_lookup() {
         let mut clients = Clients::new();
         assert!(clients.is_empty());

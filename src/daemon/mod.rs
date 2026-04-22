@@ -124,8 +124,18 @@ impl Clients {
     /// # Arguments
     ///
     /// * `client` - The [Client] to add.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a client with the same process id is already present, as
+    /// duplicate PIDs indicate broken daemon bookkeeping.
     fn push(&mut self, client: Client) {
         let index = self.list.len();
+        assert!(
+            !self.pid_index.contains_key(&client.process_id),
+            "Duplicate client PID {} — daemon bookkeeping broken",
+            client.process_id,
+        );
         self.pid_index.insert(client.process_id, index);
         self.list.push(client);
     }
@@ -1001,7 +1011,7 @@ async fn named_pipe_server_routine(
     // wait for a client to connect
     server.connect().await.unwrap_or_else(|err| {
         error!("{}", err);
-        panic!("Timeded out waiting for clients to connect to named pipe server",)
+        panic!("Timed out waiting for clients to connect to named pipe server",)
     });
 
     // Authenticate the connecting client by reading its 4 byte PID.
