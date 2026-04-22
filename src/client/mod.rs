@@ -363,8 +363,8 @@ async fn run(api: &dyn WindowsApi, child: &mut Child) {
             }
         }
     };
-    // Authenticate ourselves to the daemon's pipe server by sending our PID.
-    // The daemon uses this to match this pipe connection to the corresponding
+    // Identify ourselves to the daemon's pipe server by sending our PID.
+    // The daemon uses this to correlate this pipe connection to the corresponding
     // client in its internal bookkeeping. Without this handshake the daemon
     // cannot forward input to us.
     send_pid_handshake(&named_pipe_client).await;
