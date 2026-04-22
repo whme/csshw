@@ -3,7 +3,10 @@
 //! Invoke via `cargo xtask <subcommand>`.
 //! See each subcommand's module for details.
 
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
 mod changelog;
+mod coverage;
 mod readme;
 mod release;
 mod social_preview;
@@ -34,6 +37,8 @@ enum Command {
     CreateReleaseTag,
     /// Regenerate res/social-preview.png with the current GitHub star count.
     GenerateSocialPreview,
+    /// Run coverage analysis using a pinned nightly toolchain.
+    Coverage,
 }
 
 fn main() -> Result<()> {
@@ -60,6 +65,9 @@ fn main() -> Result<()> {
         }
         Command::GenerateSocialPreview => {
             social_preview::generate_social_preview(&social_preview::RealSystem)?;
+        }
+        Command::Coverage => {
+            coverage::run_coverage(&coverage::RealSystem)?;
         }
     }
     Ok(())

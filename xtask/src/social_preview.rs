@@ -54,6 +54,7 @@ pub trait SocialPreviewSystem {
 /// Production implementation of [`SocialPreviewSystem`].
 pub struct RealSystem;
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 impl SocialPreviewSystem for RealSystem {
     fn fetch_star_count(&self) -> Result<u64> {
         let body = ureq::get("https://api.github.com/repos/whme/csshw")

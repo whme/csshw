@@ -4,6 +4,7 @@
 #![allow(clippy::needless_return, clippy::doc_overindented_list_items)]
 #![warn(missing_docs)]
 #![doc(html_no_source)]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 use std::fs::{create_dir, File};
 use std::mem;
@@ -64,6 +65,7 @@ pub trait Registry {
 /// Default implementation of Registry trait that performs actual Windows registry API calls
 pub struct DefaultRegistry;
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 impl Registry for DefaultRegistry {
     fn get_registry_string_value(&self, path: &str, name: &str) -> Option<String> {
         let key = Hive::CurrentUser
@@ -161,6 +163,7 @@ pub trait FileSystem {
 /// Default implementation of FileSystem trait that performs actual file system operations
 pub struct ProductionFileSystem;
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 impl FileSystem for ProductionFileSystem {
     fn create_directory(&self, path: &str) -> bool {
         return create_dir(path).is_ok() || std::path::Path::new(path).exists();

@@ -202,6 +202,7 @@ pub trait ReleaseSystem {
 /// Production implementation of [`ReleaseSystem`].
 pub struct RealSystem;
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 impl ReleaseSystem for RealSystem {
     fn git_status_porcelain(&self) -> Result<String> {
         let output = std::process::Command::new("git")
