@@ -1,3 +1,4 @@
 /target
-/res/social-preview.png
 /res/csshw.ico
+/xtask/social-preview/node_modules/
+/templates/social-preview.preview.html

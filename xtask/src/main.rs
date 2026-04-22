@@ -11,6 +11,8 @@ mod readme;
 mod release;
 mod social_preview;
 
+use std::path::PathBuf;
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
@@ -35,8 +37,19 @@ enum Command {
     PrepareRelease,
     /// Create and push an annotated git release tag for the current version.
     CreateReleaseTag,
-    /// Regenerate res/social-preview.png with the current GitHub star count.
-    GenerateSocialPreview,
+    /// Render the 1280x640 social preview PNG from templates/social-preview.html
+    /// using headless Chromium via the pinned Playwright Docker image.
+    GenerateSocialPreview {
+        /// Output path for the generated PNG, relative to the workspace root.
+        /// Defaults to `target/social-preview/social-preview.png`.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// GitHub token used for authenticated API requests. Falls back to
+        /// the `GITHUB_TOKEN` environment variable, then to unauthenticated
+        /// access (rate-limited to 60 requests/hour).
+        #[arg(long)]
+        token: Option<String>,
+    },
     /// Run coverage analysis using a pinned nightly toolchain.
     Coverage,
 }
@@ -63,8 +76,8 @@ fn main() -> Result<()> {
         Command::CreateReleaseTag => {
             release::create_release_tag(&release::RealSystem)?;
         }
-        Command::GenerateSocialPreview => {
-            social_preview::generate_social_preview(&social_preview::RealSystem)?;
+        Command::GenerateSocialPreview { out, token } => {
+            social_preview::generate_social_preview(&social_preview::RealSystem, out, token)?;
         }
         Command::Coverage => {
             coverage::run_coverage(&coverage::RealSystem)?;
