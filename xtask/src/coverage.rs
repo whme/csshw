@@ -1,19 +1,20 @@
 //! Local coverage report generation.
 //!
-//! Reads the pinned nightly toolchain from `nightly-toolchain.version`,
-//! ensures it is installed, then runs `cargo-llvm-cov` to produce both
-//! Cobertura XML and HTML coverage reports.
+//! The nightly toolchain is required because `#[coverage(off)]` — used to
+//! exclude untestable code such as Windows API wrappers and production I/O
+//! implementations from coverage — relies on the `coverage_attribute` feature,
+//! which is only available on nightly Rust. Without it the `cfg(coverage_nightly)`
+//! guards would not activate, causing those impls to be counted as missed lines
+//! and distorting the report.
+//!
+//! The pinned toolchain version is read from `nightly-toolchain.version` and
+//! the filename exclusion regex is read from `.coverage-ignore-regex`; both
+//! files are shared with the CI workflow to keep the environments in sync.
 //!
 //! [`run_coverage`] orchestrates the full workflow: toolchain check,
 //! instrumented test run, and report generation.
 
 use anyhow::{bail, Context, Result};
-
-/// Filename regex passed to `--ignore-filename-regex` to exclude files
-/// that cannot meaningfully be tested (entry point, debug helpers).
-///
-/// Keep in sync with `.github/workflows/_shared-ci.yml` `IGNORE_COVERAGE`.
-const IGNORE_COVERAGE_REGEX: &str = r"((src[/\\]main\.rs$)|(src[/\\]utils[/\\]debug\.rs$))";
 
 /// All side-effecting operations required by this module.
 ///
@@ -48,6 +49,14 @@ pub trait CoverageSystem {
     ///
     /// Returns an error if the command fails.
     fn run_cargo_llvm_cov(&self, toolchain: &str, args: &[String]) -> Result<()>;
+
+    /// Read the contents of `.coverage-ignore-regex` and return the trimmed
+    /// filename regex pattern passed to `--ignore-filename-regex`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be read.
+    fn read_ignore_regex_file(&self) -> Result<String>;
 
     /// Print an informational message to stdout.
     fn print_info(&self, message: &str);
@@ -111,6 +120,12 @@ impl CoverageSystem for RealSystem {
         Ok(())
     }
 
+    fn read_ignore_regex_file(&self) -> Result<String> {
+        std::fs::read_to_string(".coverage-ignore-regex")
+            .context("failed to read .coverage-ignore-regex")
+            .map(|s| s.trim().to_owned())
+    }
+
     fn print_info(&self, message: &str) {
         println!("INFO - {message}");
     }
@@ -138,6 +153,7 @@ fn args(values: &[&str]) -> Vec<String> {
 pub fn run_coverage<S: CoverageSystem>(system: &S) -> Result<()> {
     let toolchain = system.read_nightly_version_file()?;
     system.print_info(&format!("Using nightly toolchain: {toolchain}"));
+    let ignore_regex = system.read_ignore_regex_file()?;
 
     // Ensure toolchain is installed.
     let installed = system.list_installed_toolchains()?;
@@ -175,7 +191,7 @@ pub fn run_coverage<S: CoverageSystem>(system: &S) -> Result<()> {
             "--output-path",
             "coverage.xml",
             "--ignore-filename-regex",
-            IGNORE_COVERAGE_REGEX,
+            &ignore_regex,
         ]),
     )?;
 
@@ -189,7 +205,7 @@ pub fn run_coverage<S: CoverageSystem>(system: &S) -> Result<()> {
             "--output-dir",
             "coverage_html",
             "--ignore-filename-regex",
-            IGNORE_COVERAGE_REGEX,
+            &ignore_regex,
         ]),
     )?;
 

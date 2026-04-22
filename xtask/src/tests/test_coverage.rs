@@ -8,6 +8,7 @@ mock! {
     CoverageSystemMock {}
     impl CoverageSystem for CoverageSystemMock {
         fn read_nightly_version_file(&self) -> anyhow::Result<String>;
+        fn read_ignore_regex_file(&self) -> anyhow::Result<String>;
         fn list_installed_toolchains(&self) -> anyhow::Result<String>;
         fn install_toolchain(&self, toolchain: &str) -> anyhow::Result<()>;
         fn run_cargo_llvm_cov(&self, toolchain: &str, args: &[String]) -> anyhow::Result<()>;
@@ -23,6 +24,8 @@ fn base_mock() -> MockCoverageSystemMock {
     let mut mock = MockCoverageSystemMock::new();
     mock.expect_read_nightly_version_file()
         .returning(|| Ok(TOOLCHAIN.to_owned()));
+    mock.expect_read_ignore_regex_file()
+        .returning(|| Ok(r"((src[/\\]main\.rs$)|(src[/\\]utils[/\\]debug\.rs$))".to_owned()));
     mock.expect_print_info().returning(|_| ());
     mock
 }
