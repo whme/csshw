@@ -1,0 +1,13 @@
+{
+  "name": "csshw-social-preview",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Node tooling for cargo xtask generate-social-preview. Runs inside the pinned Playwright Docker image; not intended to be installed on the host.",
+  "type": "module",
+  "scripts": {
+    "generate": "node generate.mjs"
+  },
+  "dependencies": {
+    "@playwright/test": "1.49.1"
+  }
+}
