@@ -11,7 +11,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::client::{
     build_ssh_arguments, is_alt_shift_c_combination, is_keep_alive_packet, resolve_username,
-    write_console_input,
+    send_pid_handshake, write_console_input,
 };
 use crate::serde::SERIALIZED_INPUT_RECORD_0_LENGTH;
 use crate::utils::config::ClientConfig;
@@ -515,4 +515,41 @@ fn test_write_console_input() {
         // Execute the function under test
         write_console_input(&mock_api, test_input_record);
     }
+}
+
+#[tokio::test]
+async fn test_send_pid_handshake() -> Result<(), Box<dyn std::error::Error>> {
+    use std::io;
+    use tokio::net::windows::named_pipe::{ClientOptions, PipeMode, ServerOptions};
+
+    use crate::utils::constants::PIPE_NAME;
+
+    let server = ServerOptions::new()
+        .access_inbound(true)
+        .pipe_mode(PipeMode::Message)
+        .create(PIPE_NAME)?;
+    let client = ClientOptions::new().open(PIPE_NAME)?;
+
+    // Run the handshake concurrently with reading from the server side.
+    let handshake = tokio::spawn(async move {
+        send_pid_handshake(&client).await;
+    });
+
+    server.connect().await?;
+
+    // Read the 4-byte PID from the server side.
+    let mut buf = [0u8; 4];
+    let mut total_read = 0;
+    while total_read < buf.len() {
+        server.readable().await?;
+        match server.try_read(&mut buf[total_read..]) {
+            Ok(n) => total_read += n,
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    assert_eq!(buf, std::process::id().to_le_bytes());
+    handshake.await?;
+    return Ok(());
 }

@@ -183,7 +183,7 @@ mod daemon_test {
     }
 
     #[tokio::test]
-    async fn test_named_pipe_server_routine_sender_closes_unexpectidly(
+    async fn test_named_pipe_server_routine_sender_closes_unexpectedly(
     ) -> Result<(), Box<dyn std::error::Error>> {
         const TEST_PID: u32 = 22222;
         // Setup sender and receiver
@@ -263,7 +263,31 @@ mod daemon_test {
         let future = tokio::spawn(async move {
             named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
         });
-        // Unknown PID is unrecoverable — the routine must panic.
+        // Unknown PID is unrecoverable — the routine must panic (exits the daemon in production).
+        assert!(future.await.unwrap_err().is_panic());
+        return Ok(());
+    }
+
+    #[tokio::test]
+    async fn test_named_pipe_server_routine_client_closes_before_pid_handshake(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        const TEST_PID: u32 = 55555;
+        let (_sender, mut receiver) = broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(
+            SERIALIZED_INPUT_RECORD_0_LENGTH,
+        );
+        let named_pipe_server = ServerOptions::new()
+            .access_inbound(true)
+            .access_outbound(true)
+            .pipe_mode(PipeMode::Message)
+            .create(PIPE_NAME)?;
+        let named_pipe_client = ClientOptions::new().open(PIPE_NAME)?;
+        let clients = make_clients_with_pid(TEST_PID);
+        // Drop the client immediately without sending any PID bytes.
+        drop(named_pipe_client);
+        let future = tokio::spawn(async move {
+            named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
+        });
+        // Pipe closed before handshake completed — the routine must panic.
         assert!(future.await.unwrap_err().is_panic());
         return Ok(());
     }

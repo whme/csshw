@@ -82,25 +82,25 @@ struct Client {
     process_handle: HANDLE,
     /// Process id of the client process.
     ///
-    /// Used by the pipe server task to authenticate which client has connected
+    /// Used by the pipe server task to correlate which client has connected
     /// to it, via a handshake over the named pipe.
     process_id: u32,
     /// Shared state between this client and its assigned pipe server task.
     ///
-    /// Populated at [Client] construction; cloned by the pipe server task upon
-    /// successful PID authentication and consulted during input forwarding to
+    /// Populated at [`Client`] construction; cloned by the pipe server task upon
+    /// successful PID correlation and consulted during input forwarding to
     /// determine whether records should be sent to the client.
     pipe_server_state: Arc<Mutex<PipeServerState>>,
 }
 
 unsafe impl Send for Client {}
 
-/// Collection of [Client]s maintaining insertion order and a PID-indexed
+/// Collection of [`Client`]s maintaining insertion order and a PID-indexed
 /// lookup table.
 ///
 /// The ordered list preserves client window placement semantics, while the
 /// index enables O(1) lookup by process id — required by the pipe server task
-/// during PID authentication and future per-client pipe server control.
+/// during PID correlation and future per-client pipe server control.
 struct Clients {
     /// Ordered list of clients; order matches launch order and is used for
     /// window arrangement and z-order synchronization.
@@ -123,7 +123,7 @@ impl Clients {
     ///
     /// # Arguments
     ///
-    /// * `client` - The [Client] to add.
+    /// * `client` - The [`Client`] to add.
     ///
     /// # Panics
     ///
@@ -181,7 +181,7 @@ impl Clients {
     ///
     /// # Arguments
     ///
-    /// * `f` - Predicate applied to each [Client]; kept when it returns `true`.
+    /// * `f` - Predicate applied to each [`Client`]; kept when it returns `true`.
     fn retain<F: FnMut(&Client) -> bool>(&mut self, mut f: F) {
         self.list.retain(|client| return f(client));
         self.pid_index.clear();
@@ -966,19 +966,19 @@ fn launch_client_console<W: WindowsApi>(
     );
 }
 
-/// Wait for the named pipe server to connect, authenticate the client by
+/// Wait for the named pipe server to connect, correlate the client by
 /// its process id, then forward serialized input records read from the
 /// broadcast channel to the named pipe server.
 ///
-/// Authentication: after [NamedPipeServer::connect] resolves, the client is
+/// Correlation: after [`NamedPipeServer::connect`] resolves, the client is
 /// expected to write its 4 byte little-endian process id into the pipe. The
-/// routine looks up the [Client] with that PID in the daemon's `clients`
-/// collection; if it is not found, the routine logs an error and panics —
-/// an unknown PID indicates either broken daemon bookkeeping or an
-/// unauthorized process connecting to the pipe, and is unrecoverable.
+/// routine looks up the [`Client`] with that PID in the daemon's `clients`
+/// collection; if it is not found, the routine logs an error and terminates
+/// the daemon — an unknown PID indicates broken daemon bookkeeping and is
+/// unrecoverable.
 ///
 /// Forwarding: on every broadcast record, the routine matches on the
-/// [`PipeServerState`] cloned from the authenticated client; only
+/// [`PipeServerState`] cloned from the correlated client; only
 /// [`PipeServerState::Enabled`] writes the record to the pipe. The keep-alive
 /// write stays unconditional so dead pipes are detected regardless of state.
 ///
@@ -996,7 +996,7 @@ fn launch_client_console<W: WindowsApi>(
 ///                thread that are to be sent to the client via the named
 ///                pipe.
 /// * `clients`  - The daemon's collection of tracked clients, used to
-///                authenticate the connecting client by PID and to obtain
+///                correlate the connecting client by PID and to obtain
 ///                the shared [`PipeServerState`] reference for this server.
 ///
 /// # Panics
@@ -1014,19 +1014,21 @@ async fn named_pipe_server_routine(
         panic!("Timed out waiting for clients to connect to named pipe server",)
     });
 
-    // Authenticate the connecting client by reading its 4 byte PID.
+    // Correlate the connecting client by reading its 4 byte PID.
     let pid = read_client_pid(&server).await;
     let pipe_server_state = match clients.lock().unwrap().get_by_pid(pid) {
         Some(client) => Arc::clone(&client.pipe_server_state),
         None => {
             error!(
-                "Named pipe server received unknown PID {} during authentication",
+                "Named pipe server received unknown PID {} — daemon bookkeeping broken",
                 pid
             );
-            panic!(
-                "Unknown client PID {} connected to named pipe server — daemon bookkeeping broken or unauthorized process",
-                pid
-            );
+            // In production this exits the daemon; in tests process::exit would kill
+            // the test runner, so we panic instead so tokio::spawn can catch it.
+            #[cfg(not(test))]
+            std::process::exit(1);
+            #[cfg(test)]
+            panic!("Unknown client PID {} — daemon bookkeeping broken", pid);
         }
     };
 
@@ -1098,7 +1100,7 @@ async fn named_pipe_server_routine(
 ///
 /// Reads exactly 4 bytes from `server`, retrying on `WouldBlock`, and decodes
 /// them as a `u32`. Any non-recoverable I/O error panics, as a client that
-/// cannot send its PID cannot be authenticated and forwarding would be
+/// cannot send its PID cannot be correlated and forwarding would be
 /// impossible.
 ///
 /// # Arguments
