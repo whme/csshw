@@ -17,7 +17,7 @@ semver     = "1.0"
 
 # generate-social-preview: image/font rendering and GitHub API fetch.
 image      = "0.25"
-imageproc  = "0.25"
+imageproc  = "0.26"
 ab_glyph   = "0.2"
 ureq       = "2"
 serde_json = "1"
