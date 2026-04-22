@@ -26,6 +26,11 @@ multiple hosts simultaneously with synchronized keystroke distribution.
 - **Modules**: `src/client/`, `src/daemon/`, `src/serde/`, `src/utils/`
 - **Tests**: `src/tests/` with component-based organization (`test_*.rs` naming)
 - **xtask**: `xtask/` — Developer automation tasks (README checks, release, changelog, social preview)
+- **Config**: `.config/` — grouped, shared single-line marker files consumed
+  by both `xtask` and CI. Currently holds `.config/coverage/` (pinned
+  nightly toolchain, pinned Python tools `diff-cover` / `pycobertura`, and
+  the coverage ignore-filename regex). Filenames follow
+  `<identifier>.<kind>` where `<kind>` is `version` or `regex`.
 
 ## Build & Test Commands
 

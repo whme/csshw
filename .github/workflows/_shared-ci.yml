@@ -73,7 +73,7 @@ jobs:
         id: nightly
         shell: bash
         run: |
-          echo "version=$(cat nightly-toolchain.version)" >> $GITHUB_OUTPUT
+          echo "version=$(cat .config/coverage/nightly-toolchain.version)" >> $GITHUB_OUTPUT
 
       - name: Install nightly toolchain
         run: |
@@ -88,7 +88,7 @@ jobs:
       - name: Run tests with coverage
         run: |
           $nightly = "${{ steps.nightly.outputs.version }}"
-          $ignoreRegex = (Get-Content -Raw ".coverage-ignore-regex").Trim()
+          $ignoreRegex = (Get-Content -Raw ".config/coverage/ignore-filename.regex").Trim()
           cargo +$nightly llvm-cov clean --workspace
           cargo +$nightly llvm-cov --all-features --workspace --no-report -- --no-capture
           cargo +$nightly llvm-cov report --cobertura --output-path coverage.xml --ignore-filename-regex $ignoreRegex

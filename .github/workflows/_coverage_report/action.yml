@@ -30,18 +30,24 @@ runs:
       with:
         python-version: "3.x"
 
+    - name: Read pycobertura version
+      id: pycobertura
+      shell: bash
+      run: |
+        echo "version=$(cat .config/coverage/pycobertura.version)" >> $GITHUB_OUTPUT
+
     - name: Cache pip packages
       uses: actions/cache@v4
       id: pip-cache
       with:
         path: ~/.cache/pip
         key: |
-          pip-diff-cover-${{ runner.os }}-v1-4.1.0
+          pip-pycobertura-${{ runner.os }}-v1-${{ steps.pycobertura.outputs.version }}
         restore-keys: |
-          pip-diff-cover-${{ runner.os }}-v1-
+          pip-pycobertura-${{ runner.os }}-v1-
 
     - name: Install pycobertura
-      run: pip install pycobertura==4.1.0
+      run: pip install pycobertura==${{ steps.pycobertura.outputs.version }}
       shell: bash
 
     - name: Generate text report
