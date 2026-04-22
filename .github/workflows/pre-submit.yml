@@ -30,6 +30,7 @@ jobs:
               - 'clippy.toml'
               - 'xtask/**'
               - 'rustfmt.toml'
+              - 'nightly-toolchain.version'
             workflows:
               - '.github/workflows/pre-submit.yml'
               - '.github/workflows/post-submit.yml'

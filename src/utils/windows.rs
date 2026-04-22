@@ -525,6 +525,7 @@ impl Clone for MockWindowsApi {
 #[derive(Clone)]
 pub struct DefaultWindowsApi;
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 impl WindowsApi for DefaultWindowsApi {
     fn set_console_title(&self, title: &str) -> windows::core::Result<()> {
         return unsafe { SetWindowTextW(GetConsoleWindow(), &HSTRING::from(title)) };
@@ -1039,6 +1040,7 @@ pub fn get_console_title(api: &dyn WindowsApi) -> String {
 /// # Returns
 ///
 /// The [HANDLE] to the requested [STD_HANDLE].
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn get_std_handle(nstdhandle: STD_HANDLE) -> HANDLE {
     return unsafe {
         GetStdHandle(nstdhandle)
@@ -1059,6 +1061,7 @@ fn get_std_handle(nstdhandle: STD_HANDLE) -> HANDLE {
 ///
 /// let input_handle = get_console_input_buffer();
 /// ```
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn get_console_input_buffer() -> HANDLE {
     return get_std_handle(STD_INPUT_HANDLE);
 }
@@ -1076,6 +1079,7 @@ pub fn get_console_input_buffer() -> HANDLE {
 ///
 /// let output_handle = get_console_output_buffer();
 /// ```
+#[cfg_attr(coverage_nightly, coverage(off))]
 pub fn get_console_output_buffer() -> HANDLE {
     return get_std_handle(STD_OUTPUT_HANDLE);
 }
