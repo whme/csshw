@@ -5,6 +5,7 @@
 #![warn(missing_docs)]
 
 use std::cmp::max;
+use std::collections::HashMap;
 use std::{
     io,
     sync::{Arc, Mutex},
@@ -58,6 +59,18 @@ mod workspace;
 /// to the named pipe servers connected to each client in parallel.
 const SENDER_CAPACITY: usize = 1024 * 1024;
 
+/// Runtime state of a client's assigned pipe server task.
+///
+/// Observed by the pipe server on each input record; determines whether
+/// the record is forwarded to the client over the named pipe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PipeServerState {
+    /// Forward all input records to the client.
+    Enabled,
+    // Future variants (e.g. Paused, Disabled) will expand the control surface
+    // without requiring architectural changes.
+}
+
 /// Representation of a client
 #[derive(Clone)]
 struct Client {
@@ -67,9 +80,106 @@ struct Client {
     window_handle: HWND,
     /// Process handle to the client process.
     process_handle: HANDLE,
+    /// Process id of the client process.
+    ///
+    /// Used by the pipe server task to authenticate which client has connected
+    /// to it, via a handshake over the named pipe.
+    process_id: u32,
+    /// Shared state between this client and its assigned pipe server task.
+    ///
+    /// Populated at [Client] construction; cloned by the pipe server task upon
+    /// successful PID authentication and consulted during input forwarding to
+    /// determine whether records should be sent to the client.
+    pipe_server_state: Arc<Mutex<PipeServerState>>,
 }
 
 unsafe impl Send for Client {}
+
+/// Collection of [Client]s maintaining insertion order and a PID-indexed
+/// lookup table.
+///
+/// The ordered list preserves client window placement semantics, while the
+/// index enables O(1) lookup by process id — required by the pipe server task
+/// during PID authentication and future per-client pipe server control.
+struct Clients {
+    /// Ordered list of clients; order matches launch order and is used for
+    /// window arrangement and z-order synchronization.
+    list: Vec<Client>,
+    /// Maps a client's process id to its index in [`list`](Clients::list).
+    pid_index: HashMap<u32, usize>,
+}
+
+impl Clients {
+    /// Creates a new empty collection.
+    fn new() -> Self {
+        return Clients {
+            list: Vec::new(),
+            pid_index: HashMap::new(),
+        };
+    }
+
+    /// Appends a client to the collection and records its position in the
+    /// PID index.
+    ///
+    /// # Arguments
+    ///
+    /// * `client` - The [Client] to add.
+    fn push(&mut self, client: Client) {
+        let index = self.list.len();
+        self.pid_index.insert(client.process_id, index);
+        self.list.push(client);
+    }
+
+    /// Returns a reference to the client with the given process id, if any.
+    ///
+    /// # Arguments
+    ///
+    /// * `pid` - The process id of the client to look up.
+    ///
+    /// # Returns
+    ///
+    /// `Some(&Client)` if a client with the given PID exists, `None` otherwise.
+    fn get_by_pid(&self, pid: u32) -> Option<&Client> {
+        return self
+            .pid_index
+            .get(&pid)
+            .map(|&index| return &self.list[index]);
+    }
+
+    /// Returns an iterator over the clients in insertion order.
+    fn iter(&self) -> std::slice::Iter<'_, Client> {
+        return self.list.iter();
+    }
+
+    /// Returns the clients as a slice in insertion order.
+    fn as_slice(&self) -> &[Client] {
+        return self.list.as_slice();
+    }
+
+    /// Returns the number of clients in the collection.
+    fn len(&self) -> usize {
+        return self.list.len();
+    }
+
+    /// Returns whether the collection is empty.
+    fn is_empty(&self) -> bool {
+        return self.list.is_empty();
+    }
+
+    /// Retains only the clients for which the predicate returns `true`,
+    /// rebuilding the PID index to reflect the new positions.
+    ///
+    /// # Arguments
+    ///
+    /// * `f` - Predicate applied to each [Client]; kept when it returns `true`.
+    fn retain<F: FnMut(&Client) -> bool>(&mut self, mut f: F) {
+        self.list.retain(|client| return f(client));
+        self.pid_index.clear();
+        for (index, client) in self.list.iter().enumerate() {
+            self.pid_index.insert(client.process_id, index);
+        }
+    }
+}
 
 /// Hacky wrapper around a window handle.
 ///
@@ -183,19 +293,22 @@ impl<'a> Daemon<'a> {
             CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color),
         );
 
-        let mut clients = Arc::new(Mutex::new(
-            launch_clients(
-                windows_api,
-                self.hosts.to_vec(),
-                &self.username,
-                self.port,
-                self.debug,
-                &workspace_area,
-                self.config.aspect_ratio_adjustement,
-                0,
-            )
-            .await,
-        ));
+        let launched = launch_clients(
+            windows_api,
+            self.hosts.to_vec(),
+            &self.username,
+            self.port,
+            self.debug,
+            &workspace_area,
+            self.config.aspect_ratio_adjustement,
+            0,
+        )
+        .await;
+        let mut clients_collection = Clients::new();
+        for client in launched.into_iter() {
+            clients_collection.push(client);
+        }
+        let mut clients = Arc::new(Mutex::new(clients_collection));
 
         // Now that all clients started, focus the daemon console again.
         let daemon_console = windows_api.get_console_window();
@@ -233,13 +346,15 @@ impl<'a> Daemon<'a> {
     async fn run<W: WindowsApi + Clone + 'static>(
         &mut self,
         windows_api: &W,
-        clients: &mut Arc<Mutex<Vec<Client>>>,
+        clients: &mut Arc<Mutex<Clients>>,
         workspace_area: &workspace::WorkspaceArea,
     ) {
         let (sender, _) =
             broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(SENDER_CAPACITY);
 
-        let mut servers = Arc::new(Mutex::new(self.launch_named_pipe_servers(&sender)));
+        let mut servers = Arc::new(Mutex::new(
+            self.launch_named_pipe_servers(&sender, Arc::clone(clients)),
+        ));
 
         // Monitor client processes
         let clients_clone = Arc::clone(clients);
@@ -292,10 +407,11 @@ impl<'a> Daemon<'a> {
     fn launch_named_pipe_servers(
         &self,
         sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
+        clients: Arc<Mutex<Clients>>,
     ) -> Vec<JoinHandle<()>> {
         let mut servers: Vec<JoinHandle<()>> = Vec::new();
         for _ in &self.hosts {
-            self.launch_named_pipe_server(&mut servers, sender);
+            self.launch_named_pipe_server(&mut servers, sender, Arc::clone(&clients));
         }
         return servers;
     }
@@ -313,8 +429,10 @@ impl<'a> Daemon<'a> {
         &self,
         servers: &mut Vec<JoinHandle<()>>,
         sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
+        clients: Arc<Mutex<Clients>>,
     ) {
         let named_pipe_server = ServerOptions::new()
+            .access_inbound(true)
             .access_outbound(true)
             .pipe_mode(PipeMode::Message)
             .create(PIPE_NAME)
@@ -324,7 +442,7 @@ impl<'a> Daemon<'a> {
             });
         let mut receiver = sender.subscribe();
         servers.push(tokio::spawn(async move {
-            named_pipe_server_routine(named_pipe_server, &mut receiver).await;
+            named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
         }));
     }
 
@@ -361,7 +479,7 @@ impl<'a> Daemon<'a> {
         windows_api: &W,
         sender: &Sender<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
         input_record: INPUT_RECORD_0,
-        clients: &mut Arc<Mutex<Vec<Client>>>,
+        clients: &mut Arc<Mutex<Clients>>,
         workspace_area: &workspace::WorkspaceArea,
         servers: &mut Arc<Mutex<Vec<JoinHandle<()>>>>,
     ) {
@@ -384,7 +502,7 @@ impl<'a> Daemon<'a> {
                 (VK_R, 0) => {
                     self.rearrange_client_windows(
                         windows_api,
-                        &clients.lock().unwrap(),
+                        clients.lock().unwrap().as_slice(),
                         workspace_area,
                     );
                     self.arrange_daemon_console(windows_api, workspace_area);
@@ -426,7 +544,11 @@ impl<'a> Daemon<'a> {
                             .await;
                             for client in new_clients.into_iter() {
                                 clients.lock().unwrap().push(client);
-                                self.launch_named_pipe_server(&mut servers.lock().unwrap(), sender);
+                                self.launch_named_pipe_server(
+                                    &mut servers.lock().unwrap(),
+                                    sender,
+                                    Arc::clone(clients),
+                                );
                             }
                         }
                         Err(error) => {
@@ -436,7 +558,7 @@ impl<'a> Daemon<'a> {
                     toggle_processed_input_mode(windows_api); // Re-disable processed input mode.
                     self.rearrange_client_windows(
                         windows_api,
-                        &clients.lock().unwrap(),
+                        clients.lock().unwrap().as_slice(),
                         workspace_area,
                     );
                     self.arrange_daemon_console(windows_api, workspace_area);
@@ -706,7 +828,7 @@ async fn launch_clients<W: WindowsApi + 'static + Clone>(
 
         // Use spawn_blocking to run the synchronous launch_client_console in parallel
         let task = tokio::task::spawn_blocking(move || {
-            let (window_handle, process_handle) = launch_client_console(
+            let (window_handle, process_handle, process_id) = launch_client_console(
                 windows_api_clone.as_ref(),
                 &host,
                 username_client,
@@ -723,6 +845,8 @@ async fn launch_clients<W: WindowsApi + 'static + Clone>(
                     hostname: host,
                     window_handle,
                     process_handle,
+                    process_id,
+                    pipe_server_state: Arc::new(Mutex::new(PipeServerState::Enabled)),
                 },
             );
         });
@@ -771,7 +895,8 @@ async fn launch_clients<W: WindowsApi + 'static + Clone>(
 ///
 /// # Returns
 ///
-/// A tuple containing the window handle and process handle of the client process.
+/// A tuple containing the window handle, process handle, and process id of the
+/// client process.
 fn launch_client_console<W: WindowsApi>(
     windows_api: &W,
     host: &str,
@@ -782,7 +907,7 @@ fn launch_client_console<W: WindowsApi>(
     workspace_area: &workspace::WorkspaceArea,
     number_of_consoles: usize,
     aspect_ratio_adjustment: f64,
-) -> (HWND, HANDLE) {
+) -> (HWND, HANDLE, u32) {
     // The first argument must be `--` to ensure all following arguments are treated
     // as positional arguments and not as options if they start with `-`.
     let mut client_args: Vec<String> = Vec::new();
@@ -824,13 +949,30 @@ fn launch_client_console<W: WindowsApi>(
         number_of_consoles,
         aspect_ratio_adjustment,
     );
-    return (client_window_handle, process_handle);
+    return (
+        client_window_handle,
+        process_handle,
+        process_info.dwProcessId,
+    );
 }
 
-/// Wait for the named pipe server to connect, then forward serialized
-/// input records read from the broadcast channel to the named pipe server.
+/// Wait for the named pipe server to connect, authenticate the client by
+/// its process id, then forward serialized input records read from the
+/// broadcast channel to the named pipe server.
 ///
-/// If writing to the pipe fails the pipe is closed and the routine ends.
+/// Authentication: after [NamedPipeServer::connect] resolves, the client is
+/// expected to write its 4 byte little-endian process id into the pipe. The
+/// routine looks up the [Client] with that PID in the daemon's `clients`
+/// collection; if it is not found, the routine logs an error and panics —
+/// an unknown PID indicates either broken daemon bookkeeping or an
+/// unauthorized process connecting to the pipe, and is unrecoverable.
+///
+/// Forwarding: on every broadcast record, the routine matches on the
+/// [`PipeServerState`] cloned from the authenticated client; only
+/// [`PipeServerState::Enabled`] writes the record to the pipe. The keep-alive
+/// write stays unconditional so dead pipes are detected regardless of state.
+///
+/// If writing to the pipe fails the pipe is considered closed and the routine ends.
 /// To detect if a client is still alive even if we are currently
 /// not sending data, we send a "keep alive packet",
 /// [`SERIALIZED_INPUT_RECORD_0_LENGTH`] bytes of `1`s. If that fails, the routine ends.
@@ -843,15 +985,41 @@ fn launch_client_console<W: WindowsApi>(
 ///                which we get the serialize input records from the main
 ///                thread that are to be sent to the client via the named
 ///                pipe.
+/// * `clients`  - The daemon's collection of tracked clients, used to
+///                authenticate the connecting client by PID and to obtain
+///                the shared [`PipeServerState`] reference for this server.
+///
+/// # Panics
+///
+/// Panics if the connecting client sends a PID that is not present in
+/// `clients`.
 async fn named_pipe_server_routine(
     server: NamedPipeServer,
     receiver: &mut Receiver<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
+    clients: Arc<Mutex<Clients>>,
 ) {
     // wait for a client to connect
     server.connect().await.unwrap_or_else(|err| {
         error!("{}", err);
         panic!("Timeded out waiting for clients to connect to named pipe server",)
     });
+
+    // Authenticate the connecting client by reading its 4 byte PID.
+    let pid = read_client_pid(&server).await;
+    let pipe_server_state = match clients.lock().unwrap().get_by_pid(pid) {
+        Some(client) => Arc::clone(&client.pipe_server_state),
+        None => {
+            error!(
+                "Named pipe server received unknown PID {} during authentication",
+                pid
+            );
+            panic!(
+                "Unknown client PID {} connected to named pipe server — daemon bookkeeping broken or unauthorized process",
+                pid
+            );
+        }
+    };
+
     loop {
         let ser_input_record = match receiver.try_recv() {
             Ok(val) => val,
@@ -875,6 +1043,10 @@ async fn named_pipe_server_routine(
                 panic!("Failed to receive data from the Receiver");
             }
         };
+        // Only forward to the client if its pipe server state allows it.
+        match *pipe_server_state.lock().unwrap() {
+            PipeServerState::Enabled => {}
+        }
         loop {
             server.writable().await.unwrap_or_else(|err| {
                 error!("{}", err);
@@ -910,6 +1082,53 @@ async fn named_pipe_server_routine(
             }
         }
     }
+}
+
+/// Read the connecting client's 4 byte little-endian process id from the pipe.
+///
+/// Reads exactly 4 bytes from `server`, retrying on `WouldBlock`, and decodes
+/// them as a `u32`. Any non-recoverable I/O error panics, as a client that
+/// cannot send its PID cannot be authenticated and forwarding would be
+/// impossible.
+///
+/// # Arguments
+///
+/// * `server` - The connected named pipe server to read from.
+///
+/// # Returns
+///
+/// The process id sent by the client.
+///
+/// # Panics
+///
+/// Panics if the pipe is closed before 4 bytes can be read, or if any
+/// non-`WouldBlock` I/O error occurs.
+async fn read_client_pid(server: &NamedPipeServer) -> u32 {
+    let mut buf = [0u8; 4];
+    let mut read = 0usize;
+    while read < buf.len() {
+        server.readable().await.unwrap_or_else(|err| {
+            error!("{}", err);
+            panic!("Named pipe server is not readable for PID handshake",)
+        });
+        match server.try_read(&mut buf[read..]) {
+            Ok(0) => {
+                error!("Named pipe server closed before PID handshake completed");
+                panic!("Named pipe server closed before PID handshake completed",);
+            }
+            Ok(n) => {
+                read += n;
+            }
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                continue;
+            }
+            Err(e) => {
+                error!("{}", e);
+                panic!("Failed to read PID from named pipe client",);
+            }
+        }
+    }
+    return u32::from_le_bytes(buf);
 }
 
 /// Re-sizes and re-positions the given client window based on the total number of clients,
@@ -1079,7 +1298,7 @@ fn get_console_rect(
 ///                   background thread.
 fn ensure_client_z_order_in_sync_with_daemon<W: WindowsApi + Send + Sync + 'static>(
     windows_api: Arc<W>,
-    clients: Arc<Mutex<Vec<Client>>>,
+    clients: Arc<Mutex<Clients>>,
 ) {
     tokio::spawn(async move {
         let daemon_handle = get_console_window_wrapper(windows_api.as_ref());
@@ -1098,7 +1317,7 @@ fn ensure_client_z_order_in_sync_with_daemon<W: WindowsApi + Send + Sync + 'stat
             {
                 defer_windows(
                     windows_api.as_ref(),
-                    &clients.lock().unwrap(),
+                    clients.lock().unwrap().as_slice(),
                     &daemon_handle.hwdn,
                 );
             }
@@ -1126,6 +1345,8 @@ fn defer_windows<W: WindowsApi>(windows_api: &W, clients: &[Client], daemon_hand
         hostname: "root".to_owned(),
         window_handle: *daemon_handle,
         process_handle: HANDLE::default(),
+        process_id: 0,
+        pipe_server_state: Arc::new(Mutex::new(PipeServerState::Enabled)),
     }]) {
         let placement = match windows_api.get_window_placement(client.window_handle) {
             Ok(placement) => placement,
