@@ -24,13 +24,13 @@ jobs:
           filters: |
             src:
               - '.cargo/**'
+              - '.config/coverage/**'
               - 'src/**'
               - 'build.rs'
               - 'Cargo.toml'
               - 'clippy.toml'
               - 'xtask/**'
               - 'rustfmt.toml'
-              - 'nightly-toolchain.version'
             workflows:
               - '.github/workflows/pre-submit.yml'
               - '.github/workflows/post-submit.yml'
@@ -107,7 +107,7 @@ jobs:
       - name: Read diff-cover version
         id: diffcover
         run: |
-          echo "version=$(cat diff-cover.version)" >> $GITHUB_OUTPUT
+          echo "version=$(cat .config/coverage/diff-cover.version)" >> $GITHUB_OUTPUT
 
       - name: Cache pip packages
         uses: actions/cache@v4
