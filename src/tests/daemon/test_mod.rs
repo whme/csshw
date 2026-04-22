@@ -129,7 +129,7 @@ mod daemon_test {
             .pipe_mode(PipeMode::Message)
             .create(PIPE_NAME)?;
         let named_pipe_client = ClientOptions::new().open(PIPE_NAME)?;
-        // Build a Clients collection containing the test PID so authentication succeeds.
+        // Build a Clients collection containing the test PID so PID correlation succeeds.
         let clients = make_clients_with_pid(TEST_PID);
         // Complete the PID handshake expected by the pipe server routine.
         send_pid(&named_pipe_client, TEST_PID).await?;
@@ -197,7 +197,7 @@ mod daemon_test {
             .pipe_mode(PipeMode::Message)
             .create(PIPE_NAME)?;
         let named_pipe_client = ClientOptions::new().open(PIPE_NAME)?;
-        // Build a Clients collection containing the test PID so authentication succeeds.
+        // Build a Clients collection containing the test PID so PID correlation succeeds.
         let clients = make_clients_with_pid(TEST_PID);
         // Complete the PID handshake expected by the pipe server routine.
         send_pid(&named_pipe_client, TEST_PID).await?;
@@ -247,6 +247,9 @@ mod daemon_test {
     {
         const REGISTERED_PID: u32 = 33333;
         const SENT_PID: u32 = 44444;
+        // Use a per-test unique pipe name so parallel test runs don't collide
+        // on the global PIPE_NAME.
+        let pipe_name = format!(r"\\.\pipe\csshw-test-pid-mismatch-{}", std::process::id());
         // Setup sender and receiver
         let (_sender, mut receiver) = broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(
             SERIALIZED_INPUT_RECORD_0_LENGTH,
@@ -255,8 +258,8 @@ mod daemon_test {
             .access_inbound(true)
             .access_outbound(true)
             .pipe_mode(PipeMode::Message)
-            .create(PIPE_NAME)?;
-        let named_pipe_client = ClientOptions::new().open(PIPE_NAME)?;
+            .create(&pipe_name)?;
+        let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
         // Daemon only knows about REGISTERED_PID, but the client will send SENT_PID.
         let clients = make_clients_with_pid(REGISTERED_PID);
         send_pid(&named_pipe_client, SENT_PID).await?;
@@ -272,6 +275,12 @@ mod daemon_test {
     async fn test_named_pipe_server_routine_client_closes_before_pid_handshake(
     ) -> Result<(), Box<dyn std::error::Error>> {
         const TEST_PID: u32 = 55555;
+        // Use a per-test unique pipe name so parallel test runs don't collide
+        // on the global PIPE_NAME.
+        let pipe_name = format!(
+            r"\\.\pipe\csshw-test-client-closes-before-pid-{}",
+            std::process::id()
+        );
         let (_sender, mut receiver) = broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(
             SERIALIZED_INPUT_RECORD_0_LENGTH,
         );
@@ -279,8 +288,8 @@ mod daemon_test {
             .access_inbound(true)
             .access_outbound(true)
             .pipe_mode(PipeMode::Message)
-            .create(PIPE_NAME)?;
-        let named_pipe_client = ClientOptions::new().open(PIPE_NAME)?;
+            .create(&pipe_name)?;
+        let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
         let clients = make_clients_with_pid(TEST_PID);
         // Drop the client immediately without sending any PID bytes.
         drop(named_pipe_client);

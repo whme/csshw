@@ -522,13 +522,18 @@ async fn test_send_pid_handshake() -> Result<(), Box<dyn std::error::Error>> {
     use std::io;
     use tokio::net::windows::named_pipe::{ClientOptions, PipeMode, ServerOptions};
 
-    use crate::utils::constants::PIPE_NAME;
+    // Use a per-test unique pipe name so parallel test runs don't collide
+    // on the global PIPE_NAME.
+    let pipe_name = format!(
+        r"\\.\pipe\csshw-test-send-pid-handshake-{}",
+        std::process::id()
+    );
 
     let server = ServerOptions::new()
         .access_inbound(true)
         .pipe_mode(PipeMode::Message)
-        .create(PIPE_NAME)?;
-    let client = ClientOptions::new().open(PIPE_NAME)?;
+        .create(&pipe_name)?;
+    let client = ClientOptions::new().open(&pipe_name)?;
 
     // Run the handshake concurrently with reading from the server side.
     let handshake = tokio::spawn(async move {
@@ -543,6 +548,9 @@ async fn test_send_pid_handshake() -> Result<(), Box<dyn std::error::Error>> {
     while total_read < buf.len() {
         server.readable().await?;
         match server.try_read(&mut buf[total_read..]) {
+            Ok(0) => {
+                return Err("pipe closed before PID handshake completed".into());
+            }
             Ok(n) => total_read += n,
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
             Err(e) => return Err(e.into()),
