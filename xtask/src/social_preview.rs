@@ -1,9 +1,9 @@
 //! Social preview image generation.
 //!
 //! Orchestrates `docker run` against the pinned Playwright image to render
-//! `templates/social-preview.html` into a 1280×640 PNG (at 2× device scale
-//! factor) with live data fetched from the GitHub API. The Rust side is a
-//! thin shell: all HTTP, template substitution, and screenshotting live in
+//! `templates/social-preview.html` into a 1280×640 PNG with live data
+//! fetched from the GitHub API. The Rust side is a thin shell: all HTTP,
+//! template substitution, and screenshotting live in
 //! `xtask/social-preview/generate.mjs`, which runs inside the container.
 //!
 //! The host only needs Rust, Cargo, and Docker. No host-side Node.js, npm,
@@ -211,26 +211,62 @@ impl SocialPreviewSystem for RealSystem {
 }
 
 /// Split the caller-supplied `--out` into (host-absolute path, workspace-
-/// relative path).
+/// relative path with forward slashes).
 ///
-/// `--out` is always interpreted as a path relative to the workspace root;
-/// passing an absolute path is rejected so the container bind mount can
-/// always reach the target. The workspace-relative form (with forward
-/// slashes) is what the container sees at `/workspace/<rel>`.
+/// Accepts any path. Relative paths resolve against the workspace root;
+/// absolute paths are used as-is. Lexical `..` components are normalised
+/// so inputs like `sub/../preview.png` are supported. The final resolved
+/// path must still live under `workspace_root` so the container bind mount
+/// can reach it at `/workspace/<rel>`; paths outside the workspace are
+/// rejected with a clear error.
 fn resolve_out_paths(workspace_root: &Path, out: Option<PathBuf>) -> Result<(PathBuf, String)> {
-    let rel = out.unwrap_or_else(|| PathBuf::from(DEFAULT_OUT));
-    if rel.is_absolute() {
-        bail!(
-            "--out must be relative to the workspace root; got {}",
-            rel.display()
-        );
-    }
+    let raw = out.unwrap_or_else(|| PathBuf::from(DEFAULT_OUT));
+    let joined = if raw.is_absolute() {
+        raw.clone()
+    } else {
+        workspace_root.join(&raw)
+    };
+    let normalised = normalise_path(&joined);
+    let rel = normalised.strip_prefix(workspace_root).map_err(|_| {
+        anyhow::anyhow!(
+            "--out must resolve to a path inside the workspace root ({}); got {}",
+            workspace_root.display(),
+            raw.display()
+        )
+    })?;
     let rel_str = rel.to_string_lossy().replace('\\', "/");
-    if rel_str.starts_with("..") || rel_str.contains("/../") || rel_str.ends_with("/..") {
-        bail!("--out must not escape the workspace root; got {rel_str}");
+    Ok((normalised.clone(), rel_str))
+}
+
+/// Lexically normalise a path by collapsing `.` and `..` components
+/// without touching the filesystem. Behaves like `Path::canonicalize`
+/// minus the requirement that the path exist. `..` at the root is
+/// dropped (matching POSIX semantics).
+fn normalise_path(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            Component::ParentDir => {
+                // Only pop if the last pushed component is a regular
+                // segment; otherwise drop (root `..`) or keep (leading
+                // `..` on a relative path).
+                let popped = match out.components().next_back() {
+                    Some(Component::Normal(_)) => {
+                        out.pop();
+                        true
+                    }
+                    _ => false,
+                };
+                if !popped && !path.is_absolute() {
+                    out.push("..");
+                }
+            }
+            Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
     }
-    let host_absolute = workspace_root.join(&rel);
-    Ok((host_absolute, rel_str))
+    out
 }
 
 /// Render a `docker` argument list as a single shell-quoted string, purely
@@ -301,9 +337,11 @@ fn build_docker_args(workspace_root: &Path, container_out: &str, has_token: bool
     args.push("sh".into());
     args.push("-c".into());
     // Install node_modules on first run, then invoke the generator. We
-    // use `npm install` (rather than `npm ci`) so the very first run — on
-    // a freshly-cloned checkout with a stub lockfile — can populate it.
-    // Subsequent runs skip the install entirely and stay offline.
+    // use `npm ci` (not `npm install`) so the install is strictly driven
+    // by the committed `package-lock.json`; this keeps runs reproducible
+    // and prevents the bind-mounted workspace from picking up lockfile
+    // mutations. Subsequent runs skip the install entirely and stay
+    // offline.
     //
     // The install runs in a subshell so it does not alter the CWD of the
     // subsequent `node` invocation. `generate.mjs` resolves its inputs
@@ -311,7 +349,7 @@ fn build_docker_args(workspace_root: &Path, container_out: &str, has_token: bool
     // so it must run from `/workspace` — not from
     // `/workspace/xtask/social-preview`.
     args.push(
-        "( cd xtask/social-preview && { [ -d node_modules ] || npm install; } ) && node xtask/social-preview/generate.mjs"
+        "( cd xtask/social-preview && { [ -d node_modules ] || npm ci; } ) && node xtask/social-preview/generate.mjs"
             .into(),
     );
     args

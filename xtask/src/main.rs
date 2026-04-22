@@ -40,8 +40,11 @@ enum Command {
     /// Render the 1280x640 social preview PNG from templates/social-preview.html
     /// using headless Chromium via the pinned Playwright Docker image.
     GenerateSocialPreview {
-        /// Output path for the generated PNG, relative to the workspace root.
-        /// Defaults to `target/social-preview/social-preview.png`.
+        /// Output path for the generated PNG. Relative paths resolve
+        /// against the workspace root; absolute paths are accepted as
+        /// long as they live under the workspace root so the container
+        /// bind mount can reach them. Defaults to
+        /// `target/social-preview/social-preview.png`.
         #[arg(long)]
         out: Option<PathBuf>,
         /// GitHub token used for authenticated API requests. Falls back to

@@ -227,9 +227,57 @@ fn test_generate_rejects_parent_escape_in_out_path() {
     mock.expect_ensure_parent_dir().never();
     mock.expect_run_docker().never();
 
-    // Act
+    // Act — relative `..` that escapes the workspace resolves outside
+    // `workspace_root` and is rejected.
     let result =
         generate_social_preview(&mock, Some(PathBuf::from("../outside/preview.png")), None);
+
+    // Assert
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_generate_accepts_dotdot_that_stays_inside_workspace() {
+    // Arrange
+    let mut mock = base_mock();
+    mock.expect_env_var().returning(|_| None);
+    let captured = Arc::new(Mutex::new(DockerCall::default()));
+    capture_docker(&mut mock, captured.clone());
+
+    // Act — `sub/../preview.png` normalises to `preview.png` under the
+    // workspace root, so the path is accepted.
+    let result = generate_social_preview(&mock, Some(PathBuf::from("sub/../preview.png")), None);
+
+    // Assert
+    assert!(result.is_ok());
+    let call = captured.lock().unwrap().clone();
+    assert!(call
+        .args
+        .iter()
+        .any(|a| a == "OUT_PATH=/workspace/preview.png"));
+}
+
+#[test]
+fn test_generate_rejects_absolute_path_outside_workspace() {
+    // Arrange
+    let mut mock = MockSocialPreviewSystemMock::new();
+    mock.expect_workspace_root()
+        .returning(|| Ok(workspace_root()));
+    mock.expect_check_docker_ready().never();
+    mock.expect_docker_image_exists().never();
+    mock.expect_docker_pull().never();
+    mock.expect_ensure_parent_dir().never();
+    mock.expect_run_docker().never();
+
+    // Act — an absolute path whose root does not share a prefix with
+    // `workspace_root` cannot be reached from inside the container and
+    // is rejected. The particular path shape differs by platform but
+    // the branch under test is the same.
+    #[cfg(windows)]
+    let outside = PathBuf::from(r"C:\somewhere-else\out\preview.png");
+    #[cfg(not(windows))]
+    let outside = PathBuf::from("/somewhere-else/out/preview.png");
+    let result = generate_social_preview(&mock, Some(outside), None);
 
     // Assert
     assert!(result.is_err());

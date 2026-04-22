@@ -2,26 +2,30 @@
 //
 // Runs inside the pinned `mcr.microsoft.com/playwright:<tag>` Docker image
 // invoked by `xtask/src/social_preview.rs`. The container's working
-// directory is the workspace root (bind-mounted from the host), so paths
-// below are workspace-relative.
+// directory is the workspace root (bind-mounted from the host); template,
+// logo, and font paths are resolved relative to that CWD. `OUT_PATH` is
+// passed through from the Rust xtask and is typically an absolute
+// container path (for example, under `/workspace/...`).
 //
 // Inputs (environment):
-//   OUT_PATH      — workspace-relative path for the PNG (required, set by
-//                   the Rust xtask).
+//   OUT_PATH      — output path for the PNG inside the container
+//                   filesystem (required, set by the Rust xtask; may be
+//                   absolute).
 //   GITHUB_TOKEN  — optional; enables authenticated GitHub API requests.
 //   GITHUB_OWNER  — defaults to "whme".
 //   GITHUB_REPO   — defaults to "csshw".
 //
 // Outputs:
-//   A 2560×1280 PNG at OUT_PATH (1280×640 rendered at 2× device scale).
+//   A 1280×640 PNG written to OUT_PATH.
 //
 // Design goals:
 //   - Fail loudly on any network, file, or Playwright error — no silent
 //     fallbacks. Unknown language colors are the one exception (warn +
 //     grey fallback).
 //   - No HTTP libraries — use Node's built-in `fetch`. Per run we make
-//     three outbound calls: GitHub repo metadata, GitHub language bytes,
-//     and the linguist colour map from ozh/github-colors.
+//     up to three outbound calls: GitHub repo metadata, GitHub language
+//     bytes, and (on cache miss) the linguist colour map from
+//     ozh/github-colors.
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -47,7 +51,15 @@ const LINGUIST_COLORS_URL =
 const UNKNOWN_LANGUAGE_COLOR = "#cccccc";
 const OTHER_BUCKET_COLOR = "#ededed";
 const VIEWPORT = { width: 1280, height: 640 };
-const DEVICE_SCALE_FACTOR = 2;
+// Final PNG matches GitHub's recommended social preview size of
+// 1280×640 (see https://docs.github.com/en/repositories/managing-your-
+// repositorys-settings-and-features/customizing-your-repository/
+// customizing-your-repositorys-social-media-preview).
+const DEVICE_SCALE_FACTOR = 1;
+// Path (relative to the workspace root) where the linguist colour map is
+// cached after the first successful fetch. `target/` is gitignored, so
+// the cache is never committed. Delete the file to force a refresh.
+const LINGUIST_COLORS_CACHE = "target/social-preview/linguist-colors.json";
 
 async function githubFetch(pathname) {
   const url = `https://api.github.com/${pathname}`;
@@ -135,14 +147,24 @@ async function dataUri(path, mime) {
 }
 
 /**
- * Fetch the linguist colors snapshot from ozh/github-colors and return a
- * flat `{ "<Language>": "#rrggbb" }` map. That repo publishes entries in
- * the form `{ "<Language>": { "color": "#rrggbb", "url": "..." } }` with
+ * Load the linguist colour map, preferring a cached copy under `target/`
+ * to keep subsequent runs offline. On cache miss, fetches from
+ * ozh/github-colors and persists a flat `{ "<Language>": "#rrggbb" }`
+ * JSON file for future runs. That repo publishes entries in the form
+ * `{ "<Language>": { "color": "#rrggbb", "url": "..." } }` with
  * `color: null` for languages linguist does not assign a hue to — those
  * are dropped so `buildLanguages` falls back to the unknown-language
- * colour instead of crashing.
+ * colour instead of crashing. Delete the cache file to force a refresh.
  */
 async function fetchLinguistColors() {
+  try {
+    const cached = await readFile(LINGUIST_COLORS_CACHE, "utf-8");
+    console.log(`Using cached linguist colours from ${LINGUIST_COLORS_CACHE}`);
+    return JSON.parse(cached);
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
+  }
+  console.log(`Fetching linguist colours from ${LINGUIST_COLORS_URL}`);
   const res = await fetch(LINGUIST_COLORS_URL);
   if (!res.ok) {
     throw new Error(
@@ -156,6 +178,8 @@ async function fetchLinguistColors() {
       colors[name] = entry.color;
     }
   }
+  await mkdir(dirname(LINGUIST_COLORS_CACHE), { recursive: true });
+  await writeFile(LINGUIST_COLORS_CACHE, JSON.stringify(colors));
   return colors;
 }
 

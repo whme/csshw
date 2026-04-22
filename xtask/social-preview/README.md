@@ -39,10 +39,12 @@ cargo xtask generate-social-preview --token ghp_xxx
 ```
 
 The host needs **no** local Node.js, npm, or Playwright installation. The
-first run performs `npm install` inside the container (populating
-`node_modules/`); subsequent runs skip that step. Each run makes three
-outbound HTTP requests: two to `api.github.com` (repo + languages) and
-one to `raw.githubusercontent.com` for the linguist colour map.
+first run performs `npm ci` inside the container (populating
+`node_modules/` strictly from the committed lockfile); subsequent runs
+skip that step. Each run makes up to three outbound HTTP requests: two
+to `api.github.com` (repo + languages) and, on cache miss, one to
+`raw.githubusercontent.com` for the linguist colour map (cached under
+`target/social-preview/linguist-colors.json` on first success).
 
 Without a `--token` / `GITHUB_TOKEN` the command still works for the
 public repo (rate-limited to 60 requests/hour).
@@ -73,9 +75,7 @@ together in the same commit. The current pinning is:
 
 `templates/social-preview.html` is self-contained — no network fetches,
 no `@media` queries, a single viewport of 1280×640. Designers can open
-the file directly in a browser to iterate on CSS; save a local fixture
-as `templates/social-preview.preview.html` (gitignored) if you want to
-fill the placeholders without running the xtask.
+the file directly in a browser to iterate on CSS.
 
 The only placeholders the generator substitutes are the ones listed in
 `generate.mjs::replacements`. Adding a new placeholder requires editing
