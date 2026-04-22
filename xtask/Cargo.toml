@@ -24,3 +24,6 @@ serde_json = "1"
 
 [dev-dependencies]
 mockall = "0.13"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage,coverage_nightly)'] }

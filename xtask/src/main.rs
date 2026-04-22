@@ -3,6 +3,8 @@
 //! Invoke via `cargo xtask <subcommand>`.
 //! See each subcommand's module for details.
 
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
 mod changelog;
 mod coverage;
 mod readme;

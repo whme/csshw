@@ -43,6 +43,7 @@ pub trait ChangelogSystem {
 /// Production implementation of [`ChangelogSystem`].
 pub struct RealSystem;
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 impl ChangelogSystem for RealSystem {
     fn read_cargo_toml(&self) -> Result<String> {
         std::fs::read_to_string("Cargo.toml").context("failed to read Cargo.toml")

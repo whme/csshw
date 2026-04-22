@@ -56,6 +56,7 @@ pub trait CoverageSystem {
 /// Production implementation of [`CoverageSystem`].
 pub struct RealSystem;
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 impl CoverageSystem for RealSystem {
     fn read_nightly_version_file(&self) -> Result<String> {
         std::fs::read_to_string("nightly-toolchain.version")

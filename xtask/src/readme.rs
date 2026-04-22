@@ -52,6 +52,7 @@ pub trait ReadmeSystem {
 /// Production implementation of [`ReadmeSystem`].
 pub struct RealSystem;
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 impl ReadmeSystem for RealSystem {
     fn get_help_output(&self) -> Result<String> {
         let output = std::process::Command::new("cargo")
