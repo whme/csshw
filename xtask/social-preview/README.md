@@ -69,7 +69,7 @@ together in the same commit. The current pinning is:
 
 | Docker tag                                        | `@playwright/test` |
 | ------------------------------------------------- | ------------------ |
-| `mcr.microsoft.com/playwright:v1.49.1-noble`      | `1.49.1`           |
+| `mcr.microsoft.com/playwright:v1.59.1-noble`      | `1.59.1`           |
 
 ## Template authoring
 
