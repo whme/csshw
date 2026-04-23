@@ -45,7 +45,7 @@ use windows::Win32::System::Console::{
 };
 
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    VIRTUAL_KEY, VK_A, VK_C, VK_E, VK_ESCAPE, VK_H, VK_R, VK_T,
+    VIRTUAL_KEY, VK_A, VK_C, VK_E, VK_ESCAPE, VK_H, VK_N, VK_R, VK_T,
 };
 use windows::Win32::UI::WindowsAndMessaging::{SW_RESTORE, SW_SHOWMINIMIZED};
 use windows::Win32::{
@@ -70,6 +70,10 @@ const SENDER_CAPACITY: usize = 1024 * 1024;
 enum PipeServerState {
     /// Forward all input records to the client.
     Enabled,
+    /// Suppress input records for this client; keep-alive packets are
+    /// still sent so the pipe stays open.
+    #[allow(dead_code)]
+    Disabled,
 }
 
 /// Representation of a client
@@ -499,7 +503,7 @@ impl<'a> Daemon<'a> {
             if self.control_mode_state == ControlModeState::Initiated {
                 clear_screen(windows_api);
                 println!("Control Mode (Esc to exit)");
-                println!("[c]reate window(s), [r]etile, copy active [h]ostname(s)");
+                println!("[c]reate window(s), [r]etile, e[n]able all, copy active [h]ostname(s)");
                 self.control_mode_state = ControlModeState::Active;
                 return;
             }
@@ -524,6 +528,12 @@ impl<'a> Daemon<'a> {
                 }
                 (VK_T, 0) => {
                     // TODO: trigger input on selected windows
+                }
+                (VK_N, 0) => {
+                    for client in clients.lock().unwrap().iter() {
+                        *client.pipe_server_state.lock().unwrap() = PipeServerState::Enabled;
+                    }
+                    self.quit_control_mode(windows_api);
                 }
                 (VK_C, 0) => {
                     clear_screen(windows_api);
@@ -1061,6 +1071,7 @@ async fn named_pipe_server_routine(
         // Only forward to the client if its pipe server state allows it.
         match *pipe_server_state.lock().unwrap() {
             PipeServerState::Enabled => {}
+            PipeServerState::Disabled => continue,
         }
         loop {
             server.writable().await.unwrap_or_else(|err| {
