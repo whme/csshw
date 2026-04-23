@@ -102,6 +102,69 @@ naming the model.
 - Identify and resolve all ambiguities and assumptions up front
 - Evaluate trade-offs before choosing an approach
 
+## Agent GitHub auth
+
+Paseo-spawned agents would otherwise inherit the contributor's full
+`gh` CLI login — typically including the classic `repo` scope,
+which is enough to delete the repository or force-push to `main`.
+To keep an agent constrained to what it actually needs, each
+contributor supplies a **fine-grained** Personal Access Token and
+`cargo xtask inject-agent-token` (wired into `paseo.json`'s
+`worktree.setup`) writes it into `.claude/settings.local.json` at
+worktree creation time. Claude Code then injects `GH_TOKEN` into
+the agent process, and `gh` honors `GH_TOKEN` over the keyring.
+
+### One-time per-clone setup
+
+1. Generate a fine-grained PAT at
+   <https://github.com/settings/personal-access-tokens/new>.
+   - **Resource owner**: yourself.
+   - **Repository access**: "Only selected repositories" — pick the
+     repos you actually work in from paseo (at minimum, your clone
+     of `csshw`).
+   - **Repository permissions**:
+     - `Contents`: Read and write
+     - `Pull requests`: Read and write
+     - `Issues`: Read and write
+     - `Metadata`: Read (auto-required)
+     - Leave **everything else** at "No access" — in particular
+       `Administration`, `Workflows`, `Secrets`, `Environments`,
+       `Actions`, and `Pages`.
+   - **Expiration**: 90 days or less. Put a calendar reminder to
+     rotate it.
+2. Save the token string (including the `github_pat_` prefix) to
+   `<clone>/.paseo/gh-token` in the **source checkout**, not inside
+   a worktree. On Unix-like shells also `chmod 600` the file. On
+   Windows the default NTFS ACLs inherited from your user profile
+   already restrict it to you.
+
+Both `.paseo/gh-token` and `.claude/settings.local.json` are
+gitignored and must never be committed.
+
+### Expected behaviour
+
+- On `paseo create`, you'll see
+  `INFO - paseo agent GitHub auth: wrote …/.claude/settings.local.json
+  from …/.paseo/gh-token (scoped PAT)`.
+- If `.paseo/gh-token` is absent, the setup step prints a notice
+  pointing here and exits 0 — the agent then uses whatever
+  `gh auth` you already have.
+- If the file contains a classic `ghp_…` or OAuth `gho_…` token
+  (which cannot be scoped tightly enough), the setup step fails
+  with a clear error. Replace with a `github_pat_` token.
+- If `gh` calls start returning 401 after the PAT expires,
+  regenerate it, overwrite `.paseo/gh-token`, and re-run
+  `cargo xtask inject-agent-token` in the worktree (or simply
+  create a new worktree).
+
+### Attribution
+
+Commits, PRs, and API calls made by the agent are attributed to
+you (fine-grained PATs act as their owning user). The
+`Co-authored-by: Claude …` trailer in every AI-authored commit
+remains the marker that distinguishes agent work from hand-written
+work.
+
 ## GitHub Pull Requests
 
 Both PR creation and addressing review feedback are covered in
