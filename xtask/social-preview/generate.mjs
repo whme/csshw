@@ -52,10 +52,11 @@ const LINGUIST_COLORS_URL =
 const UNKNOWN_LANGUAGE_COLOR = "#cccccc";
 const OTHER_BUCKET_COLOR = "#ededed";
 const VIEWPORT = { width: 1280, height: 640 };
-// Final PNG matches GitHub's recommended social preview size of
-// 1280×640 (see https://docs.github.com/en/repositories/managing-your-
-// repositorys-settings-and-features/customizing-your-repository/
-// customizing-your-repositorys-social-media-preview).
+// Layout is designed at 1280×640 CSS pixels (GitHub's recommended social
+// preview size) but rendered at 2× device scale for sharper output,
+// producing a 2560×1280 PNG (see https://docs.github.com/en/repositories/
+// managing-your-repositorys-settings-and-features/customizing-your-
+// repository/customizing-your-repositorys-social-media-preview).
 const DEVICE_SCALE_FACTOR = 2;
 // Path (relative to the workspace root) where the linguist colour map is
 // cached after the first successful fetch. `target/` is gitignored, so
@@ -198,7 +199,7 @@ async function dataUri(path, mime) {
  * client-side tinting needed.
  */
 async function fetchLanguageIcon(slug, hexColor) {
-  const hex = hexColor.replace(/^#/, "");
+  const hex = hexColor.replace(/^#/, "").toLowerCase();
   const cacheFile = join(ICON_CACHE_DIR, `${slug}-${hex}.svg`);
   try {
     const cached = await readFile(cacheFile, "utf-8");
@@ -209,7 +210,7 @@ async function fetchLanguageIcon(slug, hexColor) {
   const url = `https://cdn.simpleicons.org/${slug}/${hex}`;
   console.log(`Fetching icon for ${slug} from ${url}`);
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
     if (!res.ok) {
       console.warn(
         `Icon fetch for "${slug}" returned ${res.status} — falling back to swatch.`,
