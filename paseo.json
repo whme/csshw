@@ -4,8 +4,8 @@
       "git config --local core.hooksPath .githooks/"
     ],
     "teardown": [
-      "git -C \"$PASEO_WORKTREE_PATH\" checkout --detach",
-      "git -C \"$PASEO_SOURCE_CHECKOUT_PATH\" branch -D \"$PASEO_BRANCH_NAME\" || true"
+      "git -C \"$env:PASEO_WORKTREE_PATH\" checkout --detach; $global:LASTEXITCODE = 0",
+      "git -C \"$env:PASEO_SOURCE_CHECKOUT_PATH\" branch -D \"$env:PASEO_BRANCH_NAME\"; $global:LASTEXITCODE = 0"
     ]
   }
 }
