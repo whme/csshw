@@ -543,9 +543,10 @@ async fn test_send_pid_handshake() -> Result<(), Box<dyn std::error::Error>> {
     server.connect().await?;
 
     // Read the 4-byte PID from the server side.
-    let mut buf = [0u8; 4];
+    use crate::serde::{deserialization::deserialize_pid, SERIALIZED_PID_LENGTH};
+    let mut buf = [0u8; SERIALIZED_PID_LENGTH];
     let mut total_read = 0;
-    while total_read < buf.len() {
+    while total_read < SERIALIZED_PID_LENGTH {
         server.readable().await?;
         match server.try_read(&mut buf[total_read..]) {
             Ok(0) => {
@@ -557,7 +558,7 @@ async fn test_send_pid_handshake() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    assert_eq!(buf, std::process::id().to_le_bytes());
+    assert_eq!(deserialize_pid(&buf), std::process::id());
     handshake.await?;
     return Ok(());
 }

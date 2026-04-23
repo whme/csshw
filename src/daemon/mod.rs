@@ -18,7 +18,10 @@ use crate::utils::config::{Cluster, DaemonConfig};
 use crate::utils::debug::StringRepr;
 use crate::utils::windows::{clear_screen, set_console_color, WindowsApi};
 use crate::{
-    serde::{serialization::serialize_input_record_0, SERIALIZED_INPUT_RECORD_0_LENGTH},
+    serde::{
+        deserialization::deserialize_pid, serialization::serialize_input_record_0,
+        SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
+    },
     spawn_console_process,
     utils::{
         constants::{PIPE_NAME, PKG_NAME},
@@ -67,8 +70,6 @@ const SENDER_CAPACITY: usize = 1024 * 1024;
 enum PipeServerState {
     /// Forward all input records to the client.
     Enabled,
-    // Future variants (e.g. Paused, Disabled) will expand the control surface
-    // without requiring architectural changes.
 }
 
 /// Representation of a client
@@ -156,26 +157,6 @@ impl Clients {
             .map(|&index| return &self.list[index]);
     }
 
-    /// Returns an iterator over the clients in insertion order.
-    fn iter(&self) -> std::slice::Iter<'_, Client> {
-        return self.list.iter();
-    }
-
-    /// Returns the clients as a slice in insertion order.
-    fn as_slice(&self) -> &[Client] {
-        return self.list.as_slice();
-    }
-
-    /// Returns the number of clients in the collection.
-    fn len(&self) -> usize {
-        return self.list.len();
-    }
-
-    /// Returns whether the collection is empty.
-    fn is_empty(&self) -> bool {
-        return self.list.is_empty();
-    }
-
     /// Retains only the clients for which the predicate returns `true`,
     /// rebuilding the PID index to reflect the new positions.
     ///
@@ -188,6 +169,30 @@ impl Clients {
         for (index, client) in self.list.iter().enumerate() {
             self.pid_index.insert(client.process_id, index);
         }
+    }
+}
+
+/// Allows treating a [`Clients`] collection as a `&[Client]`, so callers can
+/// use `&clients` where a slice is expected and get slice methods
+/// (`iter`, `len`, `is_empty`, ...) via deref coercion.
+impl std::ops::Deref for Clients {
+    type Target = [Client];
+
+    fn deref(&self) -> &[Client] {
+        return &self.list;
+    }
+}
+
+/// Consumes the collection and yields its clients in insertion order.
+///
+/// Used when merging a freshly launched [`Clients`] batch into an existing
+/// collection while also spawning per-client pipe servers.
+impl IntoIterator for Clients {
+    type Item = Client;
+    type IntoIter = std::vec::IntoIter<Client>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        return self.list.into_iter();
     }
 }
 
@@ -303,22 +308,19 @@ impl<'a> Daemon<'a> {
             CONSOLE_CHARACTER_ATTRIBUTES(self.config.console_color),
         );
 
-        let launched = launch_clients(
-            windows_api,
-            self.hosts.to_vec(),
-            &self.username,
-            self.port,
-            self.debug,
-            &workspace_area,
-            self.config.aspect_ratio_adjustement,
-            0,
-        )
-        .await;
-        let mut clients_collection = Clients::new();
-        for client in launched.into_iter() {
-            clients_collection.push(client);
-        }
-        let mut clients = Arc::new(Mutex::new(clients_collection));
+        let mut clients = Arc::new(Mutex::new(
+            launch_clients(
+                windows_api,
+                self.hosts.to_vec(),
+                &self.username,
+                self.port,
+                self.debug,
+                &workspace_area,
+                self.config.aspect_ratio_adjustement,
+                0,
+            )
+            .await,
+        ));
 
         // Now that all clients started, focus the daemon console again.
         let daemon_console = windows_api.get_console_window();
@@ -512,7 +514,7 @@ impl<'a> Daemon<'a> {
                 (VK_R, 0) => {
                     self.rearrange_client_windows(
                         windows_api,
-                        clients.lock().unwrap().as_slice(),
+                        &clients.lock().unwrap(),
                         workspace_area,
                     );
                     self.arrange_daemon_console(windows_api, workspace_area);
@@ -568,7 +570,7 @@ impl<'a> Daemon<'a> {
                     toggle_processed_input_mode(windows_api); // Re-disable processed input mode.
                     self.rearrange_client_windows(
                         windows_api,
-                        clients.lock().unwrap().as_slice(),
+                        &clients.lock().unwrap(),
                         workspace_area,
                     );
                     self.arrange_daemon_console(windows_api, workspace_area);
@@ -810,8 +812,8 @@ pub fn resolve_cluster_tags<'a>(hosts: Vec<&'a str>, clusters: &'a [Cluster]) ->
 ///
 /// # Returns
 ///
-/// A mapping from the order a client console window was launched at
-/// in relation to the other client windows and the clients console window handle.
+/// A [`Clients`] collection preserving the launch order and indexed by
+/// process id for pipe-server correlation.
 async fn launch_clients<W: WindowsApi + 'static + Clone>(
     windows_api: &W,
     hosts: Vec<String>,
@@ -821,7 +823,7 @@ async fn launch_clients<W: WindowsApi + 'static + Clone>(
     workspace_area: &workspace::WorkspaceArea,
     aspect_ratio_adjustment: f64,
     index_offset: usize,
-) -> Vec<Client> {
+) -> Clients {
     let len_hosts = hosts.len();
     let _guard = WindowsSettingsDefaultTerminalApplicationGuard::new();
 
@@ -876,10 +878,11 @@ async fn launch_clients<W: WindowsApi + 'static + Clone>(
     // Sort results by index to maintain order
     results.sort_by_key(|(index, _)| return *index);
 
-    return results
-        .into_iter()
-        .map(|(_, client)| return client)
-        .collect();
+    let mut clients = Clients::new();
+    for (_, client) in results.into_iter() {
+        clients.push(client);
+    }
+    return clients;
 }
 
 /// Launchs a `client` console process with its own window with the given
@@ -1116,17 +1119,15 @@ async fn named_pipe_server_routine(
 /// Panics if the pipe is closed before 4 bytes can be read, or if any
 /// non-`WouldBlock` I/O error occurs.
 async fn read_client_pid(server: &NamedPipeServer) -> u32 {
-    let mut buf = [0u8; 4];
+    let mut buf = [0u8; SERIALIZED_PID_LENGTH];
     let mut read = 0usize;
-    while read < buf.len() {
+    while read < SERIALIZED_PID_LENGTH {
         server.readable().await.unwrap_or_else(|err| {
-            error!("{}", err);
-            panic!("Named pipe server is not readable for PID handshake",)
+            panic!("Named pipe server is not readable for PID handshake: {err}")
         });
         match server.try_read(&mut buf[read..]) {
             Ok(0) => {
-                error!("Named pipe server closed before PID handshake completed");
-                panic!("Named pipe server closed before PID handshake completed",);
+                panic!("Named pipe server closed before PID handshake completed");
             }
             Ok(n) => {
                 read += n;
@@ -1135,12 +1136,11 @@ async fn read_client_pid(server: &NamedPipeServer) -> u32 {
                 continue;
             }
             Err(e) => {
-                error!("{}", e);
-                panic!("Failed to read PID from named pipe client",);
+                panic!("Failed to read PID from named pipe client: {e}");
             }
         }
     }
-    return u32::from_le_bytes(buf);
+    return deserialize_pid(&buf);
 }
 
 /// Re-sizes and re-positions the given client window based on the total number of clients,
@@ -1329,7 +1329,7 @@ fn ensure_client_z_order_in_sync_with_daemon<W: WindowsApi + Send + Sync + 'stat
             {
                 defer_windows(
                     windows_api.as_ref(),
-                    clients.lock().unwrap().as_slice(),
+                    &clients.lock().unwrap(),
                     &daemon_handle.hwdn,
                 );
             }

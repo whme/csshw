@@ -3,6 +3,8 @@ use windows::Win32::{
     System::Console::{INPUT_RECORD_0, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0},
 };
 
+use crate::serde::SERIALIZED_PID_LENGTH;
+
 /// Deserialize a [KEY_EVENT_RECORD_0] from a u8 slice using custom binary format.
 ///
 /// Tries to read a u16 from the given slice in little-endian format.
@@ -48,4 +50,10 @@ pub fn deserialize_input_record_0(slice: &[u8]) -> INPUT_RECORD_0 {
     return INPUT_RECORD_0 {
         KeyEvent: key_event,
     };
+}
+
+/// Deserialize a process id from its little-endian byte representation used
+/// by the named-pipe PID handshake.
+pub fn deserialize_pid(bytes: &[u8; SERIALIZED_PID_LENGTH]) -> u32 {
+    return u32::from_le_bytes(*bytes);
 }

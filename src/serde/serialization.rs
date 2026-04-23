@@ -1,6 +1,6 @@
 use windows::Win32::System::Console::{INPUT_RECORD_0, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0};
 
-use crate::serde::SERIALIZED_INPUT_RECORD_0_LENGTH;
+use crate::serde::{SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH};
 
 /// Serialize a [KEY_EVENT_RECORD_0] into a `Vec<u8>` using custom binary format.
 ///
@@ -42,4 +42,10 @@ pub fn serialize_key_event_record(record: &KEY_EVENT_RECORD) -> Vec<u8> {
 /// Panics if the [INPUT_RECORD_0] is not a `KeyEvent`.
 pub fn serialize_input_record_0(record: &INPUT_RECORD_0) -> Vec<u8> {
     return serialize_key_event_record(&unsafe { record.KeyEvent });
+}
+
+/// Serialize a process id into its little-endian byte representation used by
+/// the named-pipe PID handshake.
+pub fn serialize_pid(pid: u32) -> [u8; SERIALIZED_PID_LENGTH] {
+    return pid.to_le_bytes();
 }

@@ -16,7 +16,9 @@ mod daemon_test {
             named_pipe_server_routine, resolve_cluster_tags, Client, Clients, HWNDWrapper,
             PipeServerState,
         },
-        serde::SERIALIZED_INPUT_RECORD_0_LENGTH,
+        serde::{
+            serialization::serialize_pid, SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
+        },
         utils::{config::Cluster, constants::PIPE_NAME},
     };
 
@@ -24,9 +26,9 @@ mod daemon_test {
     ///
     /// Mirrors the client-side PID handshake used by [`crate::client`].
     async fn send_pid(client: &NamedPipeClient, pid: u32) -> io::Result<()> {
-        let bytes = pid.to_le_bytes();
+        let bytes = serialize_pid(pid);
         let mut written = 0usize;
-        while written < bytes.len() {
+        while written < SERIALIZED_PID_LENGTH {
             client.writable().await?;
             match client.try_write(&bytes[written..]) {
                 Ok(0) => return Err(io::Error::other("pipe closed before handshake")),
@@ -367,11 +369,8 @@ mod daemon_test {
         assert!(clients.get_by_pid(2000).is_none());
         assert_eq!(clients.get_by_pid(1000).unwrap().hostname, "host-a");
         assert_eq!(clients.get_by_pid(3000).unwrap().hostname, "host-c");
-        let hostnames_after_retain: Vec<&str> = clients
-            .as_slice()
-            .iter()
-            .map(|c| return c.hostname.as_str())
-            .collect();
+        let hostnames_after_retain: Vec<&str> =
+            clients.iter().map(|c| return c.hostname.as_str()).collect();
         assert_eq!(hostnames_after_retain, vec!["host-a", "host-c"]);
     }
 }

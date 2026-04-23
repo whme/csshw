@@ -23,7 +23,10 @@ use windows::Win32::System::Console::{
 };
 
 use crate::{
-    serde::{deserialization::deserialize_input_record_0, SERIALIZED_INPUT_RECORD_0_LENGTH},
+    serde::{
+        deserialization::deserialize_input_record_0, serialization::serialize_pid,
+        SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
+    },
     utils::constants::{PIPE_NAME, PKG_NAME},
 };
 
@@ -312,17 +315,15 @@ fn replace_argument_placeholders(
 ///
 /// Panics if the pipe write fails in a way that cannot be retried.
 async fn send_pid_handshake(named_pipe_client: &NamedPipeClient) {
-    let pid_bytes = std::process::id().to_le_bytes();
+    let pid_bytes = serialize_pid(std::process::id());
     let mut written = 0usize;
-    while written < pid_bytes.len() {
+    while written < SERIALIZED_PID_LENGTH {
         named_pipe_client.writable().await.unwrap_or_else(|err| {
-            error!("{}", err);
-            panic!("Named pipe client is not writable for PID handshake",)
+            panic!("Named pipe client is not writable for PID handshake: {err}")
         });
         match named_pipe_client.try_write(&pid_bytes[written..]) {
             Ok(0) => {
-                error!("Named pipe closed before PID handshake could complete");
-                panic!("Named pipe closed before PID handshake could complete",);
+                panic!("Named pipe closed before PID handshake could complete");
             }
             Ok(n) => {
                 written += n;
@@ -331,8 +332,7 @@ async fn send_pid_handshake(named_pipe_client: &NamedPipeClient) {
                 continue;
             }
             Err(e) => {
-                error!("{}", e);
-                panic!("Failed to send PID handshake to daemon",);
+                panic!("Failed to send PID handshake to daemon: {e}");
             }
         }
     }
@@ -365,8 +365,7 @@ async fn run(api: &dyn WindowsApi, child: &mut Child) {
     };
     // Identify ourselves to the daemon's pipe server by sending our PID.
     // The daemon uses this to correlate this pipe connection to the corresponding
-    // client in its internal bookkeeping. Without this handshake the daemon
-    // cannot forward input to us.
+    // client in its internal bookkeeping.
     send_pid_handshake(&named_pipe_client).await;
     let mut child_error = false;
     let mut internal_buffer: Vec<u8> = Vec::new();
