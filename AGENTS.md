@@ -164,6 +164,11 @@ Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>
 - Identify and resolve all ambiguities and assumptions up front
 - Evaluate trade-offs before choosing an approach
 
+## GitHub Pull Requests
+
+- Always create PRs with `gh pr create --fill` — the commit message drives the PR title and body
+- If a PR has no user-facing changes, add `--label no-news-fragment-needed`
+
 ## Completion Checklist
 
 Before considering any task complete:
