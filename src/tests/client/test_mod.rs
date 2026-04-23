@@ -11,7 +11,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::client::{
     build_ssh_arguments, is_alt_shift_c_combination, is_keep_alive_packet, resolve_username,
-    write_console_input,
+    send_pid_handshake, write_console_input,
 };
 use crate::serde::SERIALIZED_INPUT_RECORD_0_LENGTH;
 use crate::utils::config::ClientConfig;
@@ -515,4 +515,50 @@ fn test_write_console_input() {
         // Execute the function under test
         write_console_input(&mock_api, test_input_record);
     }
+}
+
+#[tokio::test]
+async fn test_send_pid_handshake() -> Result<(), Box<dyn std::error::Error>> {
+    use std::io;
+    use tokio::net::windows::named_pipe::{ClientOptions, PipeMode, ServerOptions};
+
+    // Use a per-test unique pipe name so parallel test runs don't collide
+    // on the global PIPE_NAME.
+    let pipe_name = format!(
+        r"\\.\pipe\csshw-test-send-pid-handshake-{}",
+        std::process::id()
+    );
+
+    let server = ServerOptions::new()
+        .access_inbound(true)
+        .pipe_mode(PipeMode::Message)
+        .create(&pipe_name)?;
+    let client = ClientOptions::new().open(&pipe_name)?;
+
+    // Run the handshake concurrently with reading from the server side.
+    let handshake = tokio::spawn(async move {
+        send_pid_handshake(&client).await;
+    });
+
+    server.connect().await?;
+
+    // Read the 4-byte PID from the server side.
+    use crate::serde::{deserialization::deserialize_pid, SERIALIZED_PID_LENGTH};
+    let mut buf = [0u8; SERIALIZED_PID_LENGTH];
+    let mut total_read = 0;
+    while total_read < SERIALIZED_PID_LENGTH {
+        server.readable().await?;
+        match server.try_read(&mut buf[total_read..]) {
+            Ok(0) => {
+                return Err("pipe closed before PID handshake completed".into());
+            }
+            Ok(n) => total_read += n,
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    assert_eq!(deserialize_pid(&buf), std::process::id());
+    handshake.await?;
+    return Ok(());
 }

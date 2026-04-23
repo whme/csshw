@@ -5,7 +5,10 @@ use windows::Win32::{
     System::Console::{INPUT_RECORD_0, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0},
 };
 
-use crate::serde::SERIALIZED_INPUT_RECORD_0_LENGTH;
+use crate::serde::{SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH};
+
+const EXPECTED_PID: u32 = 0x04030201;
+const EXPECTED_PID_SEQUENCE: [u8; SERIALIZED_PID_LENGTH] = [0x01, 0x02, 0x03, 0x04];
 
 const EXPECTED_KEY_EVENT_RECORD_0: KEY_EVENT_RECORD_0 = KEY_EVENT_RECORD_0 { UnicodeChar: 61u16 };
 const EXPECTED_KEY_EVENT_RECORD: KEY_EVENT_RECORD = KEY_EVENT_RECORD {
@@ -63,6 +66,11 @@ mod serialization_test {
             EXPECTED_KEY_EVENT_RECORD_SEQUENCE.to_vec()
         )
     }
+
+    #[test]
+    fn test_serialize_pid() {
+        assert_eq!(serialize_pid(EXPECTED_PID), EXPECTED_PID_SEQUENCE);
+    }
 }
 
 mod deserialization_test {
@@ -118,5 +126,17 @@ mod deserialization_test {
             deserialize_input_record_0(&EXPECTED_INPUT_RECORD_0_SEQUENCE)
                 .equals(EXPECTED_INPUT_RECORD_0),
         )
+    }
+
+    #[test]
+    fn test_deserialize_pid() {
+        assert_eq!(deserialize_pid(&EXPECTED_PID_SEQUENCE), EXPECTED_PID);
+    }
+
+    #[test]
+    fn test_pid_round_trip() {
+        use crate::serde::serialization::serialize_pid;
+        let pid = 0xDEADBEEFu32;
+        assert_eq!(deserialize_pid(&serialize_pid(pid)), pid);
     }
 }
