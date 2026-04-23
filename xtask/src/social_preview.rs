@@ -15,11 +15,11 @@ use anyhow::{bail, Context, Result};
 
 /// Pinned Playwright Docker image tag.
 ///
-/// The numeric portion (e.g. `v1.49.1`) must match `@playwright/test` in
+/// The numeric portion (e.g. `v1.59.1`) must match `@playwright/test` in
 /// `xtask/social-preview/package.json`. Playwright refuses to run when
 /// these versions diverge, so bump both in the same commit. See
 /// `xtask/social-preview/README.md` for details.
-const PLAYWRIGHT_IMAGE: &str = "mcr.microsoft.com/playwright:v1.49.1-noble";
+const PLAYWRIGHT_IMAGE: &str = "mcr.microsoft.com/playwright:v1.59.1-noble";
 
 /// Default output path for the generated PNG, relative to the workspace
 /// root. Lives under `target/` so it shares Cargo's build-artifact
