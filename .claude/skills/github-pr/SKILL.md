@@ -49,8 +49,11 @@ or "handle the review comments".
 #### 1. Discover PR context
 
 ```sh
-# Owner/repo of the current clone
-gh repo view --json nameWithOwner --jq .nameWithOwner
+# Owner of the current clone
+gh repo view --json owner --jq .owner.login
+
+# Repo name of the current clone
+gh repo view --json name --jq .name
 
 # PR number for the current branch (fails if no PR exists)
 gh pr view --json number --jq .number
