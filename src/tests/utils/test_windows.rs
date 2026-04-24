@@ -293,10 +293,13 @@ mod console_border_color_test {
             .return_const("10.0.19045".to_string());
 
         api.expect_set_console_border_color()
-            .with(mockall::predicate::eq(test_color))
+            .with(
+                mockall::predicate::eq(test_color),
+                mockall::predicate::always(),
+            )
             .times(0);
 
-        set_console_border_color(&api, test_color);
+        set_console_border_color(&api, test_color, None);
     }
 
     /// Tests console border color setting on Windows 11 with DWM integration.
@@ -311,11 +314,14 @@ mod console_border_color_test {
             .return_const("10.0.22000".to_string());
 
         api.expect_set_console_border_color()
-            .with(mockall::predicate::eq(test_color))
+            .with(
+                mockall::predicate::eq(test_color),
+                mockall::predicate::always(),
+            )
             .times(1)
-            .returning(|_| return Ok(()));
+            .returning(|_, _| return Ok(()));
 
-        set_console_border_color(&api, test_color);
+        set_console_border_color(&api, test_color, None);
     }
 
     /// Tests console border color setting error handling when DWM calls fail.
@@ -330,12 +336,15 @@ mod console_border_color_test {
             .return_const("10.0.22000".to_string());
 
         api.expect_set_console_border_color()
-            .with(mockall::predicate::eq(test_color))
+            .with(
+                mockall::predicate::eq(test_color),
+                mockall::predicate::always(),
+            )
             .times(1)
-            .returning(|_| return Err(windows::core::Error::from_win32()));
+            .returning(|_, _| return Err(windows::core::Error::from_win32()));
 
         let result = std::panic::catch_unwind(|| {
-            set_console_border_color(&api, test_color);
+            set_console_border_color(&api, test_color, None);
         });
 
         assert!(
@@ -554,28 +563,331 @@ mod command_line_test {
     }
 }
 
-mod create_process_with_args_test {
-    use windows::Win32::{
-        Foundation::{GetLastError, STILL_ACTIVE},
-        System::Threading::TerminateProcess,
-    };
+/// Tests actually calling Windows APIs using DefaultWindowsApi.
+mod default_windows_api_tests {
 
-    use crate::utils::windows::{DefaultWindowsApi, WindowsApi};
-
-    /// Tests create_process_with_args with valid application and arguments.
-    /// Validates that the process creation function is called with correct parameters.
-    /// Note: This test actually creates a process.
-    #[test]
-    fn test_create_process_with_args() {
-        let windows_api = DefaultWindowsApi;
-        let application = r"C:\Windows\System32\timeout.exe";
-        let args = vec!["30".to_string()];
-        let process_info = match windows_api.create_process_with_args(application, args) {
-            None => panic!("Failed to create process: {:?}", unsafe { GetLastError() }),
-            Some(process_info) => process_info,
+    mod create_process_with_args_test {
+        use windows::Win32::{
+            Foundation::{GetLastError, STILL_ACTIVE},
+            System::Threading::TerminateProcess,
         };
-        assert!(windows_api.get_exit_code(process_info.hProcess).unwrap() == STILL_ACTIVE.0 as u32);
-        unsafe { TerminateProcess(process_info.hProcess, 0) }.expect("Failed to terminate process");
-        assert!(windows_api.get_exit_code(process_info.hProcess).unwrap() == 0);
+
+        use crate::utils::windows::{DefaultWindowsApi, WindowsApi};
+
+        /// Tests create_process_with_args with valid application and arguments.
+        /// Validates that the process creation function is called with correct parameters.
+        /// Note: This test actually creates a process.
+        #[test]
+        fn test_create_process_with_args() {
+            let windows_api = DefaultWindowsApi;
+            let application = r"C:\Windows\System32\timeout.exe";
+            let args = vec!["30".to_string()];
+            let process_info = match windows_api.create_process_with_args(application, args) {
+                None => panic!("Failed to create process: {:?}", unsafe { GetLastError() }),
+                Some(process_info) => process_info,
+            };
+            assert!(
+                windows_api.get_exit_code(process_info.hProcess).unwrap() == STILL_ACTIVE.0 as u32
+            );
+            unsafe { TerminateProcess(process_info.hProcess, 0) }
+                .expect("Failed to terminate process");
+            assert!(windows_api.get_exit_code(process_info.hProcess).unwrap() == 0);
+        }
+    }
+
+    mod get_os_version_test {
+        use crate::utils::windows::{DefaultWindowsApi, WindowsApi};
+
+        /// Tests getting OS version.
+        /// Validates that the OS version string is non-empty.
+        #[test]
+        fn test_get_os_version() {
+            let windows_api = DefaultWindowsApi;
+
+            let os_version = windows_api.get_os_version();
+
+            assert!(
+                !os_version.is_empty(),
+                "OS version string should not be empty"
+            );
+        }
+    }
+
+    mod console_mode_test {
+        use windows::Win32::System::Console::ENABLE_PROCESSED_INPUT;
+
+        use crate::utils::windows::get_console_input_buffer;
+        use crate::utils::windows::{DefaultWindowsApi, WindowsApi};
+
+        /// Tests setting and getting console mode.
+        /// Validates that console mode can be set and retrieved correctly.
+        #[test]
+        fn test_set_and_get_console_mode() {
+            let windows_api = DefaultWindowsApi;
+            let orig_mode = windows_api
+                .get_console_mode(get_console_input_buffer())
+                .unwrap();
+            let new_mode = windows::Win32::System::Console::CONSOLE_MODE(
+                orig_mode.0 ^ ENABLE_PROCESSED_INPUT.0,
+            );
+            let _ = windows_api.set_console_mode(get_console_input_buffer(), new_mode);
+            let updated_mode = windows_api
+                .get_console_mode(get_console_input_buffer())
+                .unwrap();
+            assert_eq!(updated_mode, new_mode);
+            let _ = windows_api.set_console_mode(get_console_input_buffer(), orig_mode);
+        }
+    }
+
+    mod window_handle_tests {
+        use windows::Win32::{
+            System::Threading::PROCESS_QUERY_INFORMATION,
+            UI::WindowsAndMessaging::GetWindowThreadProcessId,
+        };
+
+        use crate::utils::windows::{DefaultWindowsApi, WindowsApi};
+
+        struct TestProcessGuard {
+            process_info: windows::Win32::System::Threading::PROCESS_INFORMATION,
+        }
+
+        impl Drop for TestProcessGuard {
+            fn drop(&mut self) {
+                match unsafe {
+                    windows::Win32::System::Threading::TerminateProcess(
+                        self.process_info.hProcess,
+                        0,
+                    )
+                } {
+                    Ok(_) => {}
+                    Err(err) => {
+                        if err.code().0 == 0x80070005u32 as i32 {
+                            eprintln!("Access denied when terminating process, that's okay");
+                        } else {
+                            panic!("Failed to terminate process: {}", err);
+                        }
+                    }
+                }
+            }
+        }
+
+        fn get_test_window_handle(
+            windows_api: &DefaultWindowsApi,
+        ) -> (windows::Win32::Foundation::HWND, TestProcessGuard) {
+            let application = r"C:\Windows\System32\timeout.exe";
+            let args = vec!["30".to_string()];
+            let process_info = windows_api
+                .create_process_with_args(application, args)
+                .expect("Failed to create process");
+            let hwnd = windows_api.get_window_handle_for_process(process_info.dwProcessId);
+            return (hwnd, TestProcessGuard { process_info });
+        }
+
+        mod console_title_test {
+            use crate::utils::windows::{
+                get_console_title,
+                test_mod::default_windows_api_tests::window_handle_tests::get_test_window_handle,
+                DefaultWindowsApi, WindowsApi,
+            };
+
+            /// Tests setting and getting console title.
+            /// Validates that the console title is correctly set and retrieved.
+            #[test]
+            fn test_set_and_get_console_title() {
+                let windows_api = DefaultWindowsApi;
+                let (handle, _guard) = get_test_window_handle(&windows_api);
+                let test_title = "Test Console Title";
+
+                windows_api
+                    .set_console_title(test_title, Some(handle))
+                    .expect("Failed to set console title");
+
+                let set_title = get_console_title(&windows_api, Some(handle));
+                assert_eq!(set_title, test_title);
+            }
+        }
+
+        /// Tests getting console window handle.
+        #[test]
+        fn test_get_console_window_handle() {
+            let windows_api = DefaultWindowsApi;
+
+            // Depending on whether or not the calling process has a console
+            // window attached, this may return a valid handle or null.
+            // As long as it doesn't panic, the test passes.
+            // Locally running tests usually have a console, CI environments do not.
+            let _ = windows_api.get_console_window();
+        }
+
+        /// Tests arrange_console.
+        /// Validates that arranging the console works.
+        #[test]
+        fn test_arrange_console() {
+            let windows_api = DefaultWindowsApi;
+            let (handle, _guard) = get_test_window_handle(&windows_api);
+
+            let original_placement = windows_api
+                .get_window_placement(handle)
+                .expect("Failed to get window placement");
+            let x = original_placement.rcNormalPosition.left;
+            let y = original_placement.rcNormalPosition.top;
+            let width = original_placement.rcNormalPosition.right
+                - original_placement.rcNormalPosition.left;
+            let height = original_placement.rcNormalPosition.bottom
+                - original_placement.rcNormalPosition.top;
+            windows_api
+                .arrange_console(x, y, width, height, Some(handle))
+                .unwrap();
+            let arranged_placement = windows_api
+                .get_window_placement(handle)
+                .expect("Failed to get window placement after arrange");
+            assert_eq!(arranged_placement.rcNormalPosition.left, x);
+            assert_eq!(arranged_placement.rcNormalPosition.top, y);
+            assert_eq!(arranged_placement.rcNormalPosition.right, x + width);
+            assert_eq!(arranged_placement.rcNormalPosition.bottom, y + height);
+        }
+
+        /// Tests getting foreground window handle.
+        /// Validates that the foreground window handle is non-null.
+        #[test]
+        fn test_get_foreground_window_handle() {
+            let windows_api = DefaultWindowsApi;
+
+            let window_handle = windows_api.get_foreground_window();
+
+            assert!(
+                !window_handle.is_invalid(),
+                "Foreground window handle should not be null"
+            );
+        }
+
+        /// Tests setting foreground window.
+        /// Validates that setting the foreground window does not return an error.
+        #[test]
+        fn test_set_foreground_window() {
+            let windows_api = DefaultWindowsApi;
+
+            let (window_handle, _guard) = get_test_window_handle(&windows_api);
+            windows_api
+                .set_foreground_window(window_handle)
+                .expect("Failed to set foreground window");
+        }
+
+        /// Tests moving a window.
+        /// Validates that moving a window works.
+        #[test]
+        fn test_move_window() {
+            let windows_api = DefaultWindowsApi;
+
+            let (window_handle, _guard) = get_test_window_handle(&windows_api);
+
+            let original_placement = windows_api
+                .get_window_placement(window_handle)
+                .expect("Failed to get window placement");
+
+            windows_api
+                .move_window(
+                    window_handle,
+                    original_placement.rcNormalPosition.left + 1,
+                    original_placement.rcNormalPosition.top + 1,
+                    original_placement.rcNormalPosition.right
+                        - original_placement.rcNormalPosition.left
+                        - 1,
+                    original_placement.rcNormalPosition.bottom
+                        - original_placement.rcNormalPosition.top
+                        - 1,
+                    true,
+                )
+                .expect("Failed to move window");
+
+            let moved_placement = windows_api
+                .get_window_placement(window_handle)
+                .expect("Failed to get window placement after move");
+            assert_eq!(
+                moved_placement.rcNormalPosition.left,
+                original_placement.rcNormalPosition.left + 1
+            );
+            assert_eq!(
+                moved_placement.rcNormalPosition.top,
+                original_placement.rcNormalPosition.top + 1
+            );
+            assert_eq!(
+                moved_placement.rcNormalPosition.right,
+                original_placement.rcNormalPosition.right
+            );
+            assert_eq!(
+                moved_placement.rcNormalPosition.bottom,
+                original_placement.rcNormalPosition.bottom
+            );
+
+            windows_api
+                .move_window(
+                    window_handle,
+                    original_placement.rcNormalPosition.left,
+                    original_placement.rcNormalPosition.top,
+                    original_placement.rcNormalPosition.right
+                        - original_placement.rcNormalPosition.left,
+                    original_placement.rcNormalPosition.bottom
+                        - original_placement.rcNormalPosition.top,
+                    true,
+                )
+                .expect("Failed to move window back to original position");
+        }
+
+        mod com_ui_automation {
+            use windows::Win32::UI::WindowsAndMessaging::SW_SHOW;
+
+            use crate::utils::windows::{
+                test_mod::default_windows_api_tests::window_handle_tests::get_test_window_handle,
+                DefaultWindowsApi, WindowsApi,
+            };
+
+            /// Tests show and focus window.
+            /// Validates that showing and focusing a window works.
+            #[test]
+            fn test_show_and_focus_window() {
+                let windows_api = DefaultWindowsApi;
+                let (window_handle, _guard) = get_test_window_handle(&windows_api);
+
+                windows_api
+                    .initialize_com_library(windows::Win32::System::Com::COINIT_MULTITHREADED)
+                    .expect("Failed to initialize COM library");
+                windows_api
+                    .focus_window_with_automation(window_handle)
+                    .expect("Failed to focus window");
+                windows_api
+                    .show_window(window_handle, SW_SHOW)
+                    .expect("Failed to show window");
+            }
+        }
+
+        /// Tests getting a process handle to an existing process
+        #[test]
+        fn test_open_process() {
+            let windows_api = DefaultWindowsApi;
+            let (window_handle, _guard) = get_test_window_handle(&windows_api);
+
+            let mut process_id: u32 = 0;
+            unsafe { GetWindowThreadProcessId(window_handle, Some(&mut process_id)) };
+            let process_handle =
+                windows_api.open_process(PROCESS_QUERY_INFORMATION.0, false, process_id);
+            assert!(process_handle.is_ok());
+        }
+    }
+
+    mod get_system_metrics_test {
+        use windows::Win32::UI::WindowsAndMessaging::SM_CXFIXEDFRAME;
+
+        use crate::utils::windows::{DefaultWindowsApi, WindowsApi};
+
+        /// Tests getting system metrics.
+        /// Validates that system metrics retrieval works.
+        #[test]
+        fn test_get_system_metrics() {
+            let windows_api = DefaultWindowsApi;
+
+            let metrics = windows_api.get_system_metrics(SM_CXFIXEDFRAME);
+            assert!(metrics > 0, "System metrics should be greater than zero");
+        }
     }
 }
