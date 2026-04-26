@@ -1,7 +1,8 @@
 {
   "worktree": {
     "setup": [
-      "git config --local core.hooksPath .githooks/"
+      "git config --local core.hooksPath .githooks/",
+      "cargo xtask inject-agent-token"
     ],
     "teardown": [
       "git -C \"$env:PASEO_WORKTREE_PATH\" checkout --detach; $global:LASTEXITCODE = 0",

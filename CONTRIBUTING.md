@@ -80,6 +80,32 @@ csshW uses pre-commit git hooks to enforce code quality. These are automatically
 - Run documentation tests
 - Run all tests
 
+### AI agent GitHub auth (optional)
+
+If you use [paseo](https://paseo.dev) to spawn AI coding agents on this
+repository, those agents inherit your full `gh` CLI login by default —
+typically a classic `repo` scope, which can delete the repository or
+force-push to `main`. You can scope an agent down by providing a
+**fine-grained** Personal Access Token:
+
+1. Generate a fine-grained PAT at
+   <https://github.com/settings/personal-access-tokens/new> with
+   `Contents`, `Pull requests`, and `Issues` set to *Read and write*
+   (and only those — leave everything else at *No access*). Restrict it
+   to your fork of `csshw`. Set a short expiration.
+2. Save the full token (including the `github_pat_` prefix) to
+   `.paseo/gh-token` in your source checkout (not in a worktree). The
+   file is gitignored.
+
+`cargo xtask inject-agent-token` is wired into `paseo.json`'s
+`worktree.setup` and will write the token into the worktree's
+`.claude/settings.local.json` at creation time, where Claude Code
+injects it as `GH_TOKEN` for the agent process. If the file is absent
+the step is a no-op; classic `ghp_…` or OAuth `gho_…` tokens are
+rejected. To rotate, overwrite `.paseo/gh-token` in the source
+checkout and either re-run `cargo xtask inject-agent-token` from there
+or recreate the worktree.
+
 ### For Small Changes
 
 Small contributions can be submitted directly as pull requests without creating an issue first.

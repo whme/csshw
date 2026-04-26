@@ -7,6 +7,7 @@
 
 mod changelog;
 mod coverage;
+mod inject_agent_token;
 mod readme;
 mod release;
 mod social_preview;
@@ -55,6 +56,11 @@ enum Command {
     },
     /// Run coverage analysis using a pinned nightly toolchain.
     Coverage,
+    /// Inject a contributor-supplied fine-grained GitHub PAT into the
+    /// current worktree's `.claude/settings.local.json` so paseo-spawned
+    /// agents act with a least-privilege token instead of the user's
+    /// full `gh` login. A no-op when `.paseo/gh-token` is absent.
+    InjectAgentToken,
 }
 
 fn main() -> Result<()> {
@@ -84,6 +90,9 @@ fn main() -> Result<()> {
         }
         Command::Coverage => {
             coverage::run_coverage(&coverage::RealSystem)?;
+        }
+        Command::InjectAgentToken => {
+            inject_agent_token::inject_agent_token(&inject_agent_token::RealSystem)?;
         }
     }
     Ok(())
