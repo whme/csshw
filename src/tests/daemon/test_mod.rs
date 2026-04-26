@@ -7,17 +7,15 @@ mod daemon_test {
 
     use tokio::{
         net::windows::named_pipe::{ClientOptions, NamedPipeClient, PipeMode, ServerOptions},
-        sync::broadcast,
+        sync::{broadcast, watch},
     };
     use windows::Win32::Foundation::{HANDLE, HWND};
 
     use crate::{
-        daemon::{
-            named_pipe_server_routine, resolve_cluster_tags, Client, Clients, HWNDWrapper,
-            PipeServerState,
-        },
+        daemon::{named_pipe_server_routine, resolve_cluster_tags, Client, Clients, HWNDWrapper},
         protocol::{
-            FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH, TAG_INPUT_RECORD, TAG_KEEP_ALIVE,
+            ClientState, FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH,
+            FRAMED_STATE_CHANGE_LENGTH, TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
         },
         serde::{
             serialization::serialize_pid, SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
@@ -53,7 +51,7 @@ mod daemon_test {
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: pid,
-            pipe_server_state: Arc::new(Mutex::new(PipeServerState::Enabled)),
+            state_tx: Arc::new(watch::channel(ClientState::Active).0),
         });
         return Arc::new(Mutex::new(clients));
     }
@@ -143,12 +141,17 @@ mod daemon_test {
             named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
         });
 
+        // Push 5 input records up front; once the routine drains them the
+        // broadcast channel goes idle and the 5 ms keep-alive branch of the
+        // select! starts firing, letting us assert both behaviours in one
+        // loop.
+        const TARGET_INPUT_FRAMES: usize = 5;
+        for _ in 0..TARGET_INPUT_FRAMES {
+            sender.send([2; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
+        }
         let mut keep_alive_received = false;
         let mut successful_iterations = 0;
-        // Verify the routine forwards the data through the pipe
         loop {
-            // Send data to the routine
-            sender.send([2; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
             // Wait for the pipe to be readable
             named_pipe_client.readable().await?;
             let mut buf = [0u8; FRAMED_INPUT_RECORD_LENGTH];
@@ -167,9 +170,6 @@ mod daemon_test {
                         assert_eq!(FRAMED_INPUT_RECORD_LENGTH, n);
                         assert_eq!([2; SERIALIZED_INPUT_RECORD_0_LENGTH], buf[1..]);
                         successful_iterations += 1;
-                        if successful_iterations >= 5 {
-                            break;
-                        }
                     }
                     other => panic!("Unexpected tag byte 0x{other:02X}"),
                 },
@@ -180,11 +180,98 @@ mod daemon_test {
                     return Err(e.into());
                 }
             }
+            if keep_alive_received && successful_iterations >= TARGET_INPUT_FRAMES {
+                break;
+            }
         }
         assert!(keep_alive_received);
+        assert!(successful_iterations >= TARGET_INPUT_FRAMES);
         // Drop the client, closing the pipe.
         drop(named_pipe_client);
         // We expect the routine to exit gracefully.
+        future.await?;
+        return Ok(());
+    }
+
+    #[tokio::test]
+    async fn test_named_pipe_server_routine_forwards_state_change(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        const TEST_PID: u32 = 66666;
+        // Use a per-test unique pipe name so parallel test runs don't collide
+        // on the global PIPE_NAME.
+        let pipe_name = format!(r"\\.\pipe\csshw-test-state-change-{}", std::process::id());
+        let (_sender, mut receiver) = broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(
+            SERIALIZED_INPUT_RECORD_0_LENGTH,
+        );
+        let named_pipe_server = ServerOptions::new()
+            .access_inbound(true)
+            .access_outbound(true)
+            .pipe_mode(PipeMode::Message)
+            .create(&pipe_name)?;
+        let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
+        let clients = make_clients_with_pid(TEST_PID);
+        // Grab the watch sender so we can later trigger a state change push.
+        let state_tx = Arc::clone(
+            &clients
+                .lock()
+                .unwrap()
+                .get_by_pid(TEST_PID)
+                .unwrap()
+                .state_tx,
+        );
+        send_pid(&named_pipe_client, TEST_PID).await?;
+        let future = tokio::spawn(async move {
+            named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
+        });
+        // Wait for at least one keep-alive frame; this proves the routine
+        // has finished PID correlation and reached the select! loop, which
+        // means it has also subscribed to the watch channel. Sending before
+        // the subscribe would either fail with `SendError` (no receivers)
+        // or be marked already-seen by the freshly-subscribed receiver.
+        loop {
+            named_pipe_client.readable().await?;
+            let mut buf = [0u8; FRAMED_INPUT_RECORD_LENGTH];
+            match named_pipe_client.try_read(&mut buf) {
+                Ok(0) => return Err("pipe closed before keep-alive".into()),
+                Ok(n) => match buf[0] {
+                    TAG_KEEP_ALIVE => {
+                        assert_eq!(FRAMED_KEEP_ALIVE_LENGTH, n);
+                        break;
+                    }
+                    other => panic!("Unexpected tag byte 0x{other:02X}"),
+                },
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                Err(e) => return Err(e.into()),
+            }
+        }
+        // Push a new state through the watch sender; the routine must write a
+        // tagged state-change frame to the pipe.
+        state_tx.send(ClientState::Active)?;
+        let mut state_change_seen = false;
+        loop {
+            named_pipe_client.readable().await?;
+            let mut buf = [0u8; FRAMED_INPUT_RECORD_LENGTH];
+            match named_pipe_client.try_read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => match buf[0] {
+                    TAG_STATE_CHANGE => {
+                        assert_eq!(FRAMED_STATE_CHANGE_LENGTH, n);
+                        assert_eq!(buf[1], ClientState::Active as u8);
+                        state_change_seen = true;
+                        break;
+                    }
+                    TAG_KEEP_ALIVE => {
+                        assert_eq!(FRAMED_KEEP_ALIVE_LENGTH, n);
+                        // Keep-alives may interleave with the state change; keep waiting.
+                    }
+                    other => panic!("Unexpected tag byte 0x{other:02X}"),
+                },
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                Err(e) => return Err(e.into()),
+            }
+        }
+        assert!(state_change_seen);
+        drop(named_pipe_client);
         future.await?;
         return Ok(());
     }
@@ -320,7 +407,7 @@ mod daemon_test {
                 window_handle: HWND(std::ptr::null_mut()),
                 process_handle: HANDLE::default(),
                 process_id: pid,
-                pipe_server_state: Arc::new(Mutex::new(PipeServerState::Enabled)),
+                state_tx: Arc::new(watch::channel(ClientState::Active).0),
             };
         };
         clients.push(make_client(1000));
@@ -338,21 +425,21 @@ mod daemon_test {
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: 1000,
-            pipe_server_state: Arc::new(Mutex::new(PipeServerState::Enabled)),
+            state_tx: Arc::new(watch::channel(ClientState::Active).0),
         };
         let client_b = Client {
             hostname: "host-b".to_owned(),
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: 2000,
-            pipe_server_state: Arc::new(Mutex::new(PipeServerState::Enabled)),
+            state_tx: Arc::new(watch::channel(ClientState::Active).0),
         };
         let client_c = Client {
             hostname: "host-c".to_owned(),
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: 3000,
-            pipe_server_state: Arc::new(Mutex::new(PipeServerState::Enabled)),
+            state_tx: Arc::new(watch::channel(ClientState::Active).0),
         };
 
         clients.push(client_a);
