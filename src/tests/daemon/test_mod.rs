@@ -3,11 +3,13 @@ mod daemon_test {
         ffi::c_void,
         io,
         sync::{Arc, Mutex},
+        time::Duration,
     };
 
     use tokio::{
         net::windows::named_pipe::{ClientOptions, NamedPipeClient, PipeMode, ServerOptions},
         sync::broadcast,
+        time::timeout,
     };
     use windows::Win32::Foundation::{HANDLE, HWND};
 
@@ -44,13 +46,21 @@ mod daemon_test {
     /// `process_id` equals `pid`. All other fields carry sentinel values as
     /// they are unused by the pipe server routine.
     fn make_clients_with_pid(pid: u32) -> Arc<Mutex<Clients>> {
+        return make_clients_with_pid_and_state(pid, PipeServerState::Enabled);
+    }
+
+    /// Construct a [`Clients`] collection holding a single [`Client`] whose
+    /// `process_id` equals `pid` and whose pipe server starts in `state`.
+    /// All other fields carry sentinel values as they are unused by the pipe
+    /// server routine.
+    fn make_clients_with_pid_and_state(pid: u32, state: PipeServerState) -> Arc<Mutex<Clients>> {
         let mut clients = Clients::new();
         clients.push(Client {
             hostname: format!("test-host-{pid}"),
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: pid,
-            pipe_server_state: Arc::new(Mutex::new(PipeServerState::Enabled)),
+            pipe_server_state: Arc::new(Mutex::new(state)),
         });
         return Arc::new(Mutex::new(clients));
     }
@@ -372,5 +382,147 @@ mod daemon_test {
         let hostnames_after_retain: Vec<&str> =
             clients.iter().map(|c| return c.hostname.as_str()).collect();
         assert_eq!(hostnames_after_retain, vec!["host-a", "host-c"]);
+    }
+
+    #[tokio::test]
+    async fn test_named_pipe_server_routine_disabled_client(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        const TEST_PID: u32 = 66666;
+        let pipe_name = format!(
+            r"\\.\pipe\csshw-test-disabled-client-{}",
+            std::process::id()
+        );
+        let (sender, mut receiver) = broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(
+            SERIALIZED_INPUT_RECORD_0_LENGTH,
+        );
+        let named_pipe_server = ServerOptions::new()
+            .access_inbound(true)
+            .access_outbound(true)
+            .pipe_mode(PipeMode::Message)
+            .create(&pipe_name)?;
+        let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
+        let clients = make_clients_with_pid_and_state(TEST_PID, PipeServerState::Disabled);
+        send_pid(&named_pipe_client, TEST_PID).await?;
+        let future = tokio::spawn(async move {
+            named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
+        });
+        // Send actual data that should be suppressed
+        sender.send([2; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
+        // Read from pipe — we should only get keep-alive packets, never the actual data.
+        // Bound the loop with a timeout so a stalled pipe surfaces as a test failure
+        // rather than a CI hang.
+        let mut keep_alive_count = 0;
+        timeout(Duration::from_secs(5), async {
+            loop {
+                named_pipe_client.readable().await?;
+                let mut buf = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
+                match named_pipe_client.try_read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        assert_eq!(SERIALIZED_INPUT_RECORD_0_LENGTH, n);
+                        assert_eq!(
+                            [255; SERIALIZED_INPUT_RECORD_0_LENGTH], buf,
+                            "Disabled client should only receive keep-alive, got {:?}",
+                            buf
+                        );
+                        keep_alive_count += 1;
+                        if keep_alive_count >= 5 {
+                            break;
+                        }
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                    Err(e) => return Err::<(), io::Error>(e),
+                }
+            }
+            return Ok(());
+        })
+        .await??;
+        assert!(keep_alive_count >= 5);
+        drop(named_pipe_client);
+        future.await?;
+        return Ok(());
+    }
+
+    #[tokio::test]
+    async fn test_named_pipe_server_routine_re_enable_client(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        const TEST_PID: u32 = 77777;
+        let pipe_name = format!(
+            r"\\.\pipe\csshw-test-re-enable-client-{}",
+            std::process::id()
+        );
+        let (sender, mut receiver) = broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(
+            SERIALIZED_INPUT_RECORD_0_LENGTH,
+        );
+        let named_pipe_server = ServerOptions::new()
+            .access_inbound(true)
+            .access_outbound(true)
+            .pipe_mode(PipeMode::Message)
+            .create(&pipe_name)?;
+        let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
+        let clients = make_clients_with_pid_and_state(TEST_PID, PipeServerState::Disabled);
+        let clients_control = Arc::clone(&clients);
+        send_pid(&named_pipe_client, TEST_PID).await?;
+        let future = tokio::spawn(async move {
+            named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
+        });
+        // Send data while disabled — should be suppressed
+        sender.send([2; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
+        // Wait for a few keep-alive packets to confirm disabled state.
+        // Bound the loop with a timeout so a stalled pipe fails the test deterministically.
+        let mut keep_alive_count = 0;
+        timeout(Duration::from_secs(5), async {
+            loop {
+                named_pipe_client.readable().await?;
+                let mut buf = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
+                match named_pipe_client.try_read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        assert_eq!(SERIALIZED_INPUT_RECORD_0_LENGTH, n);
+                        assert_eq!([255; SERIALIZED_INPUT_RECORD_0_LENGTH], buf);
+                        keep_alive_count += 1;
+                        if keep_alive_count >= 3 {
+                            break;
+                        }
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                    Err(e) => return Err::<(), io::Error>(e),
+                }
+            }
+            return Ok(());
+        })
+        .await??;
+        // Re-enable the client and send new data
+        {
+            let clients_guard = clients_control.lock().unwrap();
+            let client = clients_guard.get_by_pid(TEST_PID).unwrap();
+            *client.pipe_server_state.lock().unwrap() = PipeServerState::Enabled;
+        }
+        sender.send([3; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
+        // Should now receive actual data. Same timeout bound as above.
+        timeout(Duration::from_secs(5), async {
+            loop {
+                named_pipe_client.readable().await?;
+                let mut buf = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
+                match named_pipe_client.try_read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        assert_eq!(SERIALIZED_INPUT_RECORD_0_LENGTH, n);
+                        if buf[0] == 255 {
+                            continue; // keep-alive, skip
+                        }
+                        assert_eq!([3; SERIALIZED_INPUT_RECORD_0_LENGTH], buf);
+                        break; // Got real data after re-enabling
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                    Err(e) => return Err::<(), io::Error>(e),
+                }
+            }
+            return Ok(());
+        })
+        .await??;
+        drop(named_pipe_client);
+        future.await?;
+        return Ok(());
     }
 }
