@@ -1069,9 +1069,30 @@ async fn named_pipe_server_routine(
             }
         };
         // Only forward to the client if its pipe server state allows it.
-        match *pipe_server_state.lock().unwrap() {
+        // Copy the state out so the mutex guard does not span the `.await`
+        // below — `MutexGuard` is not `Send` and would prevent the routine
+        // from being spawned on a multi-threaded runtime.
+        let state = *pipe_server_state.lock().unwrap();
+        match state {
             PipeServerState::Enabled => {}
-            PipeServerState::Disabled => continue,
+            PipeServerState::Disabled => {
+                // Still probe the pipe while disabled so client disconnects
+                // are detected promptly under sustained input.
+                match server.try_write(&[u8::MAX; SERIALIZED_INPUT_RECORD_0_LENGTH]) {
+                    Ok(_) => {}
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
+                    Err(_) => {
+                        debug!(
+                            "Named pipe server ({:?}) is closed, stopping named pipe server routine",
+                            server
+                        );
+                        return;
+                    }
+                }
+                // Yield so we don't tight-loop when the broadcast channel is busy.
+                tokio::task::yield_now().await;
+                continue;
+            }
         }
         loop {
             server.writable().await.unwrap_or_else(|err| {

@@ -328,6 +328,9 @@ mod daemon_test {
     #[tokio::test]
     async fn test_named_pipe_server_routine_disabled() -> Result<(), Box<dyn std::error::Error>> {
         const TEST_PID: u32 = 66666;
+        // Use a per-test unique pipe name so parallel test runs don't collide
+        // on the global PIPE_NAME.
+        let pipe_name = format!(r"\\.\pipe\csshw-test-disabled-{}", std::process::id());
         let (sender, mut receiver) = broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(
             SERIALIZED_INPUT_RECORD_0_LENGTH,
         );
@@ -335,8 +338,8 @@ mod daemon_test {
             .access_inbound(true)
             .access_outbound(true)
             .pipe_mode(PipeMode::Message)
-            .create(PIPE_NAME)?;
-        let named_pipe_client = ClientOptions::new().open(PIPE_NAME)?;
+            .create(&pipe_name)?;
+        let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
         let (clients, pipe_server_state) = make_clients_with_pid_and_state(TEST_PID);
         send_pid(&named_pipe_client, TEST_PID).await?;
         let future = tokio::spawn(async move {
