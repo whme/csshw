@@ -20,9 +20,10 @@
 //! the repo root.
 //!
 //! If the token file is missing the subcommand is a silent no-op
-//! (with an informational log line). If it contains a classic
-//! `ghp_…` or OAuth `gho_…` token the subcommand aborts — those
-//! token types grant far more than the least-privilege goal allows.
+//! (with an informational log line). If it contains anything other
+//! than a fine-grained PAT — e.g. a classic `ghp_…` or OAuth `gho_…`
+//! token — the subcommand aborts, since those token types grant far
+//! more than the least-privilege goal allows.
 
 use std::path::{Path, PathBuf};
 
@@ -145,11 +146,11 @@ impl InjectAgentTokenSystem for RealSystem {
 
 /// Build the JSON body written to `.claude/settings.local.json`.
 ///
-/// The fine-grained PAT alphabet is restricted to `[A-Za-z0-9_]`,
-/// which contains no characters that require JSON escaping. The
-/// [`FINE_GRAINED_PREFIX`] check enforced by [`inject_agent_token`]
-/// is the invariant that lets this function skip a general-purpose
-/// JSON encoder without risking injection.
+/// Caller-enforced invariant: `token` contains only bytes in
+/// `[A-Za-z0-9_]`. That alphabet has no characters that require JSON
+/// escaping, which is what lets this function skip a general-purpose
+/// JSON encoder without risking injection. The invariant is enforced
+/// by [`is_fine_grained_pat_alphabet`] inside [`inject_agent_token`].
 ///
 /// # Arguments
 ///
@@ -162,6 +163,30 @@ fn build_settings_body(token: &str) -> String {
     format!(
         "{{\n  \"env\": {{\n    \"GH_TOKEN\": \"{token}\",\n    \"GH_HOST\": \"github.com\"\n  }}\n}}\n"
     )
+}
+
+/// Return `true` when every byte of `token` is in the fine-grained
+/// PAT alphabet `[A-Za-z0-9_]`.
+///
+/// Enforcing this invariant is what lets [`build_settings_body`]
+/// embed the token directly into a JSON template without escaping —
+/// none of the characters in this alphabet need JSON escaping, so a
+/// token that passes this check cannot break out of its string
+/// literal nor inject additional keys.
+///
+/// # Arguments
+///
+/// * `token` - Trimmed token to validate.
+///
+/// # Returns
+///
+/// `true` when `token` is non-empty and contains only the allowed
+/// characters; `false` otherwise.
+fn is_fine_grained_pat_alphabet(token: &str) -> bool {
+    !token.is_empty()
+        && token
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
 /// Resolve the source checkout directory.
@@ -209,15 +234,16 @@ fn resolve_source_checkout<S: InjectAgentTokenSystem>(system: &S) -> Result<Path
 /// # Errors
 ///
 /// Returns an error when a token file exists but does not start with
-/// [`FINE_GRAINED_PREFIX`], or when the settings file cannot be
-/// written.
+/// [`FINE_GRAINED_PREFIX`], when its trimmed contents fall outside
+/// the fine-grained PAT alphabet (see [`is_fine_grained_pat_alphabet`]),
+/// or when the settings file cannot be written.
 pub fn inject_agent_token<S: InjectAgentTokenSystem>(system: &S) -> Result<()> {
     let source = resolve_source_checkout(system)?;
     let token_file = source.join(TOKEN_FILE_REL_PATH);
 
     let Some(raw) = system.read_token_file(&token_file)? else {
         system.log(&format!(
-            "INFO - paseo agent GitHub auth: no {} found; agents will use your existing gh login. See AGENTS.md#agent-github-auth.",
+            "INFO - paseo agent GitHub auth: no {} found; agents will use your existing gh login. See CONTRIBUTING.md.",
             token_file.display()
         ));
         return Ok(());
@@ -226,16 +252,22 @@ pub fn inject_agent_token<S: InjectAgentTokenSystem>(system: &S) -> Result<()> {
     let token = raw.trim();
     if token.is_empty() {
         bail!(
-            "{} is empty; expected a fine-grained PAT starting with `{}`. See AGENTS.md#agent-github-auth.",
+            "{} is empty; expected a fine-grained PAT starting with `{}`. See CONTRIBUTING.md.",
             token_file.display(),
             FINE_GRAINED_PREFIX
         );
     }
     if !token.starts_with(FINE_GRAINED_PREFIX) {
         bail!(
-            "{} must contain a fine-grained PAT (prefix `{}`); classic tokens grant too much. See AGENTS.md#agent-github-auth.",
+            "{} must contain a fine-grained PAT (prefix `{}`); classic `ghp_…` and OAuth `gho_…` tokens are not accepted because they cannot be scoped tightly enough. See CONTRIBUTING.md.",
             token_file.display(),
             FINE_GRAINED_PREFIX
+        );
+    }
+    if !is_fine_grained_pat_alphabet(token) {
+        bail!(
+            "{} contains characters outside the fine-grained PAT alphabet ([A-Za-z0-9_]); refusing to embed it in settings. See CONTRIBUTING.md.",
+            token_file.display()
         );
     }
 

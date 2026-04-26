@@ -71,8 +71,8 @@ fn test_missing_token_file_is_noop() {
         logs[0]
     );
     assert!(
-        logs[0].contains("AGENTS.md#agent-github-auth"),
-        "log should point at AGENTS.md anchor: {}",
+        logs[0].contains("CONTRIBUTING.md"),
+        "log should point at CONTRIBUTING.md: {}",
         logs[0]
     );
 }
@@ -176,8 +176,60 @@ fn test_classic_token_is_rejected() {
         "error must name required prefix: {msg}"
     );
     assert!(
-        msg.contains("AGENTS.md#agent-github-auth"),
-        "error must reference AGENTS.md anchor: {msg}"
+        msg.contains("ghp_") && msg.contains("gho_"),
+        "error must call out both classic and OAuth token shapes: {msg}"
+    );
+    assert!(
+        msg.contains("CONTRIBUTING.md"),
+        "error must reference CONTRIBUTING.md: {msg}"
+    );
+}
+
+#[test]
+fn test_oauth_token_is_rejected() {
+    // Arrange — OAuth tokens (`gho_…`) take the same rejection path as
+    // classic tokens; the wording must remain accurate for both.
+    let (mut mock, _source, _cwd) =
+        make_mock_with_layout("C:\\src", "C:\\worktree", Some("C:\\src"));
+    mock.expect_read_token_file()
+        .returning(|_| Ok(Some("gho_oauthTokenShouldNotBeAccepted".to_owned())));
+    mock.expect_write_settings().never();
+    mock.expect_log().returning(|_| {});
+
+    // Act
+    let result = inject_agent_token(&mock);
+
+    // Assert
+    let err = result.expect_err("OAuth tokens must be rejected");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("github_pat_"),
+        "error must name required prefix: {msg}"
+    );
+}
+
+#[test]
+fn test_token_with_invalid_characters_is_rejected() {
+    // Arrange — passes the `github_pat_` prefix check but contains
+    // characters outside `[A-Za-z0-9_]`, which would break the JSON
+    // template if embedded directly. Must be rejected before the
+    // template is built.
+    let (mut mock, _source, _cwd) =
+        make_mock_with_layout("C:\\src", "C:\\worktree", Some("C:\\src"));
+    mock.expect_read_token_file()
+        .returning(|_| Ok(Some("github_pat_AB\"injection".to_owned())));
+    mock.expect_write_settings().never();
+    mock.expect_log().returning(|_| {});
+
+    // Act
+    let result = inject_agent_token(&mock);
+
+    // Assert
+    let err = result.expect_err("tokens with invalid characters must be rejected");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("alphabet") || msg.contains("[A-Za-z0-9_]"),
+        "error must mention the alphabet constraint: {msg}"
     );
 }
 
