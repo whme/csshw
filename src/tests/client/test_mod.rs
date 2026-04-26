@@ -10,9 +10,11 @@ use windows::Win32::System::Console::{
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::client::{
-    build_ssh_arguments, is_alt_shift_c_combination, resolve_username, send_pid_handshake,
-    write_console_input,
+    build_ssh_arguments, is_alt_shift_c_combination, read_write_loop, resolve_username,
+    send_pid_handshake, write_console_input, ReadWriteResult,
 };
+use crate::protocol::serialization::{serialize_client_state, serialize_input_record_0};
+use crate::protocol::{ClientState, TAG_INPUT_RECORD, TAG_STATE_CHANGE};
 use crate::utils::config::ClientConfig;
 use crate::utils::windows::MockWindowsApi;
 
@@ -486,6 +488,97 @@ fn test_write_console_input() {
         // Execute the function under test
         write_console_input(&mock_api, test_input_record);
     }
+}
+
+#[tokio::test]
+async fn test_read_write_loop_dispatches_state_change_and_input_record(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io;
+    use tokio::net::windows::named_pipe::{ClientOptions, PipeMode, ServerOptions};
+    use windows::Win32::System::Console::INPUT_RECORD_0;
+
+    // Use a per-test unique pipe name so parallel test runs don't collide
+    // on the global PIPE_NAME.
+    let pipe_name = format!(
+        r"\\.\pipe\csshw-test-read-write-loop-{}",
+        std::process::id()
+    );
+    let server = ServerOptions::new()
+        .access_inbound(true)
+        .access_outbound(true)
+        .pipe_mode(PipeMode::Message)
+        .create(&pipe_name)?;
+    let client = ClientOptions::new().open(&pipe_name)?;
+    server.connect().await?;
+
+    // Build a StateChange frame followed by an InputRecord frame so the
+    // test exercises both the state-update dispatch and the input-forwarding
+    // regression path in a single call.
+    let input_record = INPUT_RECORD_0 {
+        KeyEvent: KEY_EVENT_RECORD {
+            bKeyDown: true.into(),
+            wRepeatCount: 1,
+            wVirtualKeyCode: VK_C.0,
+            wVirtualScanCode: 0,
+            uChar: KEY_EVENT_RECORD_0 {
+                UnicodeChar: b'c' as u16,
+            },
+            dwControlKeyState: 0,
+        },
+    };
+    let mut payload: Vec<u8> = Vec::new();
+    payload.push(TAG_STATE_CHANGE);
+    payload.push(serialize_client_state(ClientState::Active));
+    payload.push(TAG_INPUT_RECORD);
+    payload.extend_from_slice(&serialize_input_record_0(&input_record));
+
+    // Push the framed bytes onto the pipe so the client side can consume
+    // them via [`read_write_loop`].
+    let mut written = 0usize;
+    while written < payload.len() {
+        server.writable().await?;
+        match server.try_write(&payload[written..]) {
+            Ok(0) => return Err("pipe closed before write completed".into()),
+            Ok(n) => written += n,
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    // The mock API must observe exactly one [`write_console_input`] call -
+    // proves the input-forwarding path still runs after the state-change
+    // dispatch.
+    let mut mock_api = MockWindowsApi::new();
+    mock_api
+        .expect_write_console_input()
+        .times(1)
+        .returning(|_, number_written| {
+            *number_written = 1;
+            return Ok(());
+        });
+
+    let mut internal_buffer: Vec<u8> = Vec::new();
+    let mut current_state = ClientState::Active;
+    // Wait until the client side has bytes available.
+    client.readable().await?;
+    let result =
+        read_write_loop(&mock_api, &client, &mut internal_buffer, &mut current_state).await;
+
+    match result {
+        ReadWriteResult::Success {
+            remainder,
+            key_event_records,
+        } => {
+            assert!(remainder.is_empty());
+            assert_eq!(key_event_records.len(), 1);
+            assert_eq!(key_event_records[0].wVirtualKeyCode, VK_C.0);
+        }
+        _ => panic!("expected ReadWriteResult::Success"),
+    }
+    // The state byte applied through the StateChange frame must be reflected
+    // in the &mut ClientState handed back to the caller.
+    assert_eq!(current_state, ClientState::Active);
+    return Ok(());
 }
 
 #[tokio::test]

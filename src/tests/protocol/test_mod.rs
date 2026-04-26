@@ -141,19 +141,73 @@ mod deserialization_test {
     }
 }
 
+mod client_state_test {
+    use crate::protocol::deserialization::deserialize_client_state;
+    use crate::protocol::serialization::serialize_client_state;
+    use crate::protocol::ClientState;
+
+    /// Round-trip list of every [`ClientState`] variant through the
+    /// byte-level serializer / deserializer.
+    const ALL_VARIANTS: &[ClientState] = &[ClientState::Active, ClientState::Disabled];
+
+    /// Compile-time guard: every [`ClientState`] variant must appear in
+    /// [`ALL_VARIANTS`]. The match has no wildcard arm, so adding a new
+    /// variant without listing it here fails to compile.
+    #[allow(dead_code)]
+    fn assert_listed(state: ClientState) {
+        match state {
+            ClientState::Active => {
+                assert!(ALL_VARIANTS.contains(&ClientState::Active));
+            }
+            ClientState::Disabled => {
+                assert!(ALL_VARIANTS.contains(&ClientState::Disabled));
+            }
+        }
+    }
+
+    #[test]
+    fn test_client_state_round_trip_all_variants() {
+        for &state in ALL_VARIANTS {
+            assert_listed(state);
+            let byte = serialize_client_state(state);
+            assert_eq!(deserialize_client_state(byte), state);
+        }
+    }
+
+    #[test]
+    fn test_serialize_client_state_active_byte() {
+        assert_eq!(serialize_client_state(ClientState::Active), 0u8);
+    }
+
+    #[test]
+    fn test_serialize_client_state_disabled_byte() {
+        assert_eq!(serialize_client_state(ClientState::Disabled), 1u8);
+    }
+
+    #[test]
+    #[should_panic(expected = "Unknown ClientState byte")]
+    fn test_deserialize_client_state_unknown_panics() {
+        let _ = deserialize_client_state(0xAB);
+    }
+}
+
 mod framed_message_test {
     use super::deserialization_test::Equality;
     use super::*;
     use crate::protocol::{
         deserialization::parse_daemon_to_client_messages,
-        serialization::serialize_daemon_to_client_message, DaemonToClientMessage,
-        FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH, TAG_INPUT_RECORD, TAG_KEEP_ALIVE,
+        serialization::serialize_daemon_to_client_message, ClientState, DaemonToClientMessage,
+        FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH, FRAMED_STATE_CHANGE_LENGTH,
+        TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
     };
 
     fn unwrap_input_record(msg: &DaemonToClientMessage) -> INPUT_RECORD_0 {
         match msg {
             DaemonToClientMessage::InputRecord(record) => return *record,
-            DaemonToClientMessage::KeepAlive => panic!("expected InputRecord, got KeepAlive"),
+            other => panic!(
+                "expected InputRecord, got {:?}",
+                std::mem::discriminant(other)
+            ),
         }
     }
 
@@ -183,6 +237,30 @@ mod framed_message_test {
         assert!(remainder.is_empty());
         assert_eq!(messages.len(), 1);
         assert!(unwrap_input_record(&messages[0]).equals(EXPECTED_INPUT_RECORD_0));
+    }
+
+    #[test]
+    fn test_serialize_state_change_envelope() {
+        let bytes = serialize_daemon_to_client_message(&DaemonToClientMessage::StateChange(
+            ClientState::Active,
+        ));
+        assert_eq!(bytes.len(), FRAMED_STATE_CHANGE_LENGTH);
+        assert_eq!(bytes[0], TAG_STATE_CHANGE);
+        assert_eq!(bytes[1], ClientState::Active as u8);
+    }
+
+    #[test]
+    fn test_parse_state_change_round_trip() {
+        let bytes = serialize_daemon_to_client_message(&DaemonToClientMessage::StateChange(
+            ClientState::Active,
+        ));
+        let (messages, remainder) = parse_daemon_to_client_messages(&bytes);
+        assert!(remainder.is_empty());
+        assert_eq!(messages.len(), 1);
+        match messages[0] {
+            DaemonToClientMessage::StateChange(state) => assert_eq!(state, ClientState::Active),
+            _ => panic!("expected StateChange variant"),
+        }
     }
 
     #[test]
