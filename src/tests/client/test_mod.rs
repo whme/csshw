@@ -10,10 +10,9 @@ use windows::Win32::System::Console::{
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::client::{
-    build_ssh_arguments, is_alt_shift_c_combination, is_keep_alive_packet, resolve_username,
-    send_pid_handshake, write_console_input,
+    build_ssh_arguments, is_alt_shift_c_combination, resolve_username, send_pid_handshake,
+    write_console_input,
 };
-use crate::serde::SERIALIZED_INPUT_RECORD_0_LENGTH;
 use crate::utils::config::ClientConfig;
 use crate::utils::windows::MockWindowsApi;
 
@@ -187,34 +186,6 @@ fn test_alt_shift_c_combination_detection() {
         is_alt_shift_c_combination(&key_event_down),
         is_alt_shift_c_combination(&key_event_up)
     );
-}
-
-#[test]
-fn test_keep_alive_packet_detection() {
-    // Test keep-alive packet (all bytes set to u8::MAX)
-    let keep_alive_packet = [u8::MAX; SERIALIZED_INPUT_RECORD_0_LENGTH];
-    assert!(is_keep_alive_packet(&keep_alive_packet));
-
-    // Test non-keep-alive packets
-    let test_cases = [
-        vec![0u8; SERIALIZED_INPUT_RECORD_0_LENGTH], // All zeros
-        {
-            let mut packet = vec![0u8; SERIALIZED_INPUT_RECORD_0_LENGTH];
-            packet[0] = 1;
-            packet
-        }, // First byte different
-        {
-            let mut packet = vec![u8::MAX; SERIALIZED_INPUT_RECORD_0_LENGTH];
-            packet[SERIALIZED_INPUT_RECORD_0_LENGTH - 1] = 0;
-            packet
-        }, // Last byte different
-        vec![u8::MAX; SERIALIZED_INPUT_RECORD_0_LENGTH - 1], // Wrong length
-        vec![u8::MAX; SERIALIZED_INPUT_RECORD_0_LENGTH + 1], // Wrong length
-    ];
-
-    for (i, packet) in test_cases.iter().enumerate() {
-        assert!(!is_keep_alive_packet(packet), "Failed test case {i}");
-    }
 }
 
 /// Test case structure for build_ssh_arguments function.
