@@ -3,11 +3,13 @@ mod daemon_test {
         ffi::c_void,
         io,
         sync::{Arc, Mutex},
+        time::Duration,
     };
 
     use tokio::{
         net::windows::named_pipe::{ClientOptions, NamedPipeClient, PipeMode, ServerOptions},
         sync::broadcast,
+        time::timeout,
     };
     use windows::Win32::Foundation::{HANDLE, HWND};
 
@@ -406,29 +408,35 @@ mod daemon_test {
         });
         // Send actual data that should be suppressed
         sender.send([2; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
-        // Read from pipe — we should only get keep-alive packets, never the actual data
+        // Read from pipe — we should only get keep-alive packets, never the actual data.
+        // Bound the loop with a timeout so a stalled pipe surfaces as a test failure
+        // rather than a CI hang.
         let mut keep_alive_count = 0;
-        loop {
-            named_pipe_client.readable().await?;
-            let mut buf = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
-            match named_pipe_client.try_read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    assert_eq!(SERIALIZED_INPUT_RECORD_0_LENGTH, n);
-                    assert_eq!(
-                        [255; SERIALIZED_INPUT_RECORD_0_LENGTH], buf,
-                        "Disabled client should only receive keep-alive, got {:?}",
-                        buf
-                    );
-                    keep_alive_count += 1;
-                    if keep_alive_count >= 5 {
-                        break;
+        timeout(Duration::from_secs(5), async {
+            loop {
+                named_pipe_client.readable().await?;
+                let mut buf = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
+                match named_pipe_client.try_read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        assert_eq!(SERIALIZED_INPUT_RECORD_0_LENGTH, n);
+                        assert_eq!(
+                            [255; SERIALIZED_INPUT_RECORD_0_LENGTH], buf,
+                            "Disabled client should only receive keep-alive, got {:?}",
+                            buf
+                        );
+                        keep_alive_count += 1;
+                        if keep_alive_count >= 5 {
+                            break;
+                        }
                     }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                    Err(e) => return Err::<(), io::Error>(e),
                 }
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
-                Err(e) => return Err(e.into()),
             }
-        }
+            return Ok(());
+        })
+        .await??;
         assert!(keep_alive_count >= 5);
         drop(named_pipe_client);
         future.await?;
@@ -460,25 +468,30 @@ mod daemon_test {
         });
         // Send data while disabled — should be suppressed
         sender.send([2; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
-        // Wait for a few keep-alive packets to confirm disabled state
+        // Wait for a few keep-alive packets to confirm disabled state.
+        // Bound the loop with a timeout so a stalled pipe fails the test deterministically.
         let mut keep_alive_count = 0;
-        loop {
-            named_pipe_client.readable().await?;
-            let mut buf = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
-            match named_pipe_client.try_read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    assert_eq!(SERIALIZED_INPUT_RECORD_0_LENGTH, n);
-                    assert_eq!([255; SERIALIZED_INPUT_RECORD_0_LENGTH], buf);
-                    keep_alive_count += 1;
-                    if keep_alive_count >= 3 {
-                        break;
+        timeout(Duration::from_secs(5), async {
+            loop {
+                named_pipe_client.readable().await?;
+                let mut buf = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
+                match named_pipe_client.try_read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        assert_eq!(SERIALIZED_INPUT_RECORD_0_LENGTH, n);
+                        assert_eq!([255; SERIALIZED_INPUT_RECORD_0_LENGTH], buf);
+                        keep_alive_count += 1;
+                        if keep_alive_count >= 3 {
+                            break;
+                        }
                     }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                    Err(e) => return Err::<(), io::Error>(e),
                 }
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
-                Err(e) => return Err(e.into()),
             }
-        }
+            return Ok(());
+        })
+        .await??;
         // Re-enable the client and send new data
         {
             let clients_guard = clients_control.lock().unwrap();
@@ -486,24 +499,28 @@ mod daemon_test {
             *client.pipe_server_state.lock().unwrap() = PipeServerState::Enabled;
         }
         sender.send([3; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
-        // Should now receive actual data
-        loop {
-            named_pipe_client.readable().await?;
-            let mut buf = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
-            match named_pipe_client.try_read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    assert_eq!(SERIALIZED_INPUT_RECORD_0_LENGTH, n);
-                    if buf[0] == 255 {
-                        continue; // keep-alive, skip
+        // Should now receive actual data. Same timeout bound as above.
+        timeout(Duration::from_secs(5), async {
+            loop {
+                named_pipe_client.readable().await?;
+                let mut buf = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
+                match named_pipe_client.try_read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        assert_eq!(SERIALIZED_INPUT_RECORD_0_LENGTH, n);
+                        if buf[0] == 255 {
+                            continue; // keep-alive, skip
+                        }
+                        assert_eq!([3; SERIALIZED_INPUT_RECORD_0_LENGTH], buf);
+                        break; // Got real data after re-enabling
                     }
-                    assert_eq!([3; SERIALIZED_INPUT_RECORD_0_LENGTH], buf);
-                    break; // Got real data after re-enabling
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                    Err(e) => return Err::<(), io::Error>(e),
                 }
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
-                Err(e) => return Err(e.into()),
             }
-        }
+            return Ok(());
+        })
+        .await??;
         drop(named_pipe_client);
         future.await?;
         return Ok(());

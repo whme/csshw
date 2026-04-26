@@ -1046,7 +1046,18 @@ async fn named_pipe_server_routine(
     };
 
     loop {
-        let ser_input_record = match receiver.try_recv() {
+        // Drop the record when the client is disabled so we fall through to
+        // the keep-alive path; this keeps the pipe emitting periodic packets
+        // (so broken pipes are detected) and avoids busy-spinning on a
+        // backlog while disabled.
+        let recv_result = match receiver.try_recv() {
+            Ok(val) if matches!(*pipe_server_state.lock().unwrap(), PipeServerState::Enabled) => {
+                Ok(val)
+            }
+            Ok(_) => Err(TryRecvError::Empty),
+            Err(err) => Err(err),
+        };
+        let ser_input_record = match recv_result {
             Ok(val) => val,
             Err(TryRecvError::Empty) => {
                 tokio::time::sleep(Duration::from_millis(5)).await;
@@ -1068,11 +1079,6 @@ async fn named_pipe_server_routine(
                 panic!("Failed to receive data from the Receiver");
             }
         };
-        // Only forward to the client if its pipe server state allows it.
-        match *pipe_server_state.lock().unwrap() {
-            PipeServerState::Enabled => {}
-            PipeServerState::Disabled => continue,
-        }
         loop {
             server.writable().await.unwrap_or_else(|err| {
                 error!("{}", err);
