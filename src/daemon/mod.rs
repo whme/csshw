@@ -14,13 +14,17 @@ use std::{
 use std::{thread, time};
 
 use crate::get_console_window_handle;
-use crate::protocol::{FRAMED_INPUT_RECORD_LENGTH, TAG_INPUT_RECORD, TAG_KEEP_ALIVE};
+use crate::protocol::{
+    ClientState, FRAMED_INPUT_RECORD_LENGTH, FRAMED_STATE_CHANGE_LENGTH, TAG_INPUT_RECORD,
+    TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
+};
 use crate::utils::config::{Cluster, DaemonConfig};
 use crate::utils::debug::StringRepr;
 use crate::utils::windows::{clear_screen, set_console_color, WindowsApi};
 use crate::{
     serde::{
-        deserialization::deserialize_pid, serialization::serialize_input_record_0,
+        deserialization::deserialize_pid,
+        serialization::{serialize_client_state, serialize_input_record_0},
         SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
     },
     spawn_console_process,
@@ -35,10 +39,12 @@ use crate::{
 };
 use bracoxide::explode;
 use log::{debug, error, warn};
-use tokio::sync::broadcast::error::TryRecvError;
 use tokio::{
     net::windows::named_pipe::{NamedPipeServer, PipeMode, ServerOptions},
-    sync::broadcast::{self, Receiver, Sender},
+    sync::{
+        broadcast::{self, Receiver, Sender},
+        watch,
+    },
     task::JoinHandle,
 };
 use windows::Win32::System::Console::{
@@ -63,16 +69,6 @@ mod workspace;
 /// to the named pipe servers connected to each client in parallel.
 const SENDER_CAPACITY: usize = 1024 * 1024;
 
-/// Runtime state of a client's assigned pipe server task.
-///
-/// Observed by the pipe server on each input record; determines whether
-/// the record is forwarded to the client over the named pipe.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PipeServerState {
-    /// Forward all input records to the client.
-    Enabled,
-}
-
 /// Representation of a client
 #[derive(Clone)]
 struct Client {
@@ -87,12 +83,15 @@ struct Client {
     /// Used by the pipe server task to correlate which client has connected
     /// to it, via a handshake over the named pipe.
     process_id: u32,
-    /// Shared state between this client and its assigned pipe server task.
+    /// Authoritative source for this client's [`ClientState`].
     ///
-    /// Populated at [`Client`] construction; cloned by the pipe server task upon
-    /// successful PID correlation and consulted during input forwarding to
-    /// determine whether records should be sent to the client.
-    pipe_server_state: Arc<Mutex<PipeServerState>>,
+    /// The daemon owns the [`watch::Sender`] and uses it to broadcast new
+    /// state values; the assigned pipe-server task subscribes upon
+    /// successful PID correlation and forwards every change to the client
+    /// over the named pipe. Wrapped in [`Arc`] because [`watch::Sender`]
+    /// itself is not [`Clone`] and the [`Client`] struct must remain
+    /// cloneable.
+    state_tx: Arc<watch::Sender<ClientState>>,
 }
 
 unsafe impl Send for Client {}
@@ -712,6 +711,33 @@ impl<'a> Daemon<'a> {
         }
     }
 
+    /// Push a new [`ClientState`] to the client identified by `pid`.
+    ///
+    /// Looks the client up by PID and broadcasts the new state through its
+    /// [`watch::Sender`]. The pipe-server task subscribed to that sender
+    /// observes the change and forwards a [`crate::protocol::TAG_STATE_CHANGE`]
+    /// frame to the client over the named pipe.
+    ///
+    /// Currently unused; provided so the parallel issue #179 follow-up that
+    /// introduces `ClientState::Disabled` (and the control-mode binding to
+    /// toggle it) has a stable call site to plug into.
+    ///
+    /// # Arguments
+    ///
+    /// * `clients` - The daemon's tracked clients.
+    /// * `pid`     - Process id of the client whose state should change.
+    /// * `state`   - The new state to broadcast.
+    #[allow(dead_code)]
+    fn set_client_state(&self, clients: &Clients, pid: u32, state: ClientState) {
+        if let Some(client) = clients.get_by_pid(pid) {
+            // `send` returns Err only if there are no receivers, which can
+            // happen briefly between PID correlation and pipe-server task
+            // setup. Either way the next subscriber sees the latest value
+            // via `borrow`, so the error is intentionally ignored.
+            let _ = client.state_tx.send(state);
+        }
+    }
+
     /// Re-sizes and re-positions the daemon console window on the screen
     /// based on the daemon height configuration.
     ///
@@ -852,6 +878,11 @@ async fn launch_clients<W: WindowsApi + 'static + Clone>(
                 len_hosts + index_offset,
                 aspect_ratio_adjustment,
             );
+            // The receiver is dropped immediately; pipe-server tasks acquire
+            // their own receivers via `state_tx.subscribe()` after PID
+            // correlation. Holding the sender on the [`Client`] keeps the
+            // channel alive for the lifetime of the client.
+            let (state_tx, _state_rx) = watch::channel(ClientState::Active);
             return (
                 index,
                 Client {
@@ -859,7 +890,7 @@ async fn launch_clients<W: WindowsApi + 'static + Clone>(
                     window_handle,
                     process_handle,
                     process_id,
-                    pipe_server_state: Arc::new(Mutex::new(PipeServerState::Enabled)),
+                    state_tx: Arc::new(state_tx),
                 },
             );
         });
@@ -971,8 +1002,8 @@ fn launch_client_console<W: WindowsApi>(
 }
 
 /// Wait for the named pipe server to connect, correlate the client by
-/// its process id, then forward serialized input records read from the
-/// broadcast channel to the named pipe server.
+/// its process id, then multiplex broadcast input records, [`ClientState`]
+/// updates, and idle keep-alives onto the named pipe.
 ///
 /// Correlation: after [`NamedPipeServer::connect`] resolves, the client is
 /// expected to write its 4 byte little-endian process id into the pipe. The
@@ -981,32 +1012,37 @@ fn launch_client_console<W: WindowsApi>(
 /// the daemon — an unknown PID indicates broken daemon bookkeeping and is
 /// unrecoverable.
 ///
-/// Forwarding: on every broadcast record, the routine matches on the
-/// [`PipeServerState`] cloned from the correlated client; only
-/// [`PipeServerState::Enabled`] writes the record to the pipe. The keep-alive
-/// write stays unconditional so dead pipes are detected regardless of state.
+/// Multiplexing: a [`tokio::select`] races three branches per iteration —
+/// (a) the broadcast `receiver` for input records, (b) `state_rx.changed`
+/// for [`ClientState`] updates pushed by the daemon, (c) a 5 ms timer that
+/// emits a keep-alive frame so dead pipes are detected even when the daemon
+/// has nothing to send. Input records are gated on the current
+/// [`ClientState`] read via `*state_rx.borrow()`; with the only existing
+/// variant ([`ClientState::Active`]) every record is forwarded, mirroring
+/// the pre-state-change behaviour.
 ///
-/// If writing to the pipe fails the pipe is considered closed and the routine ends.
-/// To detect if a client is still alive even if we are currently
-/// not sending data, we send a "keep alive packet",
-/// [`SERIALIZED_INPUT_RECORD_0_LENGTH`] bytes of `1`s. If that fails, the routine ends.
+/// If any write to the pipe fails the pipe is considered closed and the
+/// routine ends. If the [`watch::Sender`] is dropped (i.e. the daemon
+/// removed the client from its bookkeeping) the routine likewise ends.
 ///
 /// # Arguments
 ///
 /// * `server`   - The named pipe server over which we send data to the
 ///                client.
 /// * `receiver` - The receiving end of the broadcast channel through
-///                which we get the serialize input records from the main
+///                which we get the serialized input records from the main
 ///                thread that are to be sent to the client via the named
 ///                pipe.
 /// * `clients`  - The daemon's collection of tracked clients, used to
 ///                correlate the connecting client by PID and to obtain
-///                the shared [`PipeServerState`] reference for this server.
+///                the shared [`watch::Sender`] reference for this server.
 ///
 /// # Panics
 ///
 /// Panics if the connecting client sends a PID that is not present in
-/// `clients`.
+/// `clients`, or if the broadcast channel produces a non-`Empty` error
+/// (i.e. the sender has been dropped or the receiver lagged) — both
+/// indicate broken daemon bookkeeping.
 async fn named_pipe_server_routine(
     server: NamedPipeServer,
     receiver: &mut Receiver<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
@@ -1020,8 +1056,8 @@ async fn named_pipe_server_routine(
 
     // Correlate the connecting client by reading its 4 byte PID.
     let pid = read_client_pid(&server).await;
-    let pipe_server_state = match clients.lock().unwrap().get_by_pid(pid) {
-        Some(client) => Arc::clone(&client.pipe_server_state),
+    let mut state_rx = match clients.lock().unwrap().get_by_pid(pid) {
+        Some(client) => client.state_tx.subscribe(),
         None => {
             error!(
                 "Named pipe server received unknown PID {} — daemon bookkeeping broken",
@@ -1037,69 +1073,107 @@ async fn named_pipe_server_routine(
     };
 
     loop {
-        let ser_input_record = match receiver.try_recv() {
-            Ok(val) => val,
-            Err(TryRecvError::Empty) => {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-                // Send a tagged keep-alive frame to detect early if the pipe is
-                // closed because the client exited.
-                match server.try_write(&[TAG_KEEP_ALIVE]) {
-                    Ok(_) => continue,
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
-                    Err(_) => {
-                        debug!(
-                            "Named pipe server ({:?}) is closed, stopping named pipe server routine",
-                            server
-                        );
-                        return;
+        tokio::select! {
+            recv_result = receiver.recv() => {
+                let ser_input_record = match recv_result {
+                    Ok(val) => val,
+                    Err(err) => {
+                        error!("{}", err);
+                        panic!("Failed to receive data from the Receiver");
                     }
+                };
+                // Gate forwarding on the current state. The match is exhaustive so
+                // the compiler will flag this site when new variants are added.
+                match *state_rx.borrow() {
+                    ClientState::Active => {}
+                }
+                let mut frame = [0u8; FRAMED_INPUT_RECORD_LENGTH];
+                frame[0] = TAG_INPUT_RECORD;
+                frame[1..].copy_from_slice(&ser_input_record);
+                if !write_framed_message(&server, &frame).await {
+                    return;
                 }
             }
-            Err(err) => {
-                error!("{}", err);
-                panic!("Failed to receive data from the Receiver");
-            }
-        };
-        // Only forward to the client if its pipe server state allows it.
-        match *pipe_server_state.lock().unwrap() {
-            PipeServerState::Enabled => {}
-        }
-        // Build the tagged input-record frame: [TAG_INPUT_RECORD][13-byte payload].
-        let mut frame = [0u8; FRAMED_INPUT_RECORD_LENGTH];
-        frame[0] = TAG_INPUT_RECORD;
-        frame[1..].copy_from_slice(&ser_input_record);
-        loop {
-            server.writable().await.unwrap_or_else(|err| {
-                error!("{}", err);
-                panic!("Timed out waiting for named pipe server to become writable",)
-            });
-            match server.try_write(&frame) {
-                Ok(FRAMED_INPUT_RECORD_LENGTH) => {
-                    debug!("Successfully written all data");
-                    break;
-                }
-                Ok(n) => {
-                    // The data was only written partially, try again
-                    warn!(
-                        "Partially written data, expected {} but only wrote {}",
-                        FRAMED_INPUT_RECORD_LENGTH, n
-                    );
-                    continue;
-                }
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    // Try again
-                    debug!("Writing to named pipe server would have blocked");
-                    continue;
-                }
-                Err(_) => {
-                    // Can happen if the pipe is closed because the
-                    // client exited
+            changed_result = state_rx.changed() => {
+                // Sender dropped — the daemon has removed this client from its
+                // bookkeeping, so there is nothing left to forward.
+                if changed_result.is_err() {
                     debug!(
-                        "Named pipe server ({:?}) is closed, stopping named pipe server routine",
+                        "Client state sender dropped, stopping named pipe server routine ({:?})",
                         server
                     );
                     return;
                 }
+                let state = *state_rx.borrow_and_update();
+                let frame: [u8; FRAMED_STATE_CHANGE_LENGTH] =
+                    [TAG_STATE_CHANGE, serialize_client_state(state)];
+                if !write_framed_message(&server, &frame).await {
+                    return;
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_millis(5)) => {
+                if !write_framed_message(&server, &[TAG_KEEP_ALIVE]).await {
+                    return;
+                }
+            }
+        }
+    }
+}
+
+/// Write all of `frame` to the named pipe server, retrying partial writes
+/// and `WouldBlock` results until the buffer is fully drained.
+///
+/// Shared by every write path inside [`named_pipe_server_routine`] so the
+/// partial-write retry loop and pipe-closed detection live in one place.
+///
+/// # Arguments
+///
+/// * `server` - The connected named pipe server to write to.
+/// * `frame`  - The complete framed wire bytes to push to the client.
+///
+/// # Returns
+///
+/// `true` once the entire frame has been written. `false` if the pipe is
+/// closed (typically because the client process exited); the caller treats
+/// this as a signal to terminate the routine.
+///
+/// # Panics
+///
+/// Panics if waiting for the pipe to become writable returns an error, as
+/// the daemon cannot recover from a broken pipe handle.
+async fn write_framed_message(server: &NamedPipeServer, frame: &[u8]) -> bool {
+    loop {
+        server.writable().await.unwrap_or_else(|err| {
+            error!("{}", err);
+            panic!("Timed out waiting for named pipe server to become writable",)
+        });
+        match server.try_write(frame) {
+            Ok(n) if n == frame.len() => {
+                debug!("Successfully written all data");
+                return true;
+            }
+            Ok(n) => {
+                // The data was only written partially, try again
+                warn!(
+                    "Partially written data, expected {} but only wrote {}",
+                    frame.len(),
+                    n
+                );
+                continue;
+            }
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                // Try again
+                debug!("Writing to named pipe server would have blocked");
+                continue;
+            }
+            Err(_) => {
+                // Can happen if the pipe is closed because the
+                // client exited
+                debug!(
+                    "Named pipe server ({:?}) is closed, stopping named pipe server routine",
+                    server
+                );
+                return false;
             }
         }
     }
@@ -1364,7 +1438,7 @@ fn defer_windows<W: WindowsApi>(windows_api: &W, clients: &[Client], daemon_hand
         window_handle: *daemon_handle,
         process_handle: HANDLE::default(),
         process_id: 0,
-        pipe_server_state: Arc::new(Mutex::new(PipeServerState::Enabled)),
+        state_tx: Arc::new(watch::channel(ClientState::Active).0),
     }]) {
         let placement = match windows_api.get_window_placement(client.window_handle) {
             Ok(placement) => placement,

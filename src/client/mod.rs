@@ -22,7 +22,7 @@ use windows::Win32::System::Console::{
     SHIFT_PRESSED,
 };
 
-use crate::protocol::DaemonToClientMessage;
+use crate::protocol::{ClientState, DaemonToClientMessage};
 use crate::{
     serde::{
         deserialization::parse_daemon_to_client_messages, serialization::serialize_pid,
@@ -192,9 +192,11 @@ async fn launch_ssh_process(
 ///
 /// Input records are written to the console input buffer using the provided API
 /// and their key-event payloads are returned via `ReadWriteResult::Success` so
-/// the caller can detect the Alt+Shift+C close combination. Keep-alive frames
-/// are ignored. Partial trailing frames are returned as `remainder` for the
-/// next call to prepend.
+/// the caller can detect the Alt+Shift+C close combination. State-change frames
+/// update the [`ClientState`] referenced by `current_state` so the client's
+/// main loop always sees its authoritative state. Keep-alive frames are
+/// ignored. Partial trailing frames are returned as `remainder` for the next
+/// call to prepend.
 ///
 /// # Arguments
 ///
@@ -203,6 +205,9 @@ async fn launch_ssh_process(
 ///                           the named pipe created by the daemon.
 /// * `internal_buffer`     - Vector containing the unconsumed bytes (possibly an
 ///                           incomplete trailing frame) from a previous call.
+/// * `current_state`       - The client's authoritative [`ClientState`].
+///                           Updated in place when the daemon pushes a
+///                           [`DaemonToClientMessage::StateChange`].
 /// # Returns
 ///
 /// A `ReadWriteResult` indicating whether we were able to read from the named pipe and write the available INPUT_RECORDs
@@ -213,6 +218,7 @@ async fn read_write_loop(
     api: &dyn WindowsApi,
     named_pipe_client: &NamedPipeClient,
     internal_buffer: &mut Vec<u8>,
+    current_state: &mut ClientState,
 ) -> ReadWriteResult {
     let mut buf: [u8; SERIALIZED_INPUT_RECORD_0_LENGTH * 10] =
         [0; SERIALIZED_INPUT_RECORD_0_LENGTH * 10];
@@ -232,6 +238,9 @@ async fn read_write_loop(
                     DaemonToClientMessage::InputRecord(input_record) => {
                         write_console_input(api, input_record);
                         key_event_records.push(unsafe { input_record.KeyEvent });
+                    }
+                    DaemonToClientMessage::StateChange(state) => {
+                        *current_state = state;
                     }
                     DaemonToClientMessage::KeepAlive => {}
                 }
@@ -358,6 +367,10 @@ async fn run(api: &dyn WindowsApi, child: &mut Child) {
     send_pid_handshake(&named_pipe_client).await;
     let mut child_error = false;
     let mut internal_buffer: Vec<u8> = Vec::new();
+    // Authoritative client state, updated whenever the daemon pushes a
+    // [`DaemonToClientMessage::StateChange`]. Lives in the main loop so any
+    // future state-dependent logic can read it directly without a lock.
+    let mut current_state: ClientState = ClientState::Active;
     loop {
         named_pipe_client
             .ready(Interest::READABLE)
@@ -367,7 +380,14 @@ async fn run(api: &dyn WindowsApi, child: &mut Child) {
                 panic!("Named client pipe is not ready to be read",)
             });
 
-        match read_write_loop(api, &named_pipe_client, &mut internal_buffer).await {
+        match read_write_loop(
+            api,
+            &named_pipe_client,
+            &mut internal_buffer,
+            &mut current_state,
+        )
+        .await
+        {
             ReadWriteResult::Success {
                 remainder,
                 key_event_records,
