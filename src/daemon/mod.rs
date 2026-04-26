@@ -70,6 +70,8 @@ const SENDER_CAPACITY: usize = 1024 * 1024;
 enum PipeServerState {
     /// Forward all input records to the client.
     Enabled,
+    /// Consume input records without forwarding them to the client.
+    Disabled,
 }
 
 /// Representation of a client
@@ -499,7 +501,9 @@ impl<'a> Daemon<'a> {
             if self.control_mode_state == ControlModeState::Initiated {
                 clear_screen(windows_api);
                 println!("Control Mode (Esc to exit)");
-                println!("[c]reate window(s), [r]etile, copy active [h]ostname(s)");
+                println!(
+                    "[c]reate window(s), [r]etile, [t]oggle enabled, copy active [h]ostname(s)"
+                );
                 self.control_mode_state = ControlModeState::Active;
                 return;
             }
@@ -523,7 +527,13 @@ impl<'a> Daemon<'a> {
                     // TODO: Select windows
                 }
                 (VK_T, 0) => {
-                    // TODO: trigger input on selected windows
+                    for client in clients.lock().unwrap().iter() {
+                        let mut state = client.pipe_server_state.lock().unwrap();
+                        if *state == PipeServerState::Enabled {
+                            *state = PipeServerState::Disabled;
+                        }
+                    }
+                    self.quit_control_mode(windows_api);
                 }
                 (VK_C, 0) => {
                     clear_screen(windows_api);
@@ -1059,8 +1069,30 @@ async fn named_pipe_server_routine(
             }
         };
         // Only forward to the client if its pipe server state allows it.
-        match *pipe_server_state.lock().unwrap() {
+        // Copy the state out so the mutex guard does not span the `.await`
+        // below — `MutexGuard` is not `Send` and would prevent the routine
+        // from being spawned on a multi-threaded runtime.
+        let state = *pipe_server_state.lock().unwrap();
+        match state {
             PipeServerState::Enabled => {}
+            PipeServerState::Disabled => {
+                // Still probe the pipe while disabled so client disconnects
+                // are detected promptly under sustained input.
+                match server.try_write(&[u8::MAX; SERIALIZED_INPUT_RECORD_0_LENGTH]) {
+                    Ok(_) => {}
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
+                    Err(_) => {
+                        debug!(
+                            "Named pipe server ({:?}) is closed, stopping named pipe server routine",
+                            server
+                        );
+                        return;
+                    }
+                }
+                // Yield so we don't tight-loop when the broadcast channel is busy.
+                tokio::task::yield_now().await;
+                continue;
+            }
         }
         loop {
             server.writable().await.unwrap_or_else(|err| {

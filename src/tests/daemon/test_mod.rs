@@ -303,6 +303,102 @@ mod daemon_test {
         return Ok(());
     }
 
+    /// Construct a [`Clients`] collection holding a single [`Client`] whose
+    /// `process_id` equals `pid`, returning both the collection and the
+    /// shared [`PipeServerState`] handle so the caller can mutate it.
+    fn make_clients_with_pid_and_state(
+        pid: u32,
+    ) -> (Arc<Mutex<Clients>>, Arc<Mutex<PipeServerState>>) {
+        let state = Arc::new(Mutex::new(PipeServerState::Enabled));
+        let mut clients = Clients::new();
+        clients.push(Client {
+            hostname: format!("test-host-{pid}"),
+            window_handle: HWND(std::ptr::null_mut()),
+            process_handle: HANDLE::default(),
+            process_id: pid,
+            pipe_server_state: Arc::clone(&state),
+        });
+        return (Arc::new(Mutex::new(clients)), state);
+    }
+
+    /// Verifies that when a client's [`PipeServerState`] is set to
+    /// [`PipeServerState::Disabled`], the pipe server routine consumes
+    /// broadcast messages but does not forward them through the pipe.
+    /// Only keep-alive packets should arrive on the client side.
+    #[tokio::test]
+    async fn test_named_pipe_server_routine_disabled() -> Result<(), Box<dyn std::error::Error>> {
+        const TEST_PID: u32 = 66666;
+        // Use a per-test unique pipe name so parallel test runs don't collide
+        // on the global PIPE_NAME.
+        let pipe_name = format!(r"\\.\pipe\csshw-test-disabled-{}", std::process::id());
+        let (sender, mut receiver) = broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(
+            SERIALIZED_INPUT_RECORD_0_LENGTH,
+        );
+        let named_pipe_server = ServerOptions::new()
+            .access_inbound(true)
+            .access_outbound(true)
+            .pipe_mode(PipeMode::Message)
+            .create(&pipe_name)?;
+        let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
+        let (clients, pipe_server_state) = make_clients_with_pid_and_state(TEST_PID);
+        send_pid(&named_pipe_client, TEST_PID).await?;
+        let future = tokio::spawn(async move {
+            named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
+        });
+
+        // First, verify data flows while enabled.
+        sender.send([2; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
+        let mut got_data = false;
+        loop {
+            named_pipe_client.readable().await?;
+            let mut buf = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
+            match named_pipe_client.try_read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    assert_eq!(SERIALIZED_INPUT_RECORD_0_LENGTH, n);
+                    if buf[0] != 255 {
+                        assert_eq!([2; SERIALIZED_INPUT_RECORD_0_LENGTH], buf);
+                        got_data = true;
+                        break;
+                    }
+                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                Err(e) => return Err(e.into()),
+            }
+        }
+        assert!(got_data);
+
+        // Disable the client.
+        *pipe_server_state.lock().unwrap() = PipeServerState::Disabled;
+
+        // Send more data — it must NOT arrive at the client.
+        for _ in 0..5 {
+            sender.send([3; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
+        }
+        // Give the routine time to consume the broadcast messages.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Drain whatever is in the pipe — only keep-alive packets are acceptable.
+        loop {
+            let mut buf = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
+            match named_pipe_client.try_read(&mut buf) {
+                Ok(n) => {
+                    assert_eq!(SERIALIZED_INPUT_RECORD_0_LENGTH, n);
+                    assert_eq!(
+                        [255; SERIALIZED_INPUT_RECORD_0_LENGTH], buf,
+                        "Received non-keep-alive data after disabling"
+                    );
+                }
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        drop(named_pipe_client);
+        future.await?;
+        return Ok(());
+    }
+
     #[test]
     #[should_panic(expected = "Duplicate client PID")]
     fn test_clients_push_duplicate_pid_panics() {
