@@ -3,7 +3,8 @@ use windows::Win32::{
     System::Console::{INPUT_RECORD_0, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0},
 };
 
-use crate::serde::SERIALIZED_PID_LENGTH;
+use crate::protocol::{DaemonToClientMessage, TAG_INPUT_RECORD, TAG_KEEP_ALIVE};
+use crate::serde::{SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH};
 
 /// Deserialize a [KEY_EVENT_RECORD_0] from a u8 slice using custom binary format.
 ///
@@ -56,4 +57,58 @@ pub fn deserialize_input_record_0(slice: &[u8]) -> INPUT_RECORD_0 {
 /// by the named-pipe PID handshake.
 pub fn deserialize_pid(bytes: &[u8; SERIALIZED_PID_LENGTH]) -> u32 {
     return u32::from_le_bytes(*bytes);
+}
+
+/// Parse as many complete [`DaemonToClientMessage`]s as possible from `buffer`.
+///
+/// The parser walks `buffer` from the start, decoding one tag-prefixed frame
+/// at a time. Parsing stops when fewer bytes remain than are needed to
+/// complete the next frame; the unconsumed tail is returned so the caller
+/// can prepend it to the next read.
+///
+/// # Arguments
+///
+/// * `buffer` - Bytes received from the daemon's named pipe, possibly
+///              including a partial trailing frame.
+///
+/// # Returns
+///
+/// A tuple of `(messages, remainder)` where `messages` are the fully decoded
+/// frames in arrival order and `remainder` holds the unconsumed bytes (an
+/// empty `Vec` if the buffer ended on a frame boundary).
+///
+/// # Panics
+///
+/// Panics if `buffer` contains a tag byte that is not part of the documented
+/// daemon→client protocol (see [`crate::protocol`]). An unknown tag indicates
+/// either a protocol-version mismatch between the daemon and client or
+/// corruption on the pipe — both unrecoverable, matching the codebase's
+/// "broken bookkeeping → panic" convention.
+pub fn parse_daemon_to_client_messages(buffer: &[u8]) -> (Vec<DaemonToClientMessage>, Vec<u8>) {
+    let mut messages: Vec<DaemonToClientMessage> = Vec::new();
+    let mut pos = 0usize;
+    while pos < buffer.len() {
+        let tag = buffer[pos];
+        match tag {
+            TAG_INPUT_RECORD => {
+                let payload_start = pos + 1;
+                let payload_end = payload_start + SERIALIZED_INPUT_RECORD_0_LENGTH;
+                if buffer.len() < payload_end {
+                    // Trailing partial frame; stop and return it as remainder.
+                    break;
+                }
+                let record = deserialize_input_record_0(&buffer[payload_start..payload_end]);
+                messages.push(DaemonToClientMessage::InputRecord(record));
+                pos = payload_end;
+            }
+            TAG_KEEP_ALIVE => {
+                messages.push(DaemonToClientMessage::KeepAlive);
+                pos += 1;
+            }
+            _ => {
+                panic!("Unknown daemon-to-client message tag: 0x{tag:02X}");
+            }
+        }
+    }
+    return (messages, buffer[pos..].to_vec());
 }

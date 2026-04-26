@@ -22,6 +22,7 @@ use mockall::automock;
 pub mod cli;
 pub mod client;
 pub mod daemon;
+pub mod protocol;
 pub mod serde;
 pub mod utils;
 

@@ -22,9 +22,10 @@ use windows::Win32::System::Console::{
     SHIFT_PRESSED,
 };
 
+use crate::protocol::DaemonToClientMessage;
 use crate::{
     serde::{
-        deserialization::deserialize_input_record_0, serialization::serialize_pid,
+        deserialization::parse_daemon_to_client_messages, serialization::serialize_pid,
         SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
     },
     utils::constants::{PIPE_NAME, PKG_NAME},
@@ -187,21 +188,21 @@ async fn launch_ssh_process(
     return child;
 }
 
-/// Read all available [INPUT_RECORD_0] from the named pipe and write them to the console input buffer using the provided API.
+/// Read all available daemon→client messages from the named pipe and apply them.
 ///
-/// This function also extracts the [KEY_EVENT_RECORD]s, making them available to the caller via
-/// `ReadWriteResult::Success` and handles incomple reads from the named pipe via the internal buffer.
-///
-/// The daemon might send a "keep alive packet", which is just [`SERIALIZED_INPUT_RECORD_0_LENGTH`] bytes of `1`s,
-/// we ignore this.
+/// Input records are written to the console input buffer using the provided API
+/// and their key-event payloads are returned via `ReadWriteResult::Success` so
+/// the caller can detect the Alt+Shift+C close combination. Keep-alive frames
+/// are ignored. Partial trailing frames are returned as `remainder` for the
+/// next call to prepend.
 ///
 /// # Arguments
 ///
 /// * `api`                 - The Windows API implementation to use.
 /// * `named_pipe_client`   - The [Windows named pipe][1] client that has successfully connected to
 ///                           the named pipe created by the daemon.
-/// * `internal_buffer`     - Vector containing incomplete `SERIALIZED_INPUT_RECORD_0` sequences
-///                           that were read in a previous call.
+/// * `internal_buffer`     - Vector containing the unconsumed bytes (possibly an
+///                           incomplete trailing frame) from a previous call.
 /// # Returns
 ///
 /// A `ReadWriteResult` indicating whether we were able to read from the named pipe and write the available INPUT_RECORDs
@@ -224,18 +225,19 @@ async fn read_write_loop(
         }
         Ok(n) => {
             internal_buffer.extend(&mut buf[0..n].iter());
-            let iter = internal_buffer.chunks_exact(SERIALIZED_INPUT_RECORD_0_LENGTH);
+            let (messages, remainder) = parse_daemon_to_client_messages(internal_buffer);
             let mut key_event_records: Vec<KEY_EVENT_RECORD> = Vec::new();
-            for serialzied_input_record in iter.clone() {
-                if is_keep_alive_packet(serialzied_input_record) {
-                    continue;
-                };
-                let input_record = deserialize_input_record_0(serialzied_input_record);
-                write_console_input(api, input_record);
-                key_event_records.push(unsafe { input_record.KeyEvent });
+            for message in messages {
+                match message {
+                    DaemonToClientMessage::InputRecord(input_record) => {
+                        write_console_input(api, input_record);
+                        key_event_records.push(unsafe { input_record.KeyEvent });
+                    }
+                    DaemonToClientMessage::KeepAlive => {}
+                }
             }
             return ReadWriteResult::Success {
-                remainder: iter.remainder().to_vec(),
+                remainder,
                 key_event_records,
             };
         }
@@ -263,19 +265,6 @@ fn is_alt_shift_c_combination(key_event: &KEY_EVENT_RECORD) -> bool {
         || key_event.dwControlKeyState & RIGHT_ALT_PRESSED == 1)
         && key_event.dwControlKeyState & SHIFT_PRESSED >= 1
         && key_event.wVirtualKeyCode == VK_C.0;
-}
-
-/// Checks if a byte sequence represents a keep-alive packet.
-///
-/// # Arguments
-///
-/// * `packet` - The byte sequence to check.
-///
-/// # Returns
-///
-/// `true` if the packet is a keep-alive packet, `false` otherwise.
-fn is_keep_alive_packet(packet: &[u8]) -> bool {
-    return packet == [u8::MAX; SERIALIZED_INPUT_RECORD_0_LENGTH];
 }
 
 /// Replaces placeholders in SSH command arguments.

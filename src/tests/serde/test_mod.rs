@@ -77,7 +77,7 @@ mod deserialization_test {
     use super::*;
     use crate::serde::deserialization::*;
 
-    trait Equality<T = Self> {
+    pub(super) trait Equality<T = Self> {
         fn equals(&self, other: T) -> bool;
     }
 
@@ -138,5 +138,108 @@ mod deserialization_test {
         use crate::serde::serialization::serialize_pid;
         let pid = 0xDEADBEEFu32;
         assert_eq!(deserialize_pid(&serialize_pid(pid)), pid);
+    }
+}
+
+mod framed_message_test {
+    use super::deserialization_test::Equality;
+    use super::*;
+    use crate::protocol::{
+        DaemonToClientMessage, FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH,
+        TAG_INPUT_RECORD, TAG_KEEP_ALIVE,
+    };
+    use crate::serde::deserialization::parse_daemon_to_client_messages;
+    use crate::serde::serialization::serialize_daemon_to_client_message;
+
+    fn unwrap_input_record(msg: &DaemonToClientMessage) -> INPUT_RECORD_0 {
+        match msg {
+            DaemonToClientMessage::InputRecord(record) => return *record,
+            DaemonToClientMessage::KeepAlive => panic!("expected InputRecord, got KeepAlive"),
+        }
+    }
+
+    #[test]
+    fn test_serialize_input_record_envelope() {
+        let bytes = serialize_daemon_to_client_message(&DaemonToClientMessage::InputRecord(
+            EXPECTED_INPUT_RECORD_0,
+        ));
+        assert_eq!(bytes.len(), FRAMED_INPUT_RECORD_LENGTH);
+        assert_eq!(bytes[0], TAG_INPUT_RECORD);
+        assert_eq!(&bytes[1..], &EXPECTED_INPUT_RECORD_0_SEQUENCE[..]);
+    }
+
+    #[test]
+    fn test_serialize_keep_alive_envelope() {
+        let bytes = serialize_daemon_to_client_message(&DaemonToClientMessage::KeepAlive);
+        assert_eq!(bytes.len(), FRAMED_KEEP_ALIVE_LENGTH);
+        assert_eq!(bytes[0], TAG_KEEP_ALIVE);
+    }
+
+    #[test]
+    fn test_parse_input_record_round_trip() {
+        let bytes = serialize_daemon_to_client_message(&DaemonToClientMessage::InputRecord(
+            EXPECTED_INPUT_RECORD_0,
+        ));
+        let (messages, remainder) = parse_daemon_to_client_messages(&bytes);
+        assert!(remainder.is_empty());
+        assert_eq!(messages.len(), 1);
+        assert!(unwrap_input_record(&messages[0]).equals(EXPECTED_INPUT_RECORD_0));
+    }
+
+    #[test]
+    fn test_parse_keep_alive_round_trip() {
+        let bytes = serialize_daemon_to_client_message(&DaemonToClientMessage::KeepAlive);
+        let (messages, remainder) = parse_daemon_to_client_messages(&bytes);
+        assert!(remainder.is_empty());
+        assert_eq!(messages.len(), 1);
+        assert!(matches!(messages[0], DaemonToClientMessage::KeepAlive));
+    }
+
+    #[test]
+    fn test_parse_mixed_sequence() {
+        let mut buf: Vec<u8> = Vec::new();
+        buf.extend_from_slice(&serialize_daemon_to_client_message(
+            &DaemonToClientMessage::KeepAlive,
+        ));
+        buf.extend_from_slice(&serialize_daemon_to_client_message(
+            &DaemonToClientMessage::InputRecord(EXPECTED_INPUT_RECORD_0),
+        ));
+        buf.extend_from_slice(&serialize_daemon_to_client_message(
+            &DaemonToClientMessage::KeepAlive,
+        ));
+        let (messages, remainder) = parse_daemon_to_client_messages(&buf);
+        assert!(remainder.is_empty());
+        assert_eq!(messages.len(), 3);
+        assert!(matches!(messages[0], DaemonToClientMessage::KeepAlive));
+        assert!(unwrap_input_record(&messages[1]).equals(EXPECTED_INPUT_RECORD_0));
+        assert!(matches!(messages[2], DaemonToClientMessage::KeepAlive));
+    }
+
+    #[test]
+    fn test_parse_partial_trailing_frame_returned_as_remainder() {
+        let full = serialize_daemon_to_client_message(&DaemonToClientMessage::InputRecord(
+            EXPECTED_INPUT_RECORD_0,
+        ));
+        // Truncate the trailing frame mid-payload to simulate a split read.
+        let split_at = full.len() - 3;
+        let (messages, remainder) = parse_daemon_to_client_messages(&full[..split_at]);
+        assert!(messages.is_empty());
+        assert_eq!(remainder.as_slice(), &full[..split_at]);
+
+        // Concatenating the remainder with the rest yields the original bytes
+        // and parses cleanly, mirroring the client's read loop.
+        let mut next = remainder;
+        next.extend_from_slice(&full[split_at..]);
+        let (messages, remainder) = parse_daemon_to_client_messages(&next);
+        assert!(remainder.is_empty());
+        assert_eq!(messages.len(), 1);
+        assert!(unwrap_input_record(&messages[0]).equals(EXPECTED_INPUT_RECORD_0));
+    }
+
+    #[test]
+    #[should_panic(expected = "Unknown daemon-to-client message tag")]
+    fn test_parse_unknown_tag_panics() {
+        let bogus: [u8; 1] = [0x7E];
+        let _ = parse_daemon_to_client_messages(&bogus);
     }
 }
