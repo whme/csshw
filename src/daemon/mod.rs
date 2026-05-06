@@ -1198,24 +1198,33 @@ async fn named_pipe_server_routine(
 /// Panics if waiting for the pipe to become writable returns an error, as
 /// the daemon cannot recover from a broken pipe handle.
 async fn write_framed_message(server: &NamedPipeServer, frame: &[u8]) -> bool {
-    loop {
+    let mut written = 0usize;
+    while written < frame.len() {
         server.writable().await.unwrap_or_else(|err| {
             error!("{}", err);
             panic!("Timed out waiting for named pipe server to become writable",)
         });
-        match server.try_write(frame) {
-            Ok(n) if n == frame.len() => {
-                debug!("Successfully written all data");
-                return true;
+        match server.try_write(&frame[written..]) {
+            Ok(0) => {
+                // A zero-byte successful write means the pipe is closed
+                // (typically because the client exited).
+                debug!(
+                    "Named pipe server ({:?}) is closed, stopping named pipe server routine",
+                    server
+                );
+                return false;
             }
             Ok(n) => {
-                // The data was only written partially, try again
-                warn!(
-                    "Partially written data, expected {} but only wrote {}",
-                    frame.len(),
-                    n
-                );
-                continue;
+                written += n;
+                if written < frame.len() {
+                    // The data was only written partially, retry the
+                    // remaining suffix on the next iteration.
+                    warn!(
+                        "Partially written data, expected {} but only wrote {} so far",
+                        frame.len(),
+                        written
+                    );
+                }
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                 // Try again
@@ -1233,6 +1242,8 @@ async fn write_framed_message(server: &NamedPipeServer, frame: &[u8]) -> bool {
             }
         }
     }
+    debug!("Successfully written all data");
+    return true;
 }
 
 /// Read the connecting client's 4 byte little-endian process id from the pipe.
