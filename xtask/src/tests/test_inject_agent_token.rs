@@ -187,7 +187,7 @@ fn test_classic_token_is_rejected() {
 
 #[test]
 fn test_oauth_token_is_rejected() {
-    // Arrange — OAuth tokens (`gho_…`) take the same rejection path as
+    // Arrange - OAuth tokens (`gho_...`) take the same rejection path as
     // classic tokens; the wording must remain accurate for both.
     let (mut mock, _source, _cwd) =
         make_mock_with_layout("C:\\src", "C:\\worktree", Some("C:\\src"));
@@ -210,7 +210,7 @@ fn test_oauth_token_is_rejected() {
 
 #[test]
 fn test_token_with_invalid_characters_is_rejected() {
-    // Arrange — passes the `github_pat_` prefix check but contains
+    // Arrange - passes the `github_pat_` prefix check but contains
     // characters outside `[A-Za-z0-9_]`, which would break the JSON
     // template if embedded directly. Must be rejected before the
     // template is built.

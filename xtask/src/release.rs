@@ -368,7 +368,7 @@ impl ReleaseSystem for RealSystem {
 
 /// Determine the suggested next version and release type from the current branch.
 ///
-/// `main` → minor bump; `*-maintenance` → patch bump.
+/// `main` -> minor bump; `*-maintenance` -> patch bump.
 ///
 /// # Arguments
 ///
@@ -467,7 +467,7 @@ pub fn set_cargo_toml_version(cargo_toml_content: &str, new_version: &str) -> Re
 pub fn prepare_release<S: ReleaseSystem>(system: &S) -> Result<()> {
     let status = system.git_status_porcelain()?;
     if !status.trim().is_empty() {
-        bail!("git working directory is not clean — commit or stash changes first:\n{status}");
+        bail!("git working directory is not clean - commit or stash changes first:\n{status}");
     }
 
     let current_branch = system.git_current_branch()?;
@@ -497,7 +497,7 @@ pub fn prepare_release<S: ReleaseSystem>(system: &S) -> Result<()> {
             }
             let custom: Version = custom_str
                 .parse()
-                .context("invalid version format — use semantic versioning (e.g. 1.2.3)")?;
+                .context("invalid version format - use semantic versioning (e.g. 1.2.3)")?;
             let release_type = determine_release_type(&current_version, &custom);
             (custom, release_type)
         } else if answer.is_empty()
@@ -506,7 +506,7 @@ pub fn prepare_release<S: ReleaseSystem>(system: &S) -> Result<()> {
         {
             (suggested_version, suggested_type)
         } else {
-            bail!("invalid input — please enter Y or n");
+            bail!("invalid input - please enter Y or n");
         };
 
     let target_branch = if current_branch == "main" {
@@ -581,7 +581,7 @@ pub fn create_release_tag<S: ReleaseSystem>(system: &S) -> Result<()> {
     if !current_branch.ends_with("-maintenance") {
         bail!(
             "must be on a maintenance branch to create a release tag \
-             (current branch: {current_branch}) — run `cargo xtask prepare-release` first"
+             (current branch: {current_branch}) - run `cargo xtask prepare-release` first"
         );
     }
 
@@ -617,7 +617,7 @@ pub fn create_release_tag<S: ReleaseSystem>(system: &S) -> Result<()> {
 
     let behind = system.git_rev_list_count_behind(&current_branch)?;
     if behind > 0 {
-        bail!("local branch is {behind} commit(s) behind remote — run `git pull` first");
+        bail!("local branch is {behind} commit(s) behind remote - run `git pull` first");
     }
 
     let answer = system.prompt_user(&format!(

@@ -274,7 +274,7 @@ mod daemon_test {
         let future = tokio::spawn(async move {
             named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
         });
-        // Unknown PID is unrecoverable — the routine must panic (exits the daemon in production).
+        // Unknown PID is unrecoverable - the routine must panic (exits the daemon in production).
         assert!(future.await.unwrap_err().is_panic());
         return Ok(());
     }
@@ -304,7 +304,7 @@ mod daemon_test {
         let future = tokio::spawn(async move {
             named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
         });
-        // Pipe closed before handshake completed — the routine must panic.
+        // Pipe closed before handshake completed - the routine must panic.
         assert!(future.await.unwrap_err().is_panic());
         return Ok(());
     }
@@ -437,7 +437,7 @@ mod daemon_test {
             };
         };
         clients.push(make_client(1000));
-        clients.push(make_client(1000)); // duplicate — must panic
+        clients.push(make_client(1000)); // duplicate - must panic
     }
 
     #[test]

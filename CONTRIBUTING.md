@@ -6,7 +6,7 @@ Following these guidelines helps to communicate that you respect the time of the
 
 ### What kinds of contributions we're looking for
 
-csshW is an open source project and we love to receive contributions from our community — you! There are many ways to contribute, from writing blog posts, improving the documentation, submitting bug reports and feature requests or writing code which can be incorporated into csshW itself.
+csshW is an open source project and we love to receive contributions from our community - you! There are many ways to contribute, from writing blog posts, improving the documentation, submitting bug reports and feature requests or writing code which can be incorporated into csshW itself.
 
 ## Ground Rules
 
@@ -83,7 +83,7 @@ csshW uses pre-commit git hooks to enforce code quality. These are automatically
 ### AI agent GitHub auth (optional)
 
 If you use [paseo](https://paseo.dev) to spawn AI coding agents on this
-repository, those agents inherit your full `gh` CLI login by default —
+repository, those agents inherit your full `gh` CLI login by default -
 typically a classic `repo` scope, which can delete the repository or
 force-push to `main`. You can scope an agent down by providing a
 **fine-grained** Personal Access Token:
@@ -91,7 +91,7 @@ force-push to `main`. You can scope an agent down by providing a
 1. Generate a fine-grained PAT at
    <https://github.com/settings/personal-access-tokens/new> with
    `Contents`, `Pull requests`, and `Issues` set to *Read and write*
-   (and only those — leave everything else at *No access*). Restrict it
+   (and only those - leave everything else at *No access*). Restrict it
    to your fork of `csshw`. Set a short expiration.
 2. Save the full token (including the `github_pat_` prefix) to
    `.paseo/gh-token` in your source checkout (not in a worktree). The
@@ -101,7 +101,7 @@ force-push to `main`. You can scope an agent down by providing a
 `worktree.setup` and will write the token into the worktree's
 `.claude/settings.local.json` at creation time, where Claude Code
 injects it as `GH_TOKEN` for the agent process. If the file is absent
-the step is a no-op; classic `ghp_…` or OAuth `gho_…` tokens are
+the step is a no-op; classic `ghp_...` or OAuth `gho_...` tokens are
 rejected. To rotate, overwrite `.paseo/gh-token` in the source
 checkout and either re-run `cargo xtask inject-agent-token` from there
 or recreate the worktree.

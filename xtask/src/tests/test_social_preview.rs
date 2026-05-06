@@ -227,7 +227,7 @@ fn test_generate_rejects_parent_escape_in_out_path() {
     mock.expect_ensure_parent_dir().never();
     mock.expect_run_docker().never();
 
-    // Act — relative `..` that escapes the workspace resolves outside
+    // Act - relative `..` that escapes the workspace resolves outside
     // `workspace_root` and is rejected.
     let result =
         generate_social_preview(&mock, Some(PathBuf::from("../outside/preview.png")), None);
@@ -244,7 +244,7 @@ fn test_generate_accepts_dotdot_that_stays_inside_workspace() {
     let captured = Arc::new(Mutex::new(DockerCall::default()));
     capture_docker(&mut mock, captured.clone());
 
-    // Act — `sub/../preview.png` normalises to `preview.png` under the
+    // Act - `sub/../preview.png` normalises to `preview.png` under the
     // workspace root, so the path is accepted.
     let result = generate_social_preview(&mock, Some(PathBuf::from("sub/../preview.png")), None);
 
@@ -269,7 +269,7 @@ fn test_generate_rejects_absolute_path_outside_workspace() {
     mock.expect_ensure_parent_dir().never();
     mock.expect_run_docker().never();
 
-    // Act — an absolute path whose root does not share a prefix with
+    // Act - an absolute path whose root does not share a prefix with
     // `workspace_root` cannot be reached from inside the container and
     // is rejected. The particular path shape differs by platform but
     // the branch under test is the same.

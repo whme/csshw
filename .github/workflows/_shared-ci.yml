@@ -132,3 +132,15 @@ jobs:
         with: *build-cache-paths
       - name: Run check-readme-help
         run: cargo xtask check-readme-help
+
+  check-typography:
+    runs-on: *runner-version
+    needs: build
+    steps:
+      - uses: *checkout-action
+      - uses: *rust-cache-action
+        with: *rust-cache-shared-key
+      - uses: *build-cache
+        with: *build-cache-paths
+      - name: Run check-typography
+        run: cargo xtask check-typography

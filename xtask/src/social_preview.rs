@@ -1,7 +1,7 @@
 //! Social preview image generation.
 //!
 //! Orchestrates `docker run` against the pinned Playwright image to render
-//! `templates/social-preview.html` into a 1280×640 PNG with live data
+//! `templates/social-preview.html` into a 1280x640 PNG with live data
 //! fetched from the GitHub API. The Rust side is a thin shell: all HTTP,
 //! template substitution, and screenshotting live in
 //! `xtask/social-preview/generate.mjs`, which runs inside the container.
@@ -272,7 +272,7 @@ fn normalise_path(path: &Path) -> PathBuf {
 /// Render a `docker` argument list as a single shell-quoted string, purely
 /// for diagnostic logging. Arguments containing whitespace or shell
 /// metacharacters are wrapped in single quotes; inner single quotes are
-/// escaped as `'\''`. This is never re-parsed — it's only printed to
+/// escaped as `'\''`. This is never re-parsed - it's only printed to
 /// stdout so a user can copy-paste the exact invocation.
 fn shell_quote_args(args: &[String]) -> String {
     args.iter()
@@ -346,7 +346,7 @@ fn build_docker_args(workspace_root: &Path, container_out: &str, has_token: bool
     // The install runs in a subshell so it does not alter the CWD of the
     // subsequent `node` invocation. `generate.mjs` resolves its inputs
     // (template, logo, font, linguist colors) as workspace-relative paths,
-    // so it must run from `/workspace` — not from
+    // so it must run from `/workspace` - not from
     // `/workspace/xtask/social-preview`.
     args.push(
         "( cd xtask/social-preview && { [ -d node_modules ] || npm ci; } ) && node xtask/social-preview/generate.mjs"
@@ -382,7 +382,7 @@ pub fn generate_social_preview<S: SocialPreviewSystem>(
     let workspace_root = system.workspace_root()?;
     let (host_out, relative_out) = resolve_out_paths(&workspace_root, out)?;
     system.print_info(&format!(
-        "Generating social preview → {}",
+        "Generating social preview -> {}",
         host_out.display()
     ));
     system.check_docker_ready()?;
