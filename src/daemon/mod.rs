@@ -71,6 +71,8 @@ const SENDER_CAPACITY: usize = 1024 * 1024;
 enum PipeServerState {
     /// Forward all input records to the client.
     Enabled,
+    /// Consume input records without forwarding them to the client.
+    Disabled,
 }
 
 /// Representation of a client
@@ -500,7 +502,9 @@ impl<'a> Daemon<'a> {
             if self.control_mode_state == ControlModeState::Initiated {
                 clear_screen(windows_api);
                 println!("Control Mode (Esc to exit)");
-                println!("[c]reate window(s), [r]etile, copy active [h]ostname(s)");
+                println!(
+                    "[c]reate window(s), [r]etile, [t]oggle enabled, copy active [h]ostname(s)"
+                );
                 self.control_mode_state = ControlModeState::Active;
                 return;
             }
@@ -524,7 +528,13 @@ impl<'a> Daemon<'a> {
                     // TODO: Select windows
                 }
                 (VK_T, 0) => {
-                    // TODO: trigger input on selected windows
+                    for client in clients.lock().unwrap().iter() {
+                        let mut state = client.pipe_server_state.lock().unwrap();
+                        if *state == PipeServerState::Enabled {
+                            *state = PipeServerState::Disabled;
+                        }
+                    }
+                    self.quit_control_mode(windows_api);
                 }
                 (VK_C, 0) => {
                     clear_screen(windows_api);
@@ -970,6 +980,36 @@ fn launch_client_console<W: WindowsApi>(
     );
 }
 
+/// Probe `server` with a non-blocking keep-alive write to detect a closed pipe.
+///
+/// Writes a single [`TAG_KEEP_ALIVE`] byte — the zero-payload keep-alive frame
+/// of the daemon-to-client protocol — so the client side recognises and
+/// discards it. Treated as alive on success or `WouldBlock`; any other error
+/// means the pipe is closed.
+///
+/// # Arguments
+///
+/// * `server` - The named pipe server to probe.
+///
+/// # Returns
+///
+/// `true` if the pipe is still alive, `false` if it is closed and the
+/// caller's routine should stop. The caller is responsible for emitting
+/// any closed-pipe log message.
+fn probe_pipe_alive(server: &NamedPipeServer) -> bool {
+    match server.try_write(&[TAG_KEEP_ALIVE]) {
+        Ok(_) => return true,
+        Err(e) if e.kind() == io::ErrorKind::WouldBlock => return true,
+        Err(_) => {
+            debug!(
+                "Named pipe server ({:?}) is closed, stopping named pipe server routine",
+                server
+            );
+            return false;
+        }
+    }
+}
+
 /// Wait for the named pipe server to connect, correlate the client by
 /// its process id, then forward serialized input records read from the
 /// broadcast channel to the named pipe server.
@@ -988,8 +1028,8 @@ fn launch_client_console<W: WindowsApi>(
 ///
 /// If writing to the pipe fails the pipe is considered closed and the routine ends.
 /// To detect if a client is still alive even if we are currently
-/// not sending data, we send a "keep alive packet",
-/// [`SERIALIZED_INPUT_RECORD_0_LENGTH`] bytes of `1`s. If that fails, the routine ends.
+/// not sending data, we send a tagged keep-alive frame ([`TAG_KEEP_ALIVE`]).
+/// If that fails, the routine ends.
 ///
 /// # Arguments
 ///
@@ -1041,19 +1081,10 @@ async fn named_pipe_server_routine(
             Ok(val) => val,
             Err(TryRecvError::Empty) => {
                 tokio::time::sleep(Duration::from_millis(5)).await;
-                // Send a tagged keep-alive frame to detect early if the pipe is
-                // closed because the client exited.
-                match server.try_write(&[TAG_KEEP_ALIVE]) {
-                    Ok(_) => continue,
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
-                    Err(_) => {
-                        debug!(
-                            "Named pipe server ({:?}) is closed, stopping named pipe server routine",
-                            server
-                        );
-                        return;
-                    }
+                if !probe_pipe_alive(&server) {
+                    return;
                 }
+                continue;
             }
             Err(err) => {
                 error!("{}", err);
@@ -1061,8 +1092,22 @@ async fn named_pipe_server_routine(
             }
         };
         // Only forward to the client if its pipe server state allows it.
-        match *pipe_server_state.lock().unwrap() {
+        // Copy the state out so the mutex guard does not span the `.await`
+        // below — `MutexGuard` is not `Send` and would prevent the routine
+        // from being spawned on a multi-threaded runtime.
+        let state = *pipe_server_state.lock().unwrap();
+        match state {
             PipeServerState::Enabled => {}
+            PipeServerState::Disabled => {
+                // Still probe the pipe while disabled so client disconnects
+                // are detected promptly under sustained input.
+                if !probe_pipe_alive(&server) {
+                    return;
+                }
+                // Yield so we don't tight-loop when the broadcast channel is busy.
+                tokio::task::yield_now().await;
+                continue;
+            }
         }
         // Build the tagged input-record frame: [TAG_INPUT_RECORD][13-byte payload].
         let mut frame = [0u8; FRAMED_INPUT_RECORD_LENGTH];
