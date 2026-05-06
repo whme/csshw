@@ -400,6 +400,11 @@ mod daemon_test {
             named_pipe_client.readable().await?;
             let mut buf = [0u8; FRAMED_INPUT_RECORD_LENGTH];
             match named_pipe_client.try_read(&mut buf) {
+                Ok(0) => {
+                    return Err(
+                        "named pipe closed before all keep-alive frames arrived".into(),
+                    );
+                }
                 Ok(n) => match buf[0] {
                     TAG_KEEP_ALIVE => {
                         assert_eq!(

@@ -1092,6 +1092,21 @@ async fn named_pipe_server_routine(
                 }
                 continue;
             }
+            Err(TryRecvError::Lagged(skipped)) => {
+                // A slow consumer (typically a disabled client throttling
+                // its read loop) can fall behind the bounded broadcast
+                // buffer. Drop the skipped records and continue rather
+                // than killing the routine - the missed keystrokes are
+                // unrecoverable, but the pipe is still useful.
+                warn!(
+                    "Named pipe server routine lagged behind broadcast channel - dropping {} record(s)",
+                    skipped
+                );
+                if !probe_pipe_alive(&server) {
+                    return;
+                }
+                continue;
+            }
             Err(err) => {
                 error!("{}", err);
                 panic!("Failed to receive data from the Receiver");
