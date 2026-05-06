@@ -395,34 +395,151 @@ mod daemon_test {
         // frames to arrive. Read exactly that many and assert each is
         // a `TAG_KEEP_ALIVE` byte - any `TAG_INPUT_RECORD` frame would
         // be a leak of broadcast data and must fail the test.
-        let mut received = 0;
-        while received < SENDS {
-            named_pipe_client.readable().await?;
-            let mut buf = [0u8; FRAMED_INPUT_RECORD_LENGTH];
-            match named_pipe_client.try_read(&mut buf) {
-                Ok(0) => {
-                    return Err(
-                        "named pipe closed before all keep-alive frames arrived".into(),
-                    );
-                }
-                Ok(n) => match buf[0] {
-                    TAG_KEEP_ALIVE => {
-                        assert_eq!(
-                            FRAMED_KEEP_ALIVE_LENGTH, n,
-                            "Keep-alive frame must be exactly one byte"
-                        );
-                        received += 1;
+        //
+        // The whole loop is bounded by a `tokio::time::timeout` so a
+        // regression that stops keep-alive emission surfaces as a
+        // deterministic assertion instead of a hung test.
+        let read_result: Result<Result<(), Box<dyn std::error::Error>>, _> =
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                let mut received = 0;
+                while received < SENDS {
+                    named_pipe_client.readable().await?;
+                    let mut buf = [0u8; FRAMED_INPUT_RECORD_LENGTH];
+                    match named_pipe_client.try_read(&mut buf) {
+                        Ok(0) => {
+                            return Err(
+                                "named pipe closed before all keep-alive frames arrived".into(),
+                            );
+                        }
+                        Ok(n) => match buf[0] {
+                            TAG_KEEP_ALIVE => {
+                                assert_eq!(
+                                    FRAMED_KEEP_ALIVE_LENGTH, n,
+                                    "Keep-alive frame must be exactly one byte"
+                                );
+                                received += 1;
+                            }
+                            TAG_INPUT_RECORD => panic!(
+                                "Received input-record frame after disabling - broadcast data leaked through"
+                            ),
+                            other => panic!("Unexpected tag byte 0x{other:02X}"),
+                        },
+                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                        Err(e) => return Err(e.into()),
                     }
-                    TAG_INPUT_RECORD => panic!(
-                        "Received input-record frame after disabling - broadcast data leaked through"
-                    ),
-                    other => panic!("Unexpected tag byte 0x{other:02X}"),
-                },
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
-                Err(e) => return Err(e.into()),
+                }
+                return Ok(());
+            })
+            .await;
+        match read_result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(e),
+            Err(_) => {
+                return Err(format!(
+                    "timed out waiting for {SENDS} keep-alive frame(s) after disabling"
+                )
+                .into());
             }
         }
 
+        drop(named_pipe_client);
+        future.await?;
+        return Ok(());
+    }
+
+    /// Verifies that when the broadcast receiver falls behind the
+    /// channel's bounded buffer, the pipe server routine handles the
+    /// resulting [`tokio::sync::broadcast::error::TryRecvError::Lagged`]
+    /// without panicking. This is a regression guard for the previous
+    /// behaviour where any `Lagged` error propagated to the catch-all
+    /// `Err(err)` arm and crashed the routine.
+    ///
+    /// The test deliberately disables the client so the routine
+    /// throttles its consumption rate, then bursts more records than
+    /// the channel capacity through the sender so the first
+    /// `try_recv` is guaranteed to observe `Lagged`.
+    #[tokio::test]
+    async fn test_named_pipe_server_routine_lagged() -> Result<(), Box<dyn std::error::Error>> {
+        const TEST_PID: u32 = 77777;
+        // Use a per-test unique pipe name so parallel test runs don't collide
+        // on the global PIPE_NAME.
+        let pipe_name = format!(r"\\.\pipe\csshw-test-lagged-{}", std::process::id());
+        // Capacity 2 keeps the buffer small so a modest send burst is
+        // guaranteed to overflow before the routine consumes anything.
+        let (sender, mut receiver) =
+            broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(2);
+        let named_pipe_server = ServerOptions::new()
+            .access_inbound(true)
+            .access_outbound(true)
+            .pipe_mode(PipeMode::Message)
+            .create(&pipe_name)?;
+        let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
+        let (clients, pipe_server_state) = make_clients_with_pid_and_state(TEST_PID);
+
+        // Disable up front so the routine throttles consumption and
+        // cannot drain the broadcast buffer before we overflow it.
+        *pipe_server_state.lock().unwrap() = PipeServerState::Disabled;
+
+        // Overflow the bounded broadcast buffer before the routine
+        // begins pulling from it so the first `try_recv` observes
+        // `Lagged`. 8 sends into a channel of capacity 2 leaves the
+        // receiver lagging by 6 records.
+        for _ in 0..8 {
+            sender.send([4; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
+        }
+
+        send_pid(&named_pipe_client, TEST_PID).await?;
+        let future = tokio::spawn(async move {
+            named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
+        });
+
+        // Read at least one keep-alive frame. If the `Lagged` arm
+        // panicked (regression), the routine would never emit any
+        // frame and the timeout would fire.
+        let read_result: Result<Result<(), Box<dyn std::error::Error>>, _> =
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                loop {
+                    named_pipe_client.readable().await?;
+                    let mut buf = [0u8; FRAMED_INPUT_RECORD_LENGTH];
+                    match named_pipe_client.try_read(&mut buf) {
+                        Ok(0) => {
+                            return Err(
+                                "named pipe closed before any keep-alive frame arrived".into(),
+                            );
+                        }
+                        Ok(n) => match buf[0] {
+                            TAG_KEEP_ALIVE => {
+                                assert_eq!(
+                                    FRAMED_KEEP_ALIVE_LENGTH, n,
+                                    "Keep-alive frame must be exactly one byte"
+                                );
+                                return Ok(());
+                            }
+                            TAG_INPUT_RECORD => panic!(
+                                "Received input-record frame while disabled - broadcast data leaked through after Lagged"
+                            ),
+                            other => panic!("Unexpected tag byte 0x{other:02X}"),
+                        },
+                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                        Err(e) => return Err(e.into()),
+                    }
+                }
+            })
+            .await;
+        match read_result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(e),
+            Err(_) => {
+                return Err(
+                    "timed out waiting for keep-alive frame after Lagged - routine likely panicked"
+                        .into(),
+                );
+            }
+        }
+
+        // Closing the client makes the routine's next pipe write fail
+        // and exits the loop cleanly. The join handle resolving
+        // without an error confirms the `Lagged` path did not panic.
         drop(named_pipe_client);
         future.await?;
         return Ok(());

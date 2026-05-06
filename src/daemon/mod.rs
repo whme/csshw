@@ -1098,10 +1098,16 @@ async fn named_pipe_server_routine(
                 // buffer. Drop the skipped records and continue rather
                 // than killing the routine - the missed keystrokes are
                 // unrecoverable, but the pipe is still useful.
-                warn!(
+                //
+                // Throttle the same way the `Empty` arm does so a
+                // sustained overflow cannot busy-spin, and log at
+                // `debug!` because lagged drops can fire repeatedly
+                // and are not actionable per occurrence.
+                debug!(
                     "Named pipe server routine lagged behind broadcast channel - dropping {} record(s)",
                     skipped
                 );
+                tokio::time::sleep(Duration::from_millis(5)).await;
                 if !probe_pipe_alive(&server) {
                     return;
                 }
