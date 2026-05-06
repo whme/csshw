@@ -46,7 +46,7 @@ use windows::Win32::System::Console::{
 };
 
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    VIRTUAL_KEY, VK_A, VK_C, VK_E, VK_ESCAPE, VK_H, VK_R, VK_T,
+    VIRTUAL_KEY, VK_A, VK_C, VK_E, VK_ESCAPE, VK_H, VK_N, VK_R, VK_T,
 };
 use windows::Win32::UI::WindowsAndMessaging::{SW_RESTORE, SW_SHOWMINIMIZED};
 use windows::Win32::{
@@ -503,7 +503,7 @@ impl<'a> Daemon<'a> {
                 clear_screen(windows_api);
                 println!("Control Mode (Esc to exit)");
                 println!(
-                    "[c]reate window(s), [r]etile, [t]oggle enabled, copy active [h]ostname(s)"
+                    "[c]reate window(s), [r]etile, [t]oggle enabled, e[n]able all, copy active [h]ostname(s)"
                 );
                 self.control_mode_state = ControlModeState::Active;
                 return;
@@ -533,6 +533,12 @@ impl<'a> Daemon<'a> {
                         if *state == PipeServerState::Enabled {
                             *state = PipeServerState::Disabled;
                         }
+                    }
+                    self.quit_control_mode(windows_api);
+                }
+                (VK_N, 0) => {
+                    for client in clients.lock().unwrap().iter() {
+                        *client.pipe_server_state.lock().unwrap() = PipeServerState::Enabled;
                     }
                     self.quit_control_mode(windows_api);
                 }
