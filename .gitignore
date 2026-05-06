@@ -2,7 +2,9 @@
 /res/csshw.ico
 /xtask/social-preview/node_modules/
 
-# Per-contributor paseo-agent fine-grained PAT (never commit)
-/.paseo/gh-token
+# Per-contributor paseo state — track only the explanatory README,
+# never the gh-token or any other ad-hoc contents.
+/.paseo/*
+!/.paseo/README.md
 # Claude Code per-worktree local settings (contains the injected GH_TOKEN)
 /.claude/settings.local.json
