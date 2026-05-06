@@ -22,11 +22,10 @@ use windows::Win32::System::Console::{
     SHIFT_PRESSED,
 };
 
-use crate::protocol::DaemonToClientMessage;
 use crate::{
-    serde::{
+    protocol::{
         deserialization::parse_daemon_to_client_messages, serialization::serialize_pid,
-        SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
+        DaemonToClientMessage, SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
     },
     utils::constants::{PIPE_NAME, PKG_NAME},
 };
@@ -188,7 +187,7 @@ async fn launch_ssh_process(
     return child;
 }
 
-/// Read all available daemon→client messages from the named pipe and apply them.
+/// Read all available daemon-to-client messages from the named pipe and apply them.
 ///
 /// Input records are written to the console input buffer using the provided API
 /// and their key-event payloads are returned via `ReadWriteResult::Success` so
@@ -224,7 +223,7 @@ async fn read_write_loop(
             return ReadWriteResult::Disconnect;
         }
         Ok(n) => {
-            internal_buffer.extend(&mut buf[0..n].iter());
+            internal_buffer.extend_from_slice(&buf[..n]);
             let (messages, remainder) = parse_daemon_to_client_messages(internal_buffer);
             let mut key_event_records: Vec<KEY_EVENT_RECORD> = Vec::new();
             for message in messages {

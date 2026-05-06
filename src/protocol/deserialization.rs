@@ -3,8 +3,10 @@ use windows::Win32::{
     System::Console::{INPUT_RECORD_0, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0},
 };
 
-use crate::protocol::{DaemonToClientMessage, TAG_INPUT_RECORD, TAG_KEEP_ALIVE};
-use crate::serde::{SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH};
+use crate::protocol::{
+    DaemonToClientMessage, SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
+    TAG_INPUT_RECORD, TAG_KEEP_ALIVE,
+};
 
 /// Deserialize a [KEY_EVENT_RECORD_0] from a u8 slice using custom binary format.
 ///
@@ -80,10 +82,10 @@ pub fn deserialize_pid(bytes: &[u8; SERIALIZED_PID_LENGTH]) -> u32 {
 /// # Panics
 ///
 /// Panics if `buffer` contains a tag byte that is not part of the documented
-/// daemon→client protocol (see [`crate::protocol`]). An unknown tag indicates
-/// either a protocol-version mismatch between the daemon and client or
-/// corruption on the pipe — both unrecoverable, matching the codebase's
-/// "broken bookkeeping → panic" convention.
+/// daemon-to-client protocol (see [`crate::protocol`]). An unknown tag
+/// indicates either a protocol-version mismatch between the daemon and
+/// client or corruption on the pipe -- both unrecoverable, matching the
+/// codebase's "broken bookkeeping -> panic" convention.
 pub fn parse_daemon_to_client_messages(buffer: &[u8]) -> (Vec<DaemonToClientMessage>, Vec<u8>) {
     let mut messages: Vec<DaemonToClientMessage> = Vec::new();
     let mut pos = 0usize;

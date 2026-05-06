@@ -1,11 +1,11 @@
-//! Unit tests for the serde module.
+//! Unit tests for the protocol module.
 
 use windows::Win32::{
     Foundation::BOOL,
     System::Console::{INPUT_RECORD_0, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0},
 };
 
-use crate::serde::{SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH};
+use crate::protocol::{SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH};
 
 const EXPECTED_PID: u32 = 0x04030201;
 const EXPECTED_PID_SEQUENCE: [u8; SERIALIZED_PID_LENGTH] = [0x01, 0x02, 0x03, 0x04];
@@ -41,7 +41,7 @@ const EXPECTED_INPUT_RECORD_0_SEQUENCE: [u8; SERIALIZED_INPUT_RECORD_0_LENGTH] =
 
 mod serialization_test {
     use super::*;
-    use crate::serde::serialization::*;
+    use crate::protocol::serialization::*;
 
     #[test]
     fn test_serialize_key_event_record_0() {
@@ -75,7 +75,7 @@ mod serialization_test {
 
 mod deserialization_test {
     use super::*;
-    use crate::serde::deserialization::*;
+    use crate::protocol::deserialization::*;
 
     pub(super) trait Equality<T = Self> {
         fn equals(&self, other: T) -> bool;
@@ -135,7 +135,7 @@ mod deserialization_test {
 
     #[test]
     fn test_pid_round_trip() {
-        use crate::serde::serialization::serialize_pid;
+        use crate::protocol::serialization::serialize_pid;
         let pid = 0xDEADBEEFu32;
         assert_eq!(deserialize_pid(&serialize_pid(pid)), pid);
     }
@@ -145,11 +145,10 @@ mod framed_message_test {
     use super::deserialization_test::Equality;
     use super::*;
     use crate::protocol::{
-        DaemonToClientMessage, FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH,
-        TAG_INPUT_RECORD, TAG_KEEP_ALIVE,
+        deserialization::parse_daemon_to_client_messages,
+        serialization::serialize_daemon_to_client_message, DaemonToClientMessage,
+        FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH, TAG_INPUT_RECORD, TAG_KEEP_ALIVE,
     };
-    use crate::serde::deserialization::parse_daemon_to_client_messages;
-    use crate::serde::serialization::serialize_daemon_to_client_message;
 
     fn unwrap_input_record(msg: &DaemonToClientMessage) -> INPUT_RECORD_0 {
         match msg {

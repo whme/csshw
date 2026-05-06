@@ -17,10 +17,9 @@ mod daemon_test {
             PipeServerState,
         },
         protocol::{
-            FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH, TAG_INPUT_RECORD, TAG_KEEP_ALIVE,
-        },
-        serde::{
-            serialization::serialize_pid, SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
+            serialization::serialize_pid, FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH,
+            SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH, TAG_INPUT_RECORD,
+            TAG_KEEP_ALIVE,
         },
         utils::{config::Cluster, constants::PIPE_NAME},
     };

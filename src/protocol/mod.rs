@@ -1,11 +1,11 @@
 //! Wire protocol used between the daemon and clients.
 //!
-//! Defines the tagged-envelope message framing for the daemon→client
-//! direction over the named pipe and the lightweight message enum used
-//! by both ends.
+//! Defines the tagged-envelope message framing for the daemon-to-client
+//! direction over the named pipe, the lightweight message enum used by
+//! both ends, and the byte-level (de)serialization of the payloads.
 //!
-//! Each daemon→client message on the wire has the form
-//! `[1 byte tag][payload of tag-specific length]`. The client→daemon
+//! Each daemon-to-client message on the wire has the form
+//! `[1 byte tag][payload of tag-specific length]`. The client-to-daemon
 //! direction (4-byte PID handshake) is handled separately and does not
 //! use this envelope.
 
@@ -15,11 +15,25 @@
 
 use windows::Win32::System::Console::INPUT_RECORD_0;
 
-/// Tag byte identifying an input-record message on the daemon→client pipe.
+#[allow(missing_docs)]
+pub mod deserialization;
+#[allow(missing_docs)]
+pub mod serialization;
+
+/// Length of a serialized [INPUT_RECORD_0][1]
+///
+/// [1]: https://microsoft.github.io/windows-docs-rs/doc/windows/Win32/System/Console/union.INPUT_RECORD_0.html
+pub const SERIALIZED_INPUT_RECORD_0_LENGTH: usize = 13;
+
+/// Length of a serialized process id exchanged during the named-pipe PID
+/// handshake. Matches the size of a `u32` on all supported platforms.
+pub const SERIALIZED_PID_LENGTH: usize = 4;
+
+/// Tag byte identifying an input-record message on the daemon-to-client pipe.
 ///
 /// The tag byte is followed by the
-/// [`crate::serde::SERIALIZED_INPUT_RECORD_0_LENGTH`]-byte serialized payload
-/// produced by [`crate::serde::serialization::serialize_input_record_0`].
+/// [`SERIALIZED_INPUT_RECORD_0_LENGTH`]-byte serialized payload produced
+/// by [`crate::protocol::serialization::serialize_input_record_0`].
 pub const TAG_INPUT_RECORD: u8 = 0x00;
 
 /// Tag byte reserved for client state-change messages.
@@ -30,21 +44,20 @@ pub const TAG_INPUT_RECORD: u8 = 0x00;
 pub const TAG_STATE_CHANGE: u8 = 0x01;
 
 /// Tag byte identifying a zero-payload keep-alive message on the
-/// daemon→client pipe.
+/// daemon-to-client pipe.
 ///
 /// Used by the daemon's pipe server to detect early when the client end of
 /// the pipe is closed.
 pub const TAG_KEEP_ALIVE: u8 = 0xFF;
 
 /// Length on the wire of a framed input-record message: the tag byte plus
-/// the existing [`crate::serde::SERIALIZED_INPUT_RECORD_0_LENGTH`]-byte
-/// payload.
-pub const FRAMED_INPUT_RECORD_LENGTH: usize = 1 + crate::serde::SERIALIZED_INPUT_RECORD_0_LENGTH;
+/// the existing [`SERIALIZED_INPUT_RECORD_0_LENGTH`]-byte payload.
+pub const FRAMED_INPUT_RECORD_LENGTH: usize = 1 + SERIALIZED_INPUT_RECORD_0_LENGTH;
 
 /// Length on the wire of a framed keep-alive message: just the tag byte.
 pub const FRAMED_KEEP_ALIVE_LENGTH: usize = 1;
 
-/// Daemon→client message variants exchanged over the named pipe.
+/// Daemon-to-client message variants exchanged over the named pipe.
 ///
 /// Each variant maps to a distinct tag byte at the start of the wire
 /// representation; see [`TAG_INPUT_RECORD`] and [`TAG_KEEP_ALIVE`].
@@ -57,3 +70,7 @@ pub enum DaemonToClientMessage {
     /// closed client pipe.
     KeepAlive,
 }
+
+#[cfg(test)]
+#[path = "../tests/protocol/test_mod.rs"]
+mod test_mod;
