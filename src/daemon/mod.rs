@@ -982,8 +982,8 @@ fn launch_client_console<W: WindowsApi>(
 
 /// Probe `server` with a non-blocking keep-alive write to detect a closed pipe.
 ///
-/// Writes a single [`TAG_KEEP_ALIVE`] byte — the zero-payload keep-alive frame
-/// of the daemon-to-client protocol — so the client side recognises and
+/// Writes a single [`TAG_KEEP_ALIVE`] byte - the zero-payload keep-alive frame
+/// of the daemon-to-client protocol - so the client side recognises and
 /// discards it. Treated as alive on success or `WouldBlock`; any other error
 /// means the pipe is closed.
 ///
@@ -1093,7 +1093,7 @@ async fn named_pipe_server_routine(
         };
         // Only forward to the client if its pipe server state allows it.
         // Copy the state out so the mutex guard does not span the `.await`
-        // below — `MutexGuard` is not `Send` and would prevent the routine
+        // below - `MutexGuard` is not `Send` and would prevent the routine
         // from being spawned on a multi-threaded runtime.
         let state = *pipe_server_state.lock().unwrap();
         match state {

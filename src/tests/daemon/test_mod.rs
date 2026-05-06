@@ -384,7 +384,7 @@ mod daemon_test {
         // Disable the client.
         *pipe_server_state.lock().unwrap() = PipeServerState::Disabled;
 
-        // Send more data — it must NOT arrive at the client.
+        // Send more data - it must NOT arrive at the client.
         const SENDS: usize = 5;
         for _ in 0..SENDS {
             sender.send([3; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
@@ -393,7 +393,7 @@ mod daemon_test {
         // The disabled branch writes one keep-alive frame per consumed
         // broadcast record, so we expect at least `SENDS` keep-alive
         // frames to arrive. Read exactly that many and assert each is
-        // a `TAG_KEEP_ALIVE` byte — any `TAG_INPUT_RECORD` frame would
+        // a `TAG_KEEP_ALIVE` byte - any `TAG_INPUT_RECORD` frame would
         // be a leak of broadcast data and must fail the test.
         let mut received = 0;
         while received < SENDS {
@@ -409,7 +409,7 @@ mod daemon_test {
                         received += 1;
                     }
                     TAG_INPUT_RECORD => panic!(
-                        "Received input-record frame after disabling — broadcast data leaked through"
+                        "Received input-record frame after disabling - broadcast data leaked through"
                     ),
                     other => panic!("Unexpected tag byte 0x{other:02X}"),
                 },
