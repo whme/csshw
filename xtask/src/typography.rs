@@ -33,15 +33,24 @@ const SCAN_EXTENSIONS: &[&str] = &[
 /// `git ls-files` output verbatim (forward slashes).
 const SCAN_EXTRA_PATHS: &[&str] = &[".githooks/pre-commit"];
 
-/// Tracked paths that are explicitly excluded from scanning. Used for
-/// generated artefacts such as `Cargo.lock` and for files (such as
-/// the `CHANGELOG.md`) that may legitimately preserve historical
-/// typography from prior releases.
+/// Tracked paths that are explicitly excluded from scanning. Used for:
+///
+/// - generated artefacts such as `Cargo.lock`,
+/// - files (such as the `CHANGELOG.md`) that may legitimately preserve
+///   historical typography from prior releases,
+/// - templates and workflow snippets whose non-ASCII content is
+///   intentional and rendered to users (e.g. social-preview titles,
+///   GitHub Pages footers, PR-comment heredocs).
 ///
 /// Keep this list short -- the goal is to fix offending content, not
 /// to allowlist around it. Compared against the `git ls-files` output
 /// verbatim (forward slashes).
-const ALLOWED_PATHS: &[&str] = &["Cargo.lock"];
+const ALLOWED_PATHS: &[&str] = &[
+    "Cargo.lock",
+    ".github/workflows/news-fragment-check.yml",
+    "templates/github-pages-index.html",
+    "templates/social-preview.html",
+];
 
 /// Hard cap on file size accepted by the scanner. Anything larger is
 /// skipped with a warning -- the repo has nothing close to this size,

@@ -101,6 +101,21 @@ fn test_should_scan_excludes_cargo_lock() {
 }
 
 #[test]
+fn test_should_scan_excludes_news_fragment_workflow() {
+    assert!(!should_scan(".github/workflows/news-fragment-check.yml"));
+}
+
+#[test]
+fn test_should_scan_excludes_github_pages_template() {
+    assert!(!should_scan("templates/github-pages-index.html"));
+}
+
+#[test]
+fn test_should_scan_excludes_social_preview_template() {
+    assert!(!should_scan("templates/social-preview.html"));
+}
+
+#[test]
 fn test_should_scan_excludes_unknown_extensions() {
     assert!(!should_scan("logo.png"));
     assert!(!should_scan("binary.exe"));

@@ -80,11 +80,11 @@ jobs:
           ❌ This PR appears to be missing a news fragment.
 
           **If this change affects users** (new features, bug fixes, security fixes):
-          -> Add a news fragment in the `news/` directory
-          -> Example: `news/123.feature.md` or `news/~fix-issue.bugfix.md`
+          → Add a news fragment in the `news/` directory
+          → Example: `news/123.feature.md` or `news/~fix-issue.bugfix.md`
 
           **If this change doesn't need a news fragment** (docs, CI, internal changes):
-          -> Add the ![](https://img.shields.io/github/labels/${{ github.repository }}/${{ env.OVERRIDE_LABEL }}) label to this PR
+          → Add the ![](https://img.shields.io/github/labels/${{ github.repository }}/${{ env.OVERRIDE_LABEL }}) label to this PR
 
           For more information about news fragments, see: https://github.com/nekitdev/changelogging
           EOF
