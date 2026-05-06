@@ -1,4 +1,4 @@
-//! xtask -- developer automation tasks for csshw.
+//! xtask - developer automation tasks for csshw.
 //!
 //! Invoke via `cargo xtask <subcommand>`.
 //! See each subcommand's module for details.

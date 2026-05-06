@@ -25,7 +25,7 @@ use anyhow::{bail, Context, Result};
 /// All matching is done in lowercase. Files with no extension are
 /// scanned only when their path matches [`SCAN_EXTRA_PATHS`].
 const SCAN_EXTENSIONS: &[&str] = &[
-    "rs", "md", "toml", "yml", "yaml", "json", "html", "txt", "cfg", "sh", "ps1",
+    "rs", "md", "toml", "yml", "yaml", "json", "html", "txt", "cfg", "sh", "ps1", "js", "mjs",
 ];
 
 /// Tracked paths without a recognised extension that should still be

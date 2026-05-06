@@ -8,21 +8,21 @@
 // container path (for example, under `/workspace/...`).
 //
 // Inputs (environment):
-//   OUT_PATH      — output path for the PNG inside the container
+//   OUT_PATH      - output path for the PNG inside the container
 //                   filesystem (required, set by the Rust xtask; may be
 //                   absolute).
-//   GITHUB_TOKEN  — optional; enables authenticated GitHub API requests.
-//   GITHUB_OWNER  — defaults to "whme".
-//   GITHUB_REPO   — defaults to "csshw".
+//   GITHUB_TOKEN  - optional; enables authenticated GitHub API requests.
+//   GITHUB_OWNER  - defaults to "whme".
+//   GITHUB_REPO   - defaults to "csshw".
 //
 // Outputs:
-//   A 2560×1280 PNG (2× scale for sharp rendering) written to OUT_PATH.
+//   A 2560x1280 PNG (2x scale for sharp rendering) written to OUT_PATH.
 //
 // Design goals:
-//   - Fail loudly on any network, file, or Playwright error — no silent
+//   - Fail loudly on any network, file, or Playwright error - no silent
 //     fallbacks. Unknown language colors are the one exception (warn +
 //     grey fallback). Missing language icons fall back to colored swatches.
-//   - No HTTP libraries — use Node's built-in `fetch`. Per run we make
+//   - No HTTP libraries - use Node's built-in `fetch`. Per run we make
 //     up to three + N outbound calls: GitHub repo metadata, GitHub
 //     language bytes, (on cache miss) the linguist colour map from
 //     ozh/github-colors, and up to N language icon fetches from
@@ -52,9 +52,9 @@ const LINGUIST_COLORS_URL =
 const UNKNOWN_LANGUAGE_COLOR = "#cccccc";
 const OTHER_BUCKET_COLOR = "#ededed";
 const VIEWPORT = { width: 1280, height: 640 };
-// Layout is designed at 1280×640 CSS pixels (GitHub's recommended social
-// preview size) but rendered at 2× device scale for sharper output,
-// producing a 2560×1280 PNG (see https://docs.github.com/en/repositories/
+// Layout is designed at 1280x640 CSS pixels (GitHub's recommended social
+// preview size) but rendered at 2x device scale for sharper output,
+// producing a 2560x1280 PNG (see https://docs.github.com/en/repositories/
 // managing-your-repositorys-settings-and-features/customizing-your-
 // repository/customizing-your-repositorys-social-media-preview).
 const DEVICE_SCALE_FACTOR = 2;
@@ -67,7 +67,7 @@ const ICON_CACHE_DIR = "target/social-preview/icon-cache";
 
 // Maps GitHub linguist language names to Simple Icons slugs.
 // Only languages that have a matching Simple Icons entry need an entry
-// here — missing languages gracefully fall back to a colored swatch.
+// here - missing languages gracefully fall back to a colored swatch.
 const LANGUAGE_ICON_SLUGS = {
   Rust: "rust",
   JavaScript: "javascript",
@@ -179,7 +179,7 @@ function buildLanguages(bytesByLang, colorsByLang) {
       e.pct = Math.round(e.pct * scale * 10) / 10;
     });
   }
-  // Drop entries that rounded to zero — they contribute no visible
+  // Drop entries that rounded to zero - they contribute no visible
   // segment and just clutter the legend.
   return result.filter((e) => e.pct > 0);
 }
@@ -195,7 +195,7 @@ async function dataUri(path, mime) {
  * string on success, or `null` on any failure.
  *
  * The CDN URL pattern `https://cdn.simpleicons.org/{slug}/{hex}` returns
- * the icon SVG with all paths filled in the requested colour — no
+ * the icon SVG with all paths filled in the requested colour - no
  * client-side tinting needed.
  */
 async function fetchLanguageIcon(slug, hexColor) {
@@ -213,7 +213,7 @@ async function fetchLanguageIcon(slug, hexColor) {
     const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
     if (!res.ok) {
       console.warn(
-        `Icon fetch for "${slug}" returned ${res.status} — falling back to swatch.`,
+        `Icon fetch for "${slug}" returned ${res.status} - falling back to swatch.`,
       );
       return null;
     }
@@ -222,7 +222,7 @@ async function fetchLanguageIcon(slug, hexColor) {
     await writeFile(cacheFile, svg);
     return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
   } catch (err) {
-    console.warn(`Icon fetch for "${slug}" failed: ${err.message} — falling back to swatch.`);
+    console.warn(`Icon fetch for "${slug}" failed: ${err.message} - falling back to swatch.`);
     return null;
   }
 }
@@ -250,7 +250,7 @@ async function populateLanguageIcons(langEntries) {
  * ozh/github-colors and persists a flat `{ "<Language>": "#rrggbb" }`
  * JSON file for future runs. That repo publishes entries in the form
  * `{ "<Language>": { "color": "#rrggbb", "url": "..." } }` with
- * `color: null` for languages linguist does not assign a hue to — those
+ * `color: null` for languages linguist does not assign a hue to - those
  * are dropped so `buildLanguages` falls back to the unknown-language
  * colour instead of crashing. Delete the cache file to force a refresh.
  */

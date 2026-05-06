@@ -96,6 +96,12 @@ fn test_should_scan_includes_pre_commit_hook() {
 }
 
 #[test]
+fn test_should_scan_includes_javascript() {
+    assert!(should_scan("xtask/social-preview/generate.mjs"));
+    assert!(should_scan("scripts/foo.js"));
+}
+
+#[test]
 fn test_should_scan_excludes_cargo_lock() {
     assert!(!should_scan("Cargo.lock"));
 }
