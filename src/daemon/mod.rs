@@ -46,7 +46,7 @@ use windows::Win32::System::Console::{
 };
 
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    VIRTUAL_KEY, VK_A, VK_C, VK_E, VK_ESCAPE, VK_H, VK_R, VK_T,
+    VIRTUAL_KEY, VK_A, VK_C, VK_E, VK_ESCAPE, VK_H, VK_N, VK_R, VK_T,
 };
 use windows::Win32::UI::WindowsAndMessaging::{SW_RESTORE, SW_SHOWMINIMIZED};
 use windows::Win32::{
@@ -503,7 +503,7 @@ impl<'a> Daemon<'a> {
                 clear_screen(windows_api);
                 println!("Control Mode (Esc to exit)");
                 println!(
-                    "[c]reate window(s), [r]etile, [t]oggle enabled, copy active [h]ostname(s)"
+                    "[c]reate window(s), [r]etile, [t]oggle enabled, e[n]able all, copy active [h]ostname(s)"
                 );
                 self.control_mode_state = ControlModeState::Active;
                 return;
@@ -533,6 +533,12 @@ impl<'a> Daemon<'a> {
                         if *state == PipeServerState::Enabled {
                             *state = PipeServerState::Disabled;
                         }
+                    }
+                    self.quit_control_mode(windows_api);
+                }
+                (VK_N, 0) => {
+                    for client in clients.lock().unwrap().iter() {
+                        *client.pipe_server_state.lock().unwrap() = PipeServerState::Enabled;
                     }
                     self.quit_control_mode(windows_api);
                 }
@@ -1080,6 +1086,27 @@ async fn named_pipe_server_routine(
         let ser_input_record = match receiver.try_recv() {
             Ok(val) => val,
             Err(TryRecvError::Empty) => {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+                if !probe_pipe_alive(&server) {
+                    return;
+                }
+                continue;
+            }
+            Err(TryRecvError::Lagged(skipped)) => {
+                // A slow consumer (typically a disabled client throttling
+                // its read loop) can fall behind the bounded broadcast
+                // buffer. Drop the skipped records and continue rather
+                // than killing the routine - the missed keystrokes are
+                // unrecoverable, but the pipe is still useful.
+                //
+                // Throttle the same way the `Empty` arm does so a
+                // sustained overflow cannot busy-spin, and log at
+                // `debug!` because lagged drops can fire repeatedly
+                // and are not actionable per occurrence.
+                debug!(
+                    "Named pipe server routine lagged behind broadcast channel - dropping {} record(s)",
+                    skipped
+                );
                 tokio::time::sleep(Duration::from_millis(5)).await;
                 if !probe_pipe_alive(&server) {
                     return;
