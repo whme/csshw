@@ -14,14 +14,15 @@ use std::{
 use std::{thread, time};
 
 use crate::get_console_window_handle;
+use crate::protocol::{
+    deserialization::deserialize_pid, serialization::serialize_input_record_0,
+    FRAMED_INPUT_RECORD_LENGTH, SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
+    TAG_INPUT_RECORD, TAG_KEEP_ALIVE,
+};
 use crate::utils::config::{Cluster, DaemonConfig};
 use crate::utils::debug::StringRepr;
 use crate::utils::windows::{clear_screen, set_console_color, WindowsApi};
 use crate::{
-    serde::{
-        deserialization::deserialize_pid, serialization::serialize_input_record_0,
-        SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
-    },
     spawn_console_process,
     utils::{
         constants::{PIPE_NAME, PKG_NAME},
@@ -1040,8 +1041,9 @@ async fn named_pipe_server_routine(
             Ok(val) => val,
             Err(TryRecvError::Empty) => {
                 tokio::time::sleep(Duration::from_millis(5)).await;
-                // Try sending dummy data to detect early if the pipe is closed because the client exited
-                match server.try_write(&[u8::MAX; SERIALIZED_INPUT_RECORD_0_LENGTH]) {
+                // Send a tagged keep-alive frame to detect early if the pipe is
+                // closed because the client exited.
+                match server.try_write(&[TAG_KEEP_ALIVE]) {
                     Ok(_) => continue,
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
                     Err(_) => {
@@ -1062,21 +1064,31 @@ async fn named_pipe_server_routine(
         match *pipe_server_state.lock().unwrap() {
             PipeServerState::Enabled => {}
         }
+        // Build the tagged input-record frame: [TAG_INPUT_RECORD][13-byte payload].
+        let mut frame = [0u8; FRAMED_INPUT_RECORD_LENGTH];
+        frame[0] = TAG_INPUT_RECORD;
+        frame[1..].copy_from_slice(&ser_input_record);
+        // Track how many bytes of `frame` have already been written so that
+        // a partial write retries only the unwritten suffix; otherwise a
+        // retry of the full frame would duplicate the already-written prefix
+        // (including the tag byte) and corrupt the stream.
+        let mut written = 0usize;
         loop {
             server.writable().await.unwrap_or_else(|err| {
                 error!("{}", err);
                 panic!("Timed out waiting for named pipe server to become writable",)
             });
-            match server.try_write(&ser_input_record) {
-                Ok(SERIALIZED_INPUT_RECORD_0_LENGTH) => {
+            match server.try_write(&frame[written..]) {
+                Ok(n) if written + n == FRAMED_INPUT_RECORD_LENGTH => {
                     debug!("Successfully written all data");
                     break;
                 }
                 Ok(n) => {
-                    // The data was only written partially, try again
+                    // The data was only written partially, try again with the suffix.
+                    written += n;
                     warn!(
-                        "Partially written data, expected {} but only wrote {}",
-                        SERIALIZED_INPUT_RECORD_0_LENGTH, n
+                        "Partially written data, expected {} but only wrote {} so far",
+                        FRAMED_INPUT_RECORD_LENGTH, written
                     );
                     continue;
                 }

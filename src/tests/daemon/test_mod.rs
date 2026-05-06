@@ -16,8 +16,10 @@ mod daemon_test {
             named_pipe_server_routine, resolve_cluster_tags, Client, Clients, HWNDWrapper,
             PipeServerState,
         },
-        serde::{
-            serialization::serialize_pid, SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
+        protocol::{
+            serialization::serialize_pid, FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH,
+            SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH, TAG_INPUT_RECORD,
+            TAG_KEEP_ALIVE,
         },
         utils::{config::Cluster, constants::PIPE_NAME},
     };
@@ -148,26 +150,28 @@ mod daemon_test {
             sender.send([2; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
             // Wait for the pipe to be readable
             named_pipe_client.readable().await?;
-            let mut buf = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
+            let mut buf = [0u8; FRAMED_INPUT_RECORD_LENGTH];
             // Try to read data, this may still fail with `WouldBlock`
             // if the readiness event is a false positive.
             match named_pipe_client.try_read(&mut buf) {
                 Ok(0) => break,
-                Ok(n) => {
-                    assert_eq!(SERIALIZED_INPUT_RECORD_0_LENGTH, n);
-                    if buf[0] == 255 {
-                        // Thats a keep alive packet, make sure its complete.
-                        assert_eq!([255; SERIALIZED_INPUT_RECORD_0_LENGTH], buf);
+                Ok(n) => match buf[0] {
+                    TAG_KEEP_ALIVE => {
+                        // Keep-alive frame: just the tag byte.
+                        assert_eq!(FRAMED_KEEP_ALIVE_LENGTH, n);
                         keep_alive_received = true;
-                    } else {
-                        // Thats the actual data, make sure its complete.
-                        assert_eq!([2; SERIALIZED_INPUT_RECORD_0_LENGTH], buf);
+                    }
+                    TAG_INPUT_RECORD => {
+                        // Input-record frame: tag byte + 13-byte payload.
+                        assert_eq!(FRAMED_INPUT_RECORD_LENGTH, n);
+                        assert_eq!([2; SERIALIZED_INPUT_RECORD_0_LENGTH], buf[1..]);
                         successful_iterations += 1;
                         if successful_iterations >= 5 {
                             break;
                         }
                     }
-                }
+                    other => panic!("Unexpected tag byte 0x{other:02X}"),
+                },
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                     continue;
                 }
@@ -213,22 +217,24 @@ mod daemon_test {
         loop {
             // Wait for the pipe to be readable
             named_pipe_client.readable().await?;
-            let mut buf = [0; SERIALIZED_INPUT_RECORD_0_LENGTH];
+            let mut buf = [0u8; FRAMED_INPUT_RECORD_LENGTH];
             // Try to read data, this may still fail with `WouldBlock`
             // if the readiness event is a false positive.
             match named_pipe_client.try_read(&mut buf) {
                 Ok(0) => break,
-                Ok(n) => {
-                    assert_eq!(SERIALIZED_INPUT_RECORD_0_LENGTH, n);
-                    if buf[0] == 255 {
-                        // Thats a keep alive packet, make sure its complete.
-                        assert_eq!([255; SERIALIZED_INPUT_RECORD_0_LENGTH], buf);
-                    } else {
-                        // Thats the actual data, make sure its complete.
-                        assert_eq!([2; SERIALIZED_INPUT_RECORD_0_LENGTH], buf);
+                Ok(n) => match buf[0] {
+                    TAG_KEEP_ALIVE => {
+                        // Keep-alive frame: just the tag byte.
+                        assert_eq!(FRAMED_KEEP_ALIVE_LENGTH, n);
+                    }
+                    TAG_INPUT_RECORD => {
+                        // Input-record frame: tag byte + 13-byte payload.
+                        assert_eq!(FRAMED_INPUT_RECORD_LENGTH, n);
+                        assert_eq!([2; SERIALIZED_INPUT_RECORD_0_LENGTH], buf[1..]);
                         break;
                     }
-                }
+                    other => panic!("Unexpected tag byte 0x{other:02X}"),
+                },
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                     continue;
                 }
