@@ -1,8 +1,8 @@
 //! Local coverage report generation.
 //!
-//! The nightly toolchain is required because `#[coverage(off)]` — used to
+//! The nightly toolchain is required because `#[coverage(off)]` - used to
 //! exclude untestable code such as Windows API wrappers and production I/O
-//! implementations from coverage — relies on the `coverage_attribute` feature,
+//! implementations from coverage - relies on the `coverage_attribute` feature,
 //! which is only available on nightly Rust. Without it the `cfg(coverage_nightly)`
 //! guards would not activate, causing those impls to be counted as missed lines
 //! and distorting the report.

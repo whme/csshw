@@ -1,7 +1,7 @@
 //! Paseo agent GitHub auth injection.
 //!
 //! A paseo-spawned agent would otherwise inherit the user's full `gh`
-//! login — including classic scopes like `repo` that allow deleting
+//! login - including classic scopes like `repo` that allow deleting
 //! repositories or force-pushing to `main`. This module is the
 //! counterpart of that risk: on worktree creation, it writes a
 //! per-worktree `.claude/settings.local.json` whose `env` map carries
@@ -11,7 +11,7 @@
 //! scoped PAT while the contributor's own `gh` session outside paseo
 //! is unaffected.
 //!
-//! The token source is `<source-checkout>/.paseo/gh-token` — a
+//! The token source is `<source-checkout>/.paseo/gh-token` - a
 //! gitignored file the contributor creates once per clone. The
 //! source checkout path is taken from the `PASEO_SOURCE_CHECKOUT_PATH`
 //! environment variable paseo sets when running setup steps; if that
@@ -21,8 +21,8 @@
 //!
 //! If the token file is missing the subcommand is a silent no-op
 //! (with an informational log line). If it contains anything other
-//! than a fine-grained PAT — e.g. a classic `ghp_…` or OAuth `gho_…`
-//! token — the subcommand aborts, since those token types grant far
+//! than a fine-grained PAT - e.g. a classic `ghp_...` or OAuth `gho_...`
+//! token - the subcommand aborts, since those token types grant far
 //! more than the least-privilege goal allows.
 
 use std::path::{Path, PathBuf};
@@ -31,7 +31,7 @@ use anyhow::{bail, Context, Result};
 
 /// Expected prefix for a fine-grained personal access token. Classic
 /// tokens (`ghp_`) and OAuth tokens (`gho_`) are rejected to preserve
-/// the least-privilege property — classic tokens cannot be restricted
+/// the least-privilege property - classic tokens cannot be restricted
 /// to specific repositories or to a subset of repository permissions.
 const FINE_GRAINED_PREFIX: &str = "github_pat_";
 
@@ -169,7 +169,7 @@ fn build_settings_body(token: &str) -> String {
 /// PAT alphabet `[A-Za-z0-9_]`.
 ///
 /// Enforcing this invariant is what lets [`build_settings_body`]
-/// embed the token directly into a JSON template without escaping —
+/// embed the token directly into a JSON template without escaping -
 /// none of the characters in this alphabet need JSON escaping, so a
 /// token that passes this check cannot break out of its string
 /// literal nor inject additional keys.
@@ -192,8 +192,8 @@ fn is_fine_grained_pat_alphabet(token: &str) -> bool {
 /// Resolve the source checkout directory.
 ///
 /// Paseo passes `PASEO_SOURCE_CHECKOUT_PATH` into `worktree.setup`
-/// subprocesses. When the variable is missing — for example when the
-/// subcommand is invoked manually — fall back to the current
+/// subprocesses. When the variable is missing - for example when the
+/// subcommand is invoked manually - fall back to the current
 /// directory so running it from the repo root behaves intuitively.
 ///
 /// # Arguments
@@ -259,7 +259,7 @@ pub fn inject_agent_token<S: InjectAgentTokenSystem>(system: &S) -> Result<()> {
     }
     if !token.starts_with(FINE_GRAINED_PREFIX) {
         bail!(
-            "{} must contain a fine-grained PAT (prefix `{}`); classic `ghp_…` and OAuth `gho_…` tokens are not accepted because they cannot be scoped tightly enough. See CONTRIBUTING.md.",
+            "{} must contain a fine-grained PAT (prefix `{}`); classic `ghp_...` and OAuth `gho_...` tokens are not accepted because they cannot be scoped tightly enough. See CONTRIBUTING.md.",
             token_file.display(),
             FINE_GRAINED_PREFIX
         );

@@ -229,7 +229,7 @@ pub fn update_readme_help<S: ReadmeSystem>(system: &S) -> Result<bool> {
         return Ok(false);
     }
 
-    println!("WARNING - README.md help section is outdated — fixing it.");
+    println!("WARNING - README.md help section is outdated - fixing it.");
     let new_readme = replace_readme_help_section(&readme, &actual_help)?;
     system.write_readme(&new_readme)?;
     println!("INFO - README.md help section has been updated with current --help output.");

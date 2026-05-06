@@ -8,19 +8,19 @@ pinned `mcr.microsoft.com/playwright:<tag>` Docker image.
 
 ## What's in here
 
-- `generate.mjs` — Node ESM entry point. Reads
+- `generate.mjs` - Node ESM entry point. Reads
   `templates/social-preview.html`, fetches GitHub repo + language data,
   renders the card via Playwright + Chromium, and writes PNG to
   `$OUT_PATH` (supplied by the Rust xtask).
-- `package.json` / `package-lock.json` — pin `@playwright/test` to the
+- `package.json` / `package-lock.json` - pin `@playwright/test` to the
   numeric part of the Playwright Docker tag. **Both are committed.**
-- `node_modules/` — gitignored, populated on first invocation.
+- `node_modules/` - gitignored, populated on first invocation.
 
 The generated PNG is written to `target/social-preview/social-preview.png`
-by default — under Cargo's build-artifact directory, which is already
+by default - under Cargo's build-artifact directory, which is already
 `.gitignore`d. Override with `--out <PATH>`.
 
-Language → colour mappings are fetched from
+Language -> colour mappings are fetched from
 [ozh/github-colors][ozh-colors] at runtime (a JSON mirror of
 github-linguist's `languages.yml`), so no colour snapshot lives in this
 repository. Unknown languages fall back to `#cccccc` with a warning.
@@ -55,11 +55,11 @@ GitHub has no API for social preview uploads. To publish a new card:
 
 1. Run `cargo xtask generate-social-preview`.
 2. Open the repository's
-   **Settings → General → Social preview**.
-3. Choose **Edit → Upload an image** and pick
+   **Settings -> General -> Social preview**.
+3. Choose **Edit -> Upload an image** and pick
    `target/social-preview/social-preview.png`.
 
-## Version coupling: Playwright ⇄ Docker tag
+## Version coupling: Playwright <-> Docker tag
 
 The `@playwright/test` version in `package.json` **must** match the
 numeric portion of the Docker image tag pinned in
@@ -73,8 +73,8 @@ together in the same commit. The current pinning is:
 
 ## Template authoring
 
-`templates/social-preview.html` is self-contained — no network fetches,
-no `@media` queries, a single viewport of 1280×640. Designers can open
+`templates/social-preview.html` is self-contained - no network fetches,
+no `@media` queries, a single viewport of 1280x640. Designers can open
 the file directly in a browser to iterate on CSS.
 
 The only placeholders the generator substitutes are the ones listed in

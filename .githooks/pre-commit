@@ -2,6 +2,7 @@
 set -e
 cargo fmt
 cargo lint
+cargo xtask check-typography
 cargo build --workspace --all-targets
 cargo docs
 cargo xtask update-readme-help

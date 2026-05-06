@@ -1,4 +1,4 @@
-//! xtask — developer automation tasks for csshw.
+//! xtask - developer automation tasks for csshw.
 //!
 //! Invoke via `cargo xtask <subcommand>`.
 //! See each subcommand's module for details.
@@ -11,6 +11,7 @@ mod inject_agent_token;
 mod readme;
 mod release;
 mod social_preview;
+mod typography;
 
 use std::path::PathBuf;
 
@@ -61,6 +62,9 @@ enum Command {
     /// agents act with a least-privilege token instead of the user's
     /// full `gh` login. A no-op when `.paseo/gh-token` is absent.
     InjectAgentToken,
+    /// Scan tracked text files for forbidden decorative Unicode
+    /// punctuation and fail with a list of offending locations.
+    CheckTypography,
 }
 
 fn main() -> Result<()> {
@@ -93,6 +97,9 @@ fn main() -> Result<()> {
         }
         Command::InjectAgentToken => {
             inject_agent_token::inject_agent_token(&inject_agent_token::RealSystem)?;
+        }
+        Command::CheckTypography => {
+            typography::check_typography(&typography::RealSystem)?;
         }
     }
     Ok(())

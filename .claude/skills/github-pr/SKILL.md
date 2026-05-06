@@ -1,6 +1,6 @@
 ---
 name: github-pr
-description: Create a GitHub pull request, or work on an existing one — address review comments, push updates, reply to and resolve each unresolved thread.
+description: Create a GitHub pull request, or work on an existing one - address review comments, push updates, reply to and resolve each unresolved thread.
 ---
 
 # GitHub Pull Requests
@@ -10,7 +10,7 @@ feedback** on an existing one.
 
 ## Creating a PR
 
-Create PRs from the commit message — do not re-author the prose in
+Create PRs from the commit message - do not re-author the prose in
 the PR form:
 
 ```sh
@@ -33,7 +33,7 @@ or "handle the review comments".
 
 ### Core rules
 
-- **Reply to every unresolved review comment** — even when the fix
+- **Reply to every unresolved review comment** - even when the fix
   is "done in commit abc123". Never leave a thread silently
   addressed.
 - **Resolve each thread only after** (a) the fix is pushed and
@@ -41,7 +41,7 @@ or "handle the review comments".
 - **Push to update the PR.** Local commits alone do not count.
 - No force-push to `main`. No `--no-verify`. No `git commit --amend`
   to rewrite commits that have already been pushed for review.
-- Commit changes per [`../commit/SKILL.md`](../commit/SKILL.md) —
+- Commit changes per [`../commit/SKILL.md`](../commit/SKILL.md) -
   including the mandatory `Co-authored-by:` trailer.
 
 ### Workflow (run these commands; substitute the placeholders in `<>`)
@@ -90,9 +90,9 @@ gh api graphql -f query='
 Filter client-side to `isResolved == false`. From each unresolved
 thread you need:
 
-- the thread `id` (GraphQL node id) → used to **resolve** the thread
+- the thread `id` (GraphQL node id) -> used to **resolve** the thread
   in step 5.
-- the `databaseId` of the **first** comment in the thread → used to
+- the `databaseId` of the **first** comment in the thread -> used to
   **reply** to the thread in step 4.
 
 #### 3. Make the code changes, commit, push
@@ -118,7 +118,7 @@ gh api --method POST \
   -f body='Fixed in <SHA>. <optional short explanation>.'
 ```
 
-Do **not** use `gh pr comment` — that posts a top-level PR comment,
+Do **not** use `gh pr comment` - that posts a top-level PR comment,
 which does not count as answering the review thread.
 
 #### 5. Resolve each thread
@@ -141,7 +141,7 @@ The mutation returns `isResolved: true` on success.
 
 Re-run the step-2 query. Every thread you addressed should now have
 `isResolved: true`. Any that remain unresolved either still need a
-fix or were intentionally deferred — never silently skip one.
+fix or were intentionally deferred - never silently skip one.
 
 ### Anti-patterns
 

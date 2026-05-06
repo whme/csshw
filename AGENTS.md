@@ -1,4 +1,4 @@
-# csshW — Agent Instructions
+# csshW - Agent Instructions
 
 ## Project Overview
 
@@ -14,19 +14,19 @@ multiple hosts simultaneously with synchronized keystroke distribution.
 
 ## Key Design Philosophy
 
-- **Windows-Specific**: Not designed for cross-platform compatibility — embraces Windows APIs directly
+- **Windows-Specific**: Not designed for cross-platform compatibility - embraces Windows APIs directly
 - **User Experience**: Automatic configuration generation, sensible defaults, graceful degradation
 - **Configuration-Driven**: TOML-based configuration with auto-generation of defaults
 - **Safety First**: Extensive use of Result types and proper error handling
 
 ## Project Structure
 
-- **Binary**: `csshw.exe` — Main executable with CLI interface (`src/main.rs`, `src/cli.rs`)
-- **Library**: `csshw_lib` — Core functionality (`src/lib.rs`)
+- **Binary**: `csshw.exe` - Main executable with CLI interface (`src/main.rs`, `src/cli.rs`)
+- **Library**: `csshw_lib` - Core functionality (`src/lib.rs`)
 - **Modules**: `src/client/`, `src/daemon/`, `src/serde/`, `src/utils/`
 - **Tests**: `src/tests/` with component-based organization (`test_*.rs` naming)
-- **xtask**: `xtask/` — Developer automation tasks (README checks, release, changelog, social preview)
-- **Config**: `.config/` — grouped, shared single-line marker files consumed
+- **xtask**: `xtask/` - Developer automation tasks (README checks, release, changelog, social preview)
+- **Config**: `.config/` - grouped, shared single-line marker files consumed
   by both `xtask` and CI. Currently holds `.config/coverage/` (pinned
   nightly toolchain, pinned Python tools `diff-cover` / `pycobertura`, and
   the coverage ignore-filename regex). Filenames follow
@@ -40,17 +40,39 @@ cargo fmt                   # format (run before submitting)
 cargo lint                  # clippy (alias defined in .cargo/config.toml)
 cargo test                  # unit + integration tests
 cargo doc-tests             # documentation tests
+cargo xtask check-typography # ASCII-punctuation lint
 ```
 
 Always run `cargo fmt`, `cargo lint`, and both test commands before considering any task complete.
 
+## ASCII-Only Punctuation
+
+Do NOT use decorative or "smart" Unicode punctuation anywhere in the
+repo - not in code, comments, docstrings, commit messages, PR
+descriptions, or markdown docs. Use the ASCII equivalent:
+
+- em-dash and en-dash -> single `-` (NEVER `--`)
+- smart quotes        -> `'` or `"`
+- ellipsis            -> `...`
+- arrows              -> `->`, `<-`, `=>`, etc.
+- bullet / middle-dot -> `-` or `*`
+- non-breaking space  -> regular space
+- math glyphs         -> ASCII operators (`x`, `/`, `>=`, `<=`, `!=`)
+
+Emoji in user-visible output (e.g. CI workflow logs) are fine.
+
+This is enforced by `cargo xtask check-typography`, which runs in the
+pre-commit hook and CI. If the check fails, fix the offending
+characters - do NOT add to the allowlist.
+
 ## Code Standards
 
-- **Document everything**: modules, functions, structs, constants — no exceptions
+- **Document everything**: modules, functions, structs, constants - no exceptions
 - **Minimize inline comments**: comments explain *why*, never *what*
 - **Module-level docs**: use `//!` with `#![doc(html_no_source)]`
 - **Function docs**: include purpose, `# Arguments`, `# Returns`, and `# Examples` sections
 - **Document panics and error scenarios explicitly**
+- **ASCII-only punctuation**: see the section above; this is enforced in CI
 
 ## Development Patterns
 
@@ -72,8 +94,8 @@ Always run `cargo fmt`, `cargo lint`, and both test commands before considering 
 ## Windows-Specific Implementation
 
 ### String Conversion
-- **Rust → Windows API**: `OsString::encode_wide()` for UTF-16 encoding
-- **Windows API → Rust**: `to_string_lossy()` for safe conversion back
+- **Rust -> Windows API**: `OsString::encode_wide()` for UTF-16 encoding
+- **Windows API -> Rust**: `to_string_lossy()` for safe conversion back
 - Always ensure proper null termination for C-style strings
 
 ### Windows API Integration
@@ -86,7 +108,7 @@ Always run `cargo fmt`, `cargo lint`, and both test commands before considering 
 
 - **Naming**: `test_*.rs` files in `src/tests/`, descriptive test function names
 - **Pattern**: Arrange-Act-Assert for all tests
-- **Mocking**: Use `mockall` for all Windows API interactions — tests must have zero side-effects on the system
+- **Mocking**: Use `mockall` for all Windows API interactions - tests must have zero side-effects on the system
 - **No external state**: tests must not modify registry, filesystem, or process state
 
 ## Commit Messages
@@ -117,5 +139,6 @@ Before considering any task complete:
 2. All tests pass (`cargo doc-tests && cargo test`)
 3. Code is formatted (`cargo fmt`)
 4. No clippy warnings (`cargo lint`)
-5. All interactions with external systems are mocked in tests
-6. Configuration changes maintain backwards compatibility
+5. No forbidden Unicode (`cargo xtask check-typography`)
+6. All interactions with external systems are mocked in tests
+7. Configuration changes maintain backwards compatibility

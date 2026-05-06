@@ -103,7 +103,7 @@ unsafe impl Send for Client {}
 /// lookup table.
 ///
 /// The ordered list preserves client window placement semantics, while the
-/// index enables O(1) lookup by process id — required by the pipe server task
+/// index enables O(1) lookup by process id - required by the pipe server task
 /// during PID correlation and future per-client pipe server control.
 struct Clients {
     /// Ordered list of clients; order matches launch order and is used for
@@ -137,7 +137,7 @@ impl Clients {
         let index = self.list.len();
         assert!(
             !self.pid_index.contains_key(&client.process_id),
-            "Duplicate client PID {} — daemon bookkeeping broken",
+            "Duplicate client PID {} - daemon bookkeeping broken",
             client.process_id,
         );
         self.pid_index.insert(client.process_id, index);
@@ -982,8 +982,8 @@ fn launch_client_console<W: WindowsApi>(
 
 /// Probe `server` with a non-blocking keep-alive write to detect a closed pipe.
 ///
-/// Writes a single [`TAG_KEEP_ALIVE`] byte — the zero-payload keep-alive frame
-/// of the daemon-to-client protocol — so the client side recognises and
+/// Writes a single [`TAG_KEEP_ALIVE`] byte - the zero-payload keep-alive frame
+/// of the daemon-to-client protocol - so the client side recognises and
 /// discards it. Treated as alive on success or `WouldBlock`; any other error
 /// means the pipe is closed.
 ///
@@ -1018,7 +1018,7 @@ fn probe_pipe_alive(server: &NamedPipeServer) -> bool {
 /// expected to write its 4 byte little-endian process id into the pipe. The
 /// routine looks up the [`Client`] with that PID in the daemon's `clients`
 /// collection; if it is not found, the routine logs an error and terminates
-/// the daemon — an unknown PID indicates broken daemon bookkeeping and is
+/// the daemon - an unknown PID indicates broken daemon bookkeeping and is
 /// unrecoverable.
 ///
 /// Forwarding: on every broadcast record, the routine matches on the
@@ -1064,7 +1064,7 @@ async fn named_pipe_server_routine(
         Some(client) => Arc::clone(&client.pipe_server_state),
         None => {
             error!(
-                "Named pipe server received unknown PID {} — daemon bookkeeping broken",
+                "Named pipe server received unknown PID {} - daemon bookkeeping broken",
                 pid
             );
             // In production this exits the daemon; in tests process::exit would kill
@@ -1072,7 +1072,7 @@ async fn named_pipe_server_routine(
             #[cfg(not(test))]
             std::process::exit(1);
             #[cfg(test)]
-            panic!("Unknown client PID {} — daemon bookkeeping broken", pid);
+            panic!("Unknown client PID {} - daemon bookkeeping broken", pid);
         }
     };
 
@@ -1093,7 +1093,7 @@ async fn named_pipe_server_routine(
         };
         // Only forward to the client if its pipe server state allows it.
         // Copy the state out so the mutex guard does not span the `.await`
-        // below — `MutexGuard` is not `Send` and would prevent the routine
+        // below - `MutexGuard` is not `Send` and would prevent the routine
         // from being spawned on a multi-threaded runtime.
         let state = *pipe_server_state.lock().unwrap();
         match state {

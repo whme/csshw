@@ -1,18 +1,18 @@
 <!doctype html>
 <!--
-  Social preview card — 1280×640.
+  Social preview card - 1280x640.
 
   Rendered to PNG by xtask/social-preview/generate.mjs via headless
   Chromium inside the pinned Playwright Docker image.
 
   This file is the source of truth for the visual design. The generator
-  replaces the `{{PLACEHOLDERS}}` below by plain string substitution —
+  replaces the `{{PLACEHOLDERS}}` below by plain string substitution -
   nothing else. Designers can open this file directly in a browser (with
   placeholders left literal) to iterate on CSS without running the xtask.
 
   Constraints:
    - Do not fetch anything from the network.
-   - Do not use @media queries — viewport is fixed at 1280×640.
+   - Do not use @media queries - viewport is fixed at 1280x640.
    - Do not add a new placeholder without also teaching generate.mjs about
      it; the contract is intentionally narrow.
 -->
@@ -187,7 +187,7 @@
       (function () {
         // JSON.parse handles both valid payloads and the designer
         // fallback path (template opened directly with the literal
-        // {{LANGUAGES_JSON}} placeholder) — the latter throws and we
+        // {{LANGUAGES_JSON}} placeholder) - the latter throws and we
         // silently leave the bar empty. A stringly-typed guard like
         // `raw === "{{LANGUAGES_JSON}}"` would itself be substituted by
         // generate.mjs, corrupting this script's syntax.
