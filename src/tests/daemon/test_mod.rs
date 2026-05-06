@@ -13,8 +13,8 @@ mod daemon_test {
 
     use crate::{
         daemon::{
-            named_pipe_server_routine, resolve_cluster_tags, Client, Clients, HWNDWrapper,
-            PipeServerState,
+            named_pipe_server_routine, resolve_cluster_tags, toggle_pipe_server_states, Client,
+            Clients, HWNDWrapper, PipeServerState,
         },
         protocol::{
             serialization::serialize_pid, FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH,
@@ -614,5 +614,62 @@ mod daemon_test {
         let hostnames_after_retain: Vec<&str> =
             clients.iter().map(|c| return c.hostname.as_str()).collect();
         assert_eq!(hostnames_after_retain, vec!["host-a", "host-c"]);
+    }
+
+    /// Builds a [`Client`] with the given PID and initial [`PipeServerState`].
+    fn make_client_with_state(pid: u32, state: PipeServerState) -> Client {
+        return Client {
+            hostname: format!("host-{pid}"),
+            window_handle: HWND(std::ptr::null_mut()),
+            process_handle: HANDLE::default(),
+            process_id: pid,
+            pipe_server_state: Arc::new(Mutex::new(state)),
+        };
+    }
+
+    /// Verifies that [`toggle_pipe_server_states`] flips each client's
+    /// [`PipeServerState`] independently and is its own inverse over two
+    /// invocations.
+    #[test]
+    fn test_toggle_pipe_server_states_flips_each_client_independently() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, PipeServerState::Enabled));
+        clients.push(make_client_with_state(2, PipeServerState::Disabled));
+        clients.push(make_client_with_state(3, PipeServerState::Enabled));
+        clients.push(make_client_with_state(4, PipeServerState::Disabled));
+
+        let snapshot = |c: &Clients| -> Vec<PipeServerState> {
+            return c
+                .iter()
+                .map(|client| return *client.pipe_server_state.lock().unwrap())
+                .collect();
+        };
+
+        let initial = snapshot(&clients);
+        assert_eq!(
+            initial,
+            vec![
+                PipeServerState::Enabled,
+                PipeServerState::Disabled,
+                PipeServerState::Enabled,
+                PipeServerState::Disabled,
+            ]
+        );
+
+        // First press of `t`: every client flips.
+        toggle_pipe_server_states(&clients);
+        assert_eq!(
+            snapshot(&clients),
+            vec![
+                PipeServerState::Disabled,
+                PipeServerState::Enabled,
+                PipeServerState::Disabled,
+                PipeServerState::Enabled,
+            ]
+        );
+
+        // Second press of `t`: every client flips back to its initial state.
+        toggle_pipe_server_states(&clients);
+        assert_eq!(snapshot(&clients), initial);
     }
 }
