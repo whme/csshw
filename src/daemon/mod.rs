@@ -186,6 +186,26 @@ impl std::ops::Deref for Clients {
     }
 }
 
+/// Flips each client's [`PipeServerState`] independently, so every
+/// `Enabled` client becomes `Disabled` and vice versa.
+///
+/// Calling this twice in a row restores the original state of every
+/// client.
+///
+/// # Arguments
+///
+/// * `clients` - The collection of clients whose pipe-server states should
+///   be flipped.
+fn toggle_pipe_server_states(clients: &Clients) {
+    for client in clients.iter() {
+        let mut state = client.pipe_server_state.lock().unwrap();
+        *state = match *state {
+            PipeServerState::Enabled => PipeServerState::Disabled,
+            PipeServerState::Disabled => PipeServerState::Enabled,
+        };
+    }
+}
+
 /// Consumes the collection and yields its clients in insertion order.
 ///
 /// Used when merging a freshly launched [`Clients`] batch into an existing
@@ -528,12 +548,7 @@ impl<'a> Daemon<'a> {
                     // TODO: Select windows
                 }
                 (VK_T, 0) => {
-                    for client in clients.lock().unwrap().iter() {
-                        let mut state = client.pipe_server_state.lock().unwrap();
-                        if *state == PipeServerState::Enabled {
-                            *state = PipeServerState::Disabled;
-                        }
-                    }
+                    toggle_pipe_server_states(&clients.lock().unwrap());
                     self.quit_control_mode(windows_api);
                 }
                 (VK_N, 0) => {
