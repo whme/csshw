@@ -189,9 +189,8 @@ impl std::ops::Deref for Clients {
 /// Flips each client's [`PipeServerState`] independently, so every
 /// `Enabled` client becomes `Disabled` and vice versa.
 ///
-/// Mirrors the per-window toggle implemented by csshX's master-menu `t`
-/// action. Calling this twice in a row restores the original state of
-/// every client.
+/// Calling this twice in a row restores the original state of every
+/// client.
 ///
 /// # Arguments
 ///
