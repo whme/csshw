@@ -83,13 +83,12 @@ struct Client {
     process_id: u32,
     /// Authoritative source for this client's [`ClientState`].
     ///
-    /// The daemon owns the [`watch::Sender`] and uses it to broadcast new
-    /// state values; the assigned pipe-server task subscribes upon
-    /// successful PID correlation and forwards every change to the client
-    /// over the named pipe. Wrapped in [`Arc`] because [`watch::Sender`]
-    /// itself is not [`Clone`] and the [`Client`] struct must remain
-    /// cloneable.
-    state_tx: Arc<watch::Sender<ClientState>>,
+    /// The daemon broadcasts new state values through the [`watch::Sender`];
+    /// the assigned pipe-server task subscribes upon successful PID
+    /// correlation and forwards every change to the client over the named
+    /// pipe. [`watch::Sender`] is itself [`Clone`], so cloning a [`Client`]
+    /// produces another sender that drives the same channel.
+    state_tx: watch::Sender<ClientState>,
 }
 
 unsafe impl Send for Client {}
@@ -523,36 +522,30 @@ impl<'a> Daemon<'a> {
                     // TODO: Select windows
                 }
                 (VK_T, 0) => {
-                    let clients_guard = clients.lock().unwrap();
                     // Snapshot each client's current state before flipping so
                     // every client toggles independently and the loop does not
                     // observe its own writes.
-                    let toggles: Vec<(u32, ClientState)> = clients_guard
-                        .iter()
-                        .map(|client| {
-                            let flipped = match *client.state_tx.borrow() {
-                                ClientState::Active => ClientState::Disabled,
-                                ClientState::Disabled => ClientState::Active,
-                            };
-                            return (client.process_id, flipped);
-                        })
-                        .collect();
-                    for (pid, state) in toggles {
-                        self.set_client_state(&clients_guard, pid, state);
-                    }
-                    drop(clients_guard);
+                    self.update_client_states(clients, |clients_guard| {
+                        return clients_guard
+                            .iter()
+                            .map(|client| {
+                                let flipped = match *client.state_tx.borrow() {
+                                    ClientState::Active => ClientState::Disabled,
+                                    ClientState::Disabled => ClientState::Active,
+                                };
+                                return (client.process_id, flipped);
+                            })
+                            .collect();
+                    });
                     self.quit_control_mode(windows_api);
                 }
                 (VK_N, 0) => {
-                    let clients_guard = clients.lock().unwrap();
-                    let pids: Vec<u32> = clients_guard
-                        .iter()
-                        .map(|client| return client.process_id)
-                        .collect();
-                    for pid in pids {
-                        self.set_client_state(&clients_guard, pid, ClientState::Active);
-                    }
-                    drop(clients_guard);
+                    self.update_client_states(clients, |clients_guard| {
+                        return clients_guard
+                            .iter()
+                            .map(|client| return (client.process_id, ClientState::Active))
+                            .collect();
+                    });
                     self.quit_control_mode(windows_api);
                 }
                 (VK_C, 0) => {
@@ -741,16 +734,40 @@ impl<'a> Daemon<'a> {
         }
     }
 
+    /// Apply a batch of [`ClientState`] updates while holding the
+    /// [`Clients`] mutex exactly once.
+    ///
+    /// Locks `clients`, invokes `f` with the guard so the caller can build
+    /// the list of `(pid, new_state)` pairs while observing a stable
+    /// snapshot, applies each update via [`Daemon::set_client_state`], and
+    /// releases the guard. Centralises the lock-once / snapshot / apply /
+    /// release pattern shared by the `[t]oggle enabled` and `e[n]able all`
+    /// control-mode handlers.
+    ///
+    /// # Arguments
+    ///
+    /// * `clients` - Shared client collection.
+    /// * `f`       - Closure that receives a `&Clients` guard and returns
+    ///               the `(pid, new_state)` updates to broadcast.
+    fn update_client_states<F>(&self, clients: &Mutex<Clients>, f: F)
+    where
+        F: FnOnce(&Clients) -> Vec<(u32, ClientState)>,
+    {
+        let clients_guard = clients.lock().unwrap();
+        let updates = f(&clients_guard);
+        for (pid, state) in updates {
+            self.set_client_state(&clients_guard, pid, state);
+        }
+    }
+
     /// Push a new [`ClientState`] to the client identified by `pid`.
     ///
     /// Looks the client up by PID and broadcasts the new state through its
     /// [`watch::Sender`]. The pipe-server task subscribed to that sender
     /// observes the change and forwards a [`crate::protocol::TAG_STATE_CHANGE`]
-    /// frame to the client over the named pipe.
-    ///
-    /// Currently unused; provided so the parallel issue #179 follow-up that
-    /// introduces `ClientState::Disabled` (and the control-mode binding to
-    /// toggle it) has a stable call site to plug into.
+    /// frame to the client over the named pipe. Called from the
+    /// control-mode handlers for `[t]oggle enabled` and `e[n]able all` via
+    /// [`Daemon::update_client_states`].
     ///
     /// # Arguments
     ///
@@ -759,11 +776,13 @@ impl<'a> Daemon<'a> {
     /// * `state`   - The new state to broadcast.
     fn set_client_state(&self, clients: &Clients, pid: u32, state: ClientState) {
         if let Some(client) = clients.get_by_pid(pid) {
-            // `send` returns Err only if there are no receivers, which can
-            // happen briefly between PID correlation and pipe-server task
-            // setup. Either way the next subscriber sees the latest value
-            // via `borrow`, so the error is intentionally ignored.
-            let _ = client.state_tx.send(state);
+            // `send_replace` always updates the stored value (unlike `send`,
+            // which returns `Err` and leaves the value untouched when there
+            // are no active receivers). This matters during the brief window
+            // between [`Client`] construction and the pipe-server task's
+            // `subscribe()`: any state change pushed in that window must
+            // still be visible to the next subscriber via `borrow`.
+            client.state_tx.send_replace(state);
         }
     }
 
@@ -919,7 +938,7 @@ async fn launch_clients<W: WindowsApi + 'static + Clone>(
                     window_handle,
                     process_handle,
                     process_id,
-                    state_tx: Arc::new(state_tx),
+                    state_tx,
                 },
             );
         });
@@ -1505,7 +1524,7 @@ fn defer_windows<W: WindowsApi>(windows_api: &W, clients: &[Client], daemon_hand
         window_handle: *daemon_handle,
         process_handle: HANDLE::default(),
         process_id: 0,
-        state_tx: Arc::new(watch::channel(ClientState::Active).0),
+        state_tx: watch::channel(ClientState::Active).0,
     }]) {
         let placement = match windows_api.get_window_placement(client.window_handle) {
             Ok(placement) => placement,

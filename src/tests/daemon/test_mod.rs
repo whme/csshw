@@ -49,7 +49,7 @@ mod daemon_test {
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: pid,
-            state_tx: Arc::new(watch::channel(ClientState::Active).0),
+            state_tx: watch::channel(ClientState::Active).0,
         });
         return Arc::new(Mutex::new(clients));
     }
@@ -209,14 +209,13 @@ mod daemon_test {
         let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
         let clients = make_clients_with_pid(TEST_PID);
         // Grab the watch sender so we can later trigger a state change push.
-        let state_tx = Arc::clone(
-            &clients
-                .lock()
-                .unwrap()
-                .get_by_pid(TEST_PID)
-                .unwrap()
-                .state_tx,
-        );
+        let state_tx = clients
+            .lock()
+            .unwrap()
+            .get_by_pid(TEST_PID)
+            .unwrap()
+            .state_tx
+            .clone();
         send_pid(&named_pipe_client, TEST_PID).await?;
         let future = tokio::spawn(async move {
             named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
@@ -401,15 +400,15 @@ mod daemon_test {
     /// transitions.
     fn make_clients_with_pid_and_state(
         pid: u32,
-    ) -> (Arc<Mutex<Clients>>, Arc<watch::Sender<ClientState>>) {
-        let state_tx = Arc::new(watch::channel(ClientState::Active).0);
+    ) -> (Arc<Mutex<Clients>>, watch::Sender<ClientState>) {
+        let state_tx = watch::channel(ClientState::Active).0;
         let mut clients = Clients::new();
         clients.push(Client {
             hostname: format!("test-host-{pid}"),
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: pid,
-            state_tx: Arc::clone(&state_tx),
+            state_tx: state_tx.clone(),
         });
         return (Arc::new(Mutex::new(clients)), state_tx);
     }
@@ -676,7 +675,7 @@ mod daemon_test {
                 window_handle: HWND(std::ptr::null_mut()),
                 process_handle: HANDLE::default(),
                 process_id: pid,
-                state_tx: Arc::new(watch::channel(ClientState::Active).0),
+                state_tx: watch::channel(ClientState::Active).0,
             };
         };
         clients.push(make_client(1000));
@@ -694,21 +693,21 @@ mod daemon_test {
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: 1000,
-            state_tx: Arc::new(watch::channel(ClientState::Active).0),
+            state_tx: watch::channel(ClientState::Active).0,
         };
         let client_b = Client {
             hostname: "host-b".to_owned(),
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: 2000,
-            state_tx: Arc::new(watch::channel(ClientState::Active).0),
+            state_tx: watch::channel(ClientState::Active).0,
         };
         let client_c = Client {
             hostname: "host-c".to_owned(),
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: 3000,
-            state_tx: Arc::new(watch::channel(ClientState::Active).0),
+            state_tx: watch::channel(ClientState::Active).0,
         };
 
         clients.push(client_a);
@@ -744,7 +743,7 @@ mod daemon_test {
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: pid,
-            state_tx: Arc::new(watch::channel(state).0),
+            state_tx: watch::channel(state).0,
         };
     }
 

@@ -150,25 +150,45 @@ mod client_state_test {
     /// byte-level serializer / deserializer.
     const ALL_VARIANTS: &[ClientState] = &[ClientState::Active, ClientState::Disabled];
 
-    /// Compile-time guard: every [`ClientState`] variant must appear in
-    /// [`ALL_VARIANTS`]. The match has no wildcard arm, so adding a new
-    /// variant without listing it here fails to compile.
-    #[allow(dead_code)]
-    fn assert_listed(state: ClientState) {
+    /// Maps each [`ClientState`] variant to a unique single-bit mask.
+    ///
+    /// The exhaustive `match` (no wildcard) forces an update on any new
+    /// variant, where the developer must allocate a fresh bit. The bit
+    /// allocations are then OR-ed together to form the canonical
+    /// [`EXPECTED_VARIANTS_MASK`].
+    const fn variant_bit(state: ClientState) -> u32 {
         match state {
-            ClientState::Active => {
-                assert!(ALL_VARIANTS.contains(&ClientState::Active));
-            }
-            ClientState::Disabled => {
-                assert!(ALL_VARIANTS.contains(&ClientState::Disabled));
-            }
+            ClientState::Active => return 1 << 0,
+            ClientState::Disabled => return 1 << 1,
         }
     }
+
+    /// Bitmask of every known [`ClientState`] variant. Adding a variant
+    /// requires extending [`variant_bit`] AND OR-ing the new bit in here.
+    const EXPECTED_VARIANTS_MASK: u32 =
+        variant_bit(ClientState::Active) | variant_bit(ClientState::Disabled);
+
+    /// Compile-time guard: [`ALL_VARIANTS`] must list every [`ClientState`]
+    /// variant. Adding a variant fails to compile in [`variant_bit`] until
+    /// a fresh bit is allocated and OR-ed into [`EXPECTED_VARIANTS_MASK`];
+    /// once both are updated, the const evaluation below panics unless
+    /// [`ALL_VARIANTS`] was also extended to include the new variant.
+    const _: () = {
+        let mut seen: u32 = 0;
+        let mut i = 0;
+        while i < ALL_VARIANTS.len() {
+            seen |= variant_bit(ALL_VARIANTS[i]);
+            i += 1;
+        }
+        assert!(
+            seen == EXPECTED_VARIANTS_MASK,
+            "ALL_VARIANTS does not cover every ClientState variant",
+        );
+    };
 
     #[test]
     fn test_client_state_round_trip_all_variants() {
         for &state in ALL_VARIANTS {
-            assert_listed(state);
             let byte = serialize_client_state(state);
             assert_eq!(deserialize_client_state(byte), state);
         }
