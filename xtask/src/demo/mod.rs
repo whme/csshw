@@ -416,20 +416,27 @@ impl DemoSystem for RealSystem {
         if name.ends_with(".zip") || name.ends_with(".nupkg") {
             let archive_str = archive.to_string_lossy().replace('\'', "''");
             let dest_str = dest_dir.to_string_lossy().replace('\'', "''");
-            // Expand-Archive is idempotent only with -Force; we
-            // already create the dest fresh in callers so -Force is
-            // safe.
+            // PowerShell's `Expand-Archive` validates by file
+            // extension and refuses anything other than `.zip` (the
+            // Carnac release ships as `.nupkg`, which is a zip).
+            // Drop down to `System.IO.Compression.ZipFile`, which is
+            // format-only. The `Add-Type` call is a no-op if the
+            // assembly is already loaded.
             let script = format!(
                 "$ProgressPreference='SilentlyContinue';\
-                 Expand-Archive -Force -LiteralPath '{archive_str}' \
-                 -DestinationPath '{dest_str}'"
+                 Add-Type -AssemblyName System.IO.Compression.FileSystem;\
+                 [System.IO.Compression.ZipFile]::ExtractToDirectory(\
+                 '{archive_str}','{dest_str}',$true)"
             );
             let status = std::process::Command::new("powershell")
                 .args(["-NoProfile", "-NonInteractive", "-Command", &script])
                 .status()
                 .map_err(|e| anyhow::anyhow!("failed to spawn powershell for extract: {e}"))?;
             if !status.success() {
-                anyhow::bail!("Expand-Archive {} failed: {status}", archive.display());
+                anyhow::bail!(
+                    "ZipFile::ExtractToDirectory {} failed: {status}",
+                    archive.display()
+                );
             }
             return Ok(());
         }
