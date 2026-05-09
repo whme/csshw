@@ -8,12 +8,12 @@
 use crate::demo::{DemoEnv, WindowRect};
 
 #[test]
-fn test_demo_env_default_is_local() {
-    // The default for `--env` lives in `main.rs` as `DemoEnv::Local`.
-    // Pin that here so renaming the variant later flags the
-    // documentation in the plan as out of date.
-    let env = DemoEnv::Local;
-    assert!(matches!(env, DemoEnv::Local));
+fn test_demo_env_default_is_sandbox() {
+    // The default for `--env` lives in `main.rs` as
+    // `DemoEnv::Sandbox`. Pin that here so renaming the variant
+    // later flags the README + the v1 plan as out of date.
+    let env = DemoEnv::Sandbox;
+    assert!(matches!(env, DemoEnv::Sandbox));
 }
 
 #[test]

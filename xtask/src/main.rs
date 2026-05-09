@@ -69,11 +69,14 @@ enum Command {
     /// Record an automated demo of csshw and produce `target/demo/csshw.gif`.
     ///
     /// Two providers are wired:
+    /// - `--env sandbox` (default) boots a fresh Windows Sandbox VM
+    ///   with a normalised desktop and an optional Carnac keystroke
+    ///   overlay. Requires the `Containers-DisposableClientVM`
+    ///   Windows feature.
     /// - `--env local` runs on the caller's interactive desktop
-    ///   session; the user must step away while it records.
-    /// - `--env sandbox` boots a fresh Windows Sandbox VM with a
-    ///   normalised desktop and an optional Carnac keystroke overlay.
-    ///   Requires the `Containers-DisposableClientVM` Windows feature.
+    ///   session; the only path that works in CI runners (no nested
+    ///   virtualisation) and a useful local-iteration shortcut while
+    ///   the sandbox warm-up overhead is paid.
     ///
     /// ffmpeg, gifski, and Carnac are SHA-pinned and downloaded into
     /// `target/demo/bin/` on first use; subsequent runs hit the warm
@@ -83,15 +86,17 @@ enum Command {
         /// `<workspace>/target/demo/csshw.gif`.
         #[arg(long)]
         out: Option<PathBuf>,
-        /// Recording environment provider.
-        #[arg(long, value_enum, default_value_t = demo::DemoEnv::Local)]
+        /// Recording environment provider. Defaults to `sandbox` so
+        /// `cargo xtask record-demo` is hermetic on a developer
+        /// workstation; CI must pass `--env local` explicitly.
+        #[arg(long, value_enum, default_value_t = demo::DemoEnv::Sandbox)]
         env: demo::DemoEnv,
         /// Skip ffmpeg capture; useful for iterating on the demo
         /// script without burning a recording cycle.
         #[arg(long)]
         no_record: bool,
-        /// Skip the keystroke overlay. v0 always behaves as if this
-        /// is set; the flag exists so v1+ scripts can opt out.
+        /// Skip the Carnac keystroke overlay. Has no effect with
+        /// `--env local` (Carnac is sandbox-only).
         #[arg(long)]
         no_overlay: bool,
     },

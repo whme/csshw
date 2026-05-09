@@ -47,17 +47,19 @@ use clap::ValueEnum;
 /// invoking the shared [`driver`].
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum DemoEnv {
-    /// Run on the caller's own interactive desktop session. v0 default.
-    /// No isolation - the caller is expected to step away while the
-    /// demo records.
+    /// Run on the caller's own interactive desktop session. No
+    /// isolation - the caller is expected to step away while the
+    /// demo records. The only provider that works in CI: GitHub-
+    /// hosted runners lack the nested virtualisation that Windows
+    /// Sandbox requires, so CI workflows must pass `--env local`
+    /// explicitly.
     Local,
-    /// Run inside a fresh Windows Sandbox VM. Mounts the workspace
-    /// read-only, mounts a writable output folder for the GIF, mounts
-    /// the cached vendored binaries, and runs the demo via a
-    /// `LogonCommand` that boots
-    /// `xtask/demo-assets/sandbox-bootstrap.ps1`. Cannot run on
-    /// GitHub-hosted runners because they lack nested virtualisation;
-    /// `--env ci-runner` (v2) is the canonical recording path.
+    /// Run inside a fresh Windows Sandbox VM. Default since v1 so
+    /// `cargo xtask record-demo` is hermetic on a developer
+    /// workstation. Mounts the workspace read-only, mounts a
+    /// writable output folder for the GIF, mounts the cached
+    /// vendored binaries, and runs the demo via a `LogonCommand`
+    /// that boots `xtask/demo-assets/sandbox-bootstrap.ps1`.
     Sandbox,
 }
 

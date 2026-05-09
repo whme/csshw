@@ -165,13 +165,16 @@ drives a typed Rust DSL against synthesised Windows input, captures
 the desktop with vendored ffmpeg + gifski, and emits
 `target/demo/csshw.gif`. The recorder ships with two `--env`
 providers:
-- `--env local` (default) runs on the caller's interactive session.
-  Step away while it records; foreground stealing is part of the demo.
-- `--env sandbox` boots a fresh Windows Sandbox VM, normalises the
-  desktop (wallpaper, console font, DPI), optionally launches
-  [Carnac](https://github.com/Code52/carnac) for the keystroke overlay,
-  runs the demo, and copies the GIF back to the host. Requires the
-  optional `Containers-DisposableClientVM` Windows feature.
+- `--env sandbox` (default) boots a fresh Windows Sandbox VM,
+  normalises the desktop (wallpaper, console font, DPI), optionally
+  launches [Carnac](https://github.com/Code52/carnac) for the
+  keystroke overlay, runs the demo, and copies the GIF back to the
+  host. Requires the optional `Containers-DisposableClientVM`
+  Windows feature.
+- `--env local` runs on the caller's interactive session - step
+  away while it records, foreground stealing is part of the demo.
+  This is the only path that works in CI: GitHub-hosted runners
+  lack the nested virtualisation Windows Sandbox needs.
 
 The vendored binaries (ffmpeg, gifski, Carnac) are SHA-pinned and
 downloaded once into `target/demo/bin/` on first use. Pass
