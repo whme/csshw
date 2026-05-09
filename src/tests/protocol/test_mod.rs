@@ -141,13 +141,84 @@ mod deserialization_test {
     }
 }
 
+mod client_state_test {
+    use crate::protocol::deserialization::deserialize_client_state;
+    use crate::protocol::serialization::serialize_client_state;
+    use crate::protocol::ClientState;
+
+    /// Round-trip list of every [`ClientState`] variant through the
+    /// byte-level serializer / deserializer.
+    const ALL_VARIANTS: &[ClientState] = &[ClientState::Active, ClientState::Disabled];
+
+    /// Maps each [`ClientState`] variant to a unique single-bit mask.
+    ///
+    /// The exhaustive `match` (no wildcard) forces an update on any new
+    /// variant, where the developer must allocate a fresh bit. The bit
+    /// allocations are then OR-ed together to form the canonical
+    /// [`EXPECTED_VARIANTS_MASK`].
+    const fn variant_bit(state: ClientState) -> u32 {
+        match state {
+            ClientState::Active => return 1 << 0,
+            ClientState::Disabled => return 1 << 1,
+        }
+    }
+
+    /// Bitmask of every known [`ClientState`] variant. Adding a variant
+    /// requires extending [`variant_bit`] AND OR-ing the new bit in here.
+    const EXPECTED_VARIANTS_MASK: u32 =
+        variant_bit(ClientState::Active) | variant_bit(ClientState::Disabled);
+
+    /// Compile-time guard: [`ALL_VARIANTS`] must list every [`ClientState`]
+    /// variant. Adding a variant fails to compile in [`variant_bit`] until
+    /// a fresh bit is allocated and OR-ed into [`EXPECTED_VARIANTS_MASK`];
+    /// once both are updated, the const evaluation below panics unless
+    /// [`ALL_VARIANTS`] was also extended to include the new variant.
+    const _: () = {
+        let mut seen: u32 = 0;
+        let mut i = 0;
+        while i < ALL_VARIANTS.len() {
+            seen |= variant_bit(ALL_VARIANTS[i]);
+            i += 1;
+        }
+        assert!(
+            seen == EXPECTED_VARIANTS_MASK,
+            "ALL_VARIANTS does not cover every ClientState variant",
+        );
+    };
+
+    #[test]
+    fn test_client_state_round_trip_all_variants() {
+        for &state in ALL_VARIANTS {
+            let byte = serialize_client_state(state);
+            assert_eq!(deserialize_client_state(byte), state);
+        }
+    }
+
+    #[test]
+    fn test_serialize_client_state_active_byte() {
+        assert_eq!(serialize_client_state(ClientState::Active), 0u8);
+    }
+
+    #[test]
+    fn test_serialize_client_state_disabled_byte() {
+        assert_eq!(serialize_client_state(ClientState::Disabled), 1u8);
+    }
+
+    #[test]
+    #[should_panic(expected = "Unknown ClientState byte")]
+    fn test_deserialize_client_state_unknown_panics() {
+        let _ = deserialize_client_state(0xAB);
+    }
+}
+
 mod framed_message_test {
     use super::deserialization_test::Equality;
     use super::*;
     use crate::protocol::{
         deserialization::parse_daemon_to_client_messages,
-        serialization::serialize_daemon_to_client_message, DaemonToClientMessage,
-        FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH, TAG_INPUT_RECORD, TAG_KEEP_ALIVE,
+        serialization::serialize_daemon_to_client_message, ClientState, DaemonToClientMessage,
+        FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH, FRAMED_STATE_CHANGE_LENGTH,
+        TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
     };
 
     fn unwrap_input_record(msg: &DaemonToClientMessage) -> INPUT_RECORD_0 {
@@ -186,6 +257,30 @@ mod framed_message_test {
         assert!(remainder.is_empty());
         assert_eq!(messages.len(), 1);
         assert!(unwrap_input_record(&messages[0]).equals(EXPECTED_INPUT_RECORD_0));
+    }
+
+    #[test]
+    fn test_serialize_state_change_envelope() {
+        let bytes = serialize_daemon_to_client_message(&DaemonToClientMessage::StateChange(
+            ClientState::Active,
+        ));
+        assert_eq!(bytes.len(), FRAMED_STATE_CHANGE_LENGTH);
+        assert_eq!(bytes[0], TAG_STATE_CHANGE);
+        assert_eq!(bytes[1], ClientState::Active as u8);
+    }
+
+    #[test]
+    fn test_parse_state_change_round_trip() {
+        let bytes = serialize_daemon_to_client_message(&DaemonToClientMessage::StateChange(
+            ClientState::Active,
+        ));
+        let (messages, remainder) = parse_daemon_to_client_messages(&bytes);
+        assert!(remainder.is_empty());
+        assert_eq!(messages.len(), 1);
+        match messages[0] {
+            DaemonToClientMessage::StateChange(state) => assert_eq!(state, ClientState::Active),
+            _ => panic!("expected StateChange variant"),
+        }
     }
 
     #[test]

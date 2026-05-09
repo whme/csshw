@@ -4,8 +4,8 @@ use windows::Win32::{
 };
 
 use crate::protocol::{
-    DaemonToClientMessage, SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
-    TAG_INPUT_RECORD, TAG_KEEP_ALIVE,
+    ClientState, DaemonToClientMessage, SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
+    TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
 };
 
 /// Deserialize a [KEY_EVENT_RECORD_0] from a u8 slice using custom binary format.
@@ -61,6 +61,31 @@ pub fn deserialize_pid(bytes: &[u8; SERIALIZED_PID_LENGTH]) -> u32 {
     return u32::from_le_bytes(*bytes);
 }
 
+/// Deserialize a single byte into a [`ClientState`] variant.
+///
+/// # Arguments
+///
+/// * `byte` - The single payload byte of a [`crate::protocol::TAG_STATE_CHANGE`]
+///            frame, equal to a [`ClientState`]'s `#[repr(u8)]` discriminant.
+///
+/// # Returns
+///
+/// The decoded [`ClientState`].
+///
+/// # Panics
+///
+/// Panics if `byte` does not match a known [`ClientState`] discriminant. An
+/// unknown value indicates either a protocol-version mismatch between the
+/// daemon and client or corruption on the pipe - both unrecoverable, matching
+/// the codebase's "broken bookkeeping -> panic" convention.
+pub fn deserialize_client_state(byte: u8) -> ClientState {
+    match byte {
+        x if x == ClientState::Active as u8 => return ClientState::Active,
+        x if x == ClientState::Disabled as u8 => return ClientState::Disabled,
+        other => panic!("Unknown ClientState byte: 0x{other:02X}"),
+    }
+}
+
 /// Parse as many complete [`DaemonToClientMessage`]s as possible from `buffer`.
 ///
 /// The parser walks `buffer` from the start, decoding one tag-prefixed frame
@@ -102,6 +127,16 @@ pub fn parse_daemon_to_client_messages(buffer: &[u8]) -> (Vec<DaemonToClientMess
                 let record = deserialize_input_record_0(&buffer[payload_start..payload_end]);
                 messages.push(DaemonToClientMessage::InputRecord(record));
                 pos = payload_end;
+            }
+            TAG_STATE_CHANGE => {
+                let payload_index = pos + 1;
+                if buffer.len() <= payload_index {
+                    // Trailing partial frame; stop and return it as remainder.
+                    break;
+                }
+                let state = deserialize_client_state(buffer[payload_index]);
+                messages.push(DaemonToClientMessage::StateChange(state));
+                pos = payload_index + 1;
             }
             TAG_KEEP_ALIVE => {
                 messages.push(DaemonToClientMessage::KeepAlive);
