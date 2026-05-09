@@ -19,6 +19,11 @@ regex     = "1"
 # Demo subcommand: SHA-256 verification of vendored ffmpeg / gifski /
 # Carnac binaries downloaded into `target/demo/bin/`.
 sha2      = "0.10"
+# Demo subcommand: pure-Rust extraction of the gifski tar.xz release.
+# Windows ships BSD tar.exe but no xz; rather than bring in another
+# vendored binary just for this, decompress + untar in-process.
+lzma-rs   = "0.3"
+tar       = "0.4"
 
 # Demo subcommand: Windows input synthesis (SendInput) and window
 # enumeration. Pinned to the same major version csshw_lib uses

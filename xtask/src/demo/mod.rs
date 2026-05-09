@@ -392,19 +392,25 @@ impl DemoSystem for RealSystem {
             .file_name()
             .map(|s| s.to_string_lossy().to_lowercase())
             .unwrap_or_default();
-        if name.ends_with(".tar.xz") || name.ends_with(".tar.gz") || name.ends_with(".tar") {
-            // Windows 10 1803+ ships BSD tar.exe on PATH. We invoke it
-            // with `-C` so the destination is unambiguous.
-            let status = std::process::Command::new("tar")
-                .arg("-xf")
-                .arg(archive)
-                .arg("-C")
-                .arg(dest_dir)
-                .status()
-                .map_err(|e| anyhow::anyhow!("failed to spawn tar: {e}"))?;
-            if !status.success() {
-                anyhow::bail!("tar -xf {} failed: {status}", archive.display());
-            }
+        if name.ends_with(".tar.xz") {
+            // Windows ships BSD tar.exe but no `xz` binary, so the
+            // bundled tar shells out and fails. Decompress + untar
+            // in-process instead. Only the gifski release uses
+            // tar.xz today; .tar.gz / .tar are not currently
+            // exercised, so they are deliberately not handled here.
+            let f = std::fs::File::open(archive)
+                .map_err(|e| anyhow::anyhow!("failed to open {}: {e}", archive.display()))?;
+            let mut tar_bytes = Vec::new();
+            lzma_rs::xz_decompress(&mut std::io::BufReader::new(f), &mut tar_bytes)
+                .map_err(|e| anyhow::anyhow!("xz_decompress {} failed: {e}", archive.display()))?;
+            let mut tar_archive = tar::Archive::new(std::io::Cursor::new(tar_bytes));
+            tar_archive.unpack(dest_dir).map_err(|e| {
+                anyhow::anyhow!(
+                    "tar::unpack {} -> {} failed: {e}",
+                    archive.display(),
+                    dest_dir.display()
+                )
+            })?;
             return Ok(());
         }
         if name.ends_with(".zip") || name.ends_with(".nupkg") {
