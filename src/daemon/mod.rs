@@ -1137,6 +1137,12 @@ async fn named_pipe_server_routine(
         // Copy the state out so the mutex guard does not span the `.await`
         // below - `MutexGuard` is not `Send` and would prevent the routine
         // from being spawned on a multi-threaded runtime.
+        //
+        // Note: state and input travel on independent channels, so this gate
+        // uses state-at-consume-time rather than state-at-emit-time. Very
+        // unlikely to matter in practice - the control-mode chord drains the
+        // in-flight window before the toggle lands. See
+        // https://github.com/whme/csshw/issues/186.
         let state = *pipe_server_state.lock().unwrap();
         match state {
             PipeServerState::Enabled => {}
