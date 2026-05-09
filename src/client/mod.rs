@@ -12,7 +12,7 @@ use std::time::Duration;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::utils::config::ClientConfig;
-use crate::utils::windows::{get_console_title, try_set_console_color, WindowsApi};
+use crate::utils::windows::{get_console_title, set_console_color, WindowsApi};
 use ssh2_config::{ParseRule, SshConfig};
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::process::{Child, Command};
@@ -82,11 +82,6 @@ const DISABLED_CONSOLE_ATTRIBUTES: CONSOLE_CHARACTER_ATTRIBUTES = CONSOLE_CHARAC
 /// at startup failed, in which case we degrade gracefully and leave the
 /// console untouched.
 ///
-/// Disabled-state visuals are best-effort: a transient console API failure
-/// during the recolor is logged and swallowed rather than panicking the
-/// client, since the visual cue is non-critical and the daemon-driven
-/// state machine remains correct regardless of the repaint outcome.
-///
 /// # Arguments
 ///
 /// * `api`             - The Windows API implementation to use.
@@ -111,12 +106,7 @@ fn apply_state_visuals(
         ClientState::Active => original,
         ClientState::Disabled => DISABLED_CONSOLE_ATTRIBUTES,
     };
-    if let Err(err) = try_set_console_color(api, attrs) {
-        warn!(
-            "Failed to repaint console for state transition {:?} -> {:?}: {}",
-            prev, next, err
-        );
-    }
+    set_console_color(api, attrs);
 }
 
 /// Write the given [INPUT_RECORD_0] to the console input buffer using the provided API.
@@ -530,9 +520,6 @@ pub async fn main(
         }
     };
 
-    // Watch channel that carries the authoritative `ClientState` from the
-    // pipe-reading loop ([`read_write_loop`]) to the visuals task below.
-    // Mirrors the daemon-side channel pattern introduced in PR #181.
     let (state_tx, state_rx) = watch::channel(ClientState::Active);
 
     let (host, inline_port) =

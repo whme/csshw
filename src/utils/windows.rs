@@ -886,52 +886,6 @@ pub fn build_command_line(application: &str, args: &[String]) -> Vec<u16> {
 
 /// Sets the back- and foreground color of the current console window using the provided API.
 ///
-/// Returns the first error encountered without unwinding, leaving partial
-/// repaints visible to the caller. Use this from best-effort paths (e.g.
-/// transient state-transition recolors) where a Windows API hiccup must
-/// not panic the process; for startup-critical recolors, prefer
-/// [`set_console_color`], which unwraps on failure.
-///
-/// # Arguments
-///
-/// * `api` - The Windows API implementation to use.
-/// * `color` - The color value describing the back- and foreground color.
-///
-/// # Returns
-///
-/// `Ok(())` on success, or the first underlying [`windows::core::Error`]
-/// returned by the console API.
-///
-/// # Examples
-///
-/// ```no_run
-/// use csshw_lib::utils::windows::{try_set_console_color, DefaultWindowsApi};
-/// use windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES;
-///
-/// let api = DefaultWindowsApi;
-/// let _ = try_set_console_color(&api, CONSOLE_CHARACTER_ATTRIBUTES(0x0F));
-/// ```
-pub fn try_set_console_color(
-    api: &dyn WindowsApi,
-    color: CONSOLE_CHARACTER_ATTRIBUTES,
-) -> windows::core::Result<()> {
-    api.set_console_text_attribute(color)?;
-    let buffer_info = api.get_console_screen_buffer_info()?;
-    for y in 0..buffer_info.dwSize.Y {
-        api.fill_console_output_attribute(
-            color.0,
-            buffer_info.dwSize.X.try_into().unwrap(),
-            COORD { X: 0, Y: y },
-        )?;
-    }
-    return Ok(());
-}
-
-/// Sets the back- and foreground color of the current console window using the provided API.
-///
-/// Panics on any underlying console API failure. For best-effort recolors
-/// that must not propagate a panic, use [`try_set_console_color`].
-///
 /// # Arguments
 ///
 /// * `api` - The Windows API implementation to use.
@@ -947,7 +901,16 @@ pub fn try_set_console_color(
 /// set_console_color(&api, CONSOLE_CHARACTER_ATTRIBUTES(0x0F));
 /// ```
 pub fn set_console_color(api: &dyn WindowsApi, color: CONSOLE_CHARACTER_ATTRIBUTES) {
-    try_set_console_color(api, color).unwrap();
+    api.set_console_text_attribute(color).unwrap();
+    let buffer_info = api.get_console_screen_buffer_info().unwrap();
+    for y in 0..buffer_info.dwSize.Y {
+        api.fill_console_output_attribute(
+            color.0,
+            buffer_info.dwSize.X.try_into().unwrap(),
+            COORD { X: 0, Y: y },
+        )
+        .unwrap();
+    }
 }
 
 /// Empties the console screen output buffer of the current console window using the provided API.
