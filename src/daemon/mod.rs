@@ -1060,6 +1060,13 @@ fn launch_client_console<W: WindowsApi>(
 /// the daemon - an unknown PID indicates broken daemon bookkeeping and is
 /// unrecoverable.
 ///
+/// Right after `subscribe`, the routine writes one
+/// [`TAG_STATE_CHANGE`] frame carrying the current authoritative
+/// [`ClientState`] so the client converges immediately even if the
+/// daemon called [`Daemon::set_client_state`] before the client
+/// connected; without this push the freshly-subscribed receiver would
+/// not observe the pre-existing value via `changed`.
+///
 /// Multiplexing: a biased [`tokio::select`] polls three branches per
 /// iteration in order - (a) the broadcast `receiver` for input records,
 /// (b) `state_rx.changed` for [`ClientState`] updates pushed by the
@@ -1120,6 +1127,21 @@ async fn named_pipe_server_routine(
             panic!("Unknown client PID {} - daemon bookkeeping broken", pid);
         }
     };
+
+    // Push the current authoritative state immediately so the client
+    // converges right after the PID handshake. `state_rx.changed()`
+    // only fires on transitions observed *after* `subscribe`, so a
+    // state set before this point (e.g. via `Daemon::set_client_state`
+    // during the brief window between `Client` construction and
+    // `subscribe`) would otherwise leave the client stuck on its
+    // default `ClientState::Active` even though the daemon already
+    // gates forwarding on the new value.
+    let initial_state = *state_rx.borrow_and_update();
+    let initial_frame: [u8; FRAMED_STATE_CHANGE_LENGTH] =
+        [TAG_STATE_CHANGE, serialize_client_state(initial_state)];
+    if !write_framed_message(&server, &initial_frame).await {
+        return;
+    }
 
     loop {
         tokio::select! {

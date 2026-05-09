@@ -606,7 +606,10 @@ async fn test_read_write_loop_dispatches_disabled_state_change(
 
     // A lone StateChange(Disabled) frame - no input records this time, so
     // the API must not see any `write_console_input` calls.
-    let payload: Vec<u8> = vec![TAG_STATE_CHANGE, serialize_client_state(ClientState::Disabled)];
+    let payload: Vec<u8> = vec![
+        TAG_STATE_CHANGE,
+        serialize_client_state(ClientState::Disabled),
+    ];
 
     let mut written = 0usize;
     while written < payload.len() {

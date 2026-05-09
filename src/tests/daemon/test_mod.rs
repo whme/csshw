@@ -169,6 +169,14 @@ mod daemon_test {
                         assert_eq!([2; SERIALIZED_INPUT_RECORD_0_LENGTH], buf[1..]);
                         successful_iterations += 1;
                     }
+                    TAG_STATE_CHANGE => {
+                        // Initial state push emitted right after the routine
+                        // subscribes; the default state is `Active`. Drain it
+                        // and keep reading so the rest of the assertions still
+                        // observe the input-record and keep-alive frames.
+                        assert_eq!(FRAMED_STATE_CHANGE_LENGTH, n);
+                        assert_eq!(buf[1], ClientState::Active as u8);
+                    }
                     other => panic!("Unexpected tag byte 0x{other:02X}"),
                 },
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -220,30 +228,33 @@ mod daemon_test {
         let future = tokio::spawn(async move {
             named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
         });
-        // Wait for at least one keep-alive frame; this proves the routine
-        // has finished PID correlation and reached the select! loop, which
-        // means it has also subscribed to the watch channel. Sending before
-        // the subscribe would either fail with `SendError` (no receivers)
-        // or be marked already-seen by the freshly-subscribed receiver.
+        // The routine emits the current authoritative state right after
+        // subscribing, so the very first frame on the pipe must be the
+        // initial `TAG_STATE_CHANGE(Active)` push. Receiving it also
+        // proves the subscribe has happened and any subsequent
+        // `state_tx.send` will be observed.
         loop {
             named_pipe_client.readable().await?;
             let mut buf = [0u8; FRAMED_INPUT_RECORD_LENGTH];
             match named_pipe_client.try_read(&mut buf) {
-                Ok(0) => return Err("pipe closed before keep-alive".into()),
+                Ok(0) => return Err("pipe closed before initial state push".into()),
                 Ok(n) => match buf[0] {
-                    TAG_KEEP_ALIVE => {
-                        assert_eq!(FRAMED_KEEP_ALIVE_LENGTH, n);
+                    TAG_STATE_CHANGE => {
+                        assert_eq!(FRAMED_STATE_CHANGE_LENGTH, n);
+                        assert_eq!(buf[1], ClientState::Active as u8);
                         break;
                     }
-                    other => panic!("Unexpected tag byte 0x{other:02X}"),
+                    other => {
+                        panic!("Expected initial TAG_STATE_CHANGE, got tag byte 0x{other:02X}")
+                    }
                 },
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
                 Err(e) => return Err(e.into()),
             }
         }
-        // Push a new state through the watch sender; the routine must write a
-        // tagged state-change frame to the pipe.
-        state_tx.send(ClientState::Active)?;
+        // Push a real state transition through the watch sender; the routine
+        // must write a tagged state-change frame to the pipe.
+        state_tx.send(ClientState::Disabled)?;
         let mut state_change_seen = false;
         loop {
             named_pipe_client.readable().await?;
@@ -253,7 +264,7 @@ mod daemon_test {
                 Ok(n) => match buf[0] {
                     TAG_STATE_CHANGE => {
                         assert_eq!(FRAMED_STATE_CHANGE_LENGTH, n);
-                        assert_eq!(buf[1], ClientState::Active as u8);
+                        assert_eq!(buf[1], ClientState::Disabled as u8);
                         state_change_seen = true;
                         break;
                     }
@@ -268,6 +279,110 @@ mod daemon_test {
             }
         }
         assert!(state_change_seen);
+        drop(named_pipe_client);
+        future.await?;
+        return Ok(());
+    }
+
+    /// Verifies that the pipe server routine emits a `TAG_STATE_CHANGE`
+    /// frame carrying the current authoritative state immediately after
+    /// the PID handshake, even when no transition fires after subscribe.
+    ///
+    /// `Daemon::set_client_state` may run in the brief window between
+    /// `Client` construction and the routine's `state_tx.subscribe()`
+    /// call. In that case `state_rx.changed()` would never fire for the
+    /// pre-existing value, leaving the client stuck on its default
+    /// `ClientState::Active` even though the daemon already gates
+    /// forwarding on the new value. The fix - and what this test
+    /// asserts - is that the routine pushes the snapshot from
+    /// `state_rx.borrow_and_update()` as its very first frame.
+    #[tokio::test]
+    async fn test_named_pipe_server_routine_sends_initial_state_after_subscribe(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        const TEST_PID: u32 = 88888;
+        // Use a per-test unique pipe name so parallel test runs don't collide
+        // on the global PIPE_NAME.
+        let pipe_name = format!(r"\\.\pipe\csshw-test-initial-state-{}", std::process::id());
+        let (_sender, mut receiver) = broadcast::channel::<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>(
+            SERIALIZED_INPUT_RECORD_0_LENGTH,
+        );
+        let named_pipe_server = ServerOptions::new()
+            .access_inbound(true)
+            .access_outbound(true)
+            .pipe_mode(PipeMode::Message)
+            .create(&pipe_name)?;
+        let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
+        let (clients, state_tx) = make_clients_with_pid_and_state(TEST_PID);
+
+        // Pre-disable BEFORE the routine subscribes. `send_replace`
+        // updates the stored value even when there are no receivers,
+        // which is exactly the production race this test guards against:
+        // `Daemon::set_client_state` mutating the watch before the
+        // pipe-server task has had a chance to call `subscribe`. A
+        // regular `send` would error with no receivers.
+        state_tx.send_replace(ClientState::Disabled);
+
+        send_pid(&named_pipe_client, TEST_PID).await?;
+        let future = tokio::spawn(async move {
+            named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
+        });
+
+        // The very first non-keep-alive frame on the pipe must be the
+        // initial `TAG_STATE_CHANGE(Disabled)` push. Keep-alive frames
+        // may legally interleave because the routine spawns its keep-
+        // alive timer through the same select; tolerate them but reject
+        // any other tag.
+        let read_result: Result<Result<(), Box<dyn std::error::Error>>, _> =
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                loop {
+                    named_pipe_client.readable().await?;
+                    let mut buf = [0u8; FRAMED_INPUT_RECORD_LENGTH];
+                    match named_pipe_client.try_read(&mut buf) {
+                        Ok(0) => {
+                            return Err("pipe closed before initial state frame arrived".into());
+                        }
+                        Ok(n) => match buf[0] {
+                            TAG_STATE_CHANGE => {
+                                assert_eq!(
+                                    FRAMED_STATE_CHANGE_LENGTH, n,
+                                    "State-change frame must be exactly two bytes"
+                                );
+                                assert_eq!(
+                                    buf[1],
+                                    ClientState::Disabled as u8,
+                                    "Initial state push must reflect the value set before subscribe"
+                                );
+                                return Ok(());
+                            }
+                            TAG_KEEP_ALIVE => {
+                                // The initial state push happens before the
+                                // select loop, so a keep-alive arriving first
+                                // would mean the routine skipped the push.
+                                return Err("received keep-alive before initial state frame".into());
+                            }
+                            TAG_INPUT_RECORD => {
+                                return Err(
+                                    "received input record before initial state frame".into()
+                                );
+                            }
+                            other => {
+                                return Err(format!("Unexpected tag byte 0x{other:02X}").into());
+                            }
+                        },
+                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+                        Err(e) => return Err(e.into()),
+                    }
+                }
+            })
+            .await;
+        match read_result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(e),
+            Err(_) => {
+                return Err("timed out waiting for initial state frame after subscribe".into());
+            }
+        }
+
         drop(named_pipe_client);
         future.await?;
         return Ok(());
@@ -317,6 +432,12 @@ mod daemon_test {
                         assert_eq!(FRAMED_INPUT_RECORD_LENGTH, n);
                         assert_eq!([2; SERIALIZED_INPUT_RECORD_0_LENGTH], buf[1..]);
                         break;
+                    }
+                    TAG_STATE_CHANGE => {
+                        // Initial state push emitted right after subscribe.
+                        // Drain it and continue reading.
+                        assert_eq!(FRAMED_STATE_CHANGE_LENGTH, n);
+                        assert_eq!(buf[1], ClientState::Active as u8);
                     }
                     other => panic!("Unexpected tag byte 0x{other:02X}"),
                 },
@@ -460,6 +581,14 @@ mod daemon_test {
                         assert_eq!([2; SERIALIZED_INPUT_RECORD_0_LENGTH], buf[1..]);
                         got_data = true;
                         break;
+                    }
+                    TAG_STATE_CHANGE => {
+                        // Initial state push emitted right after subscribe.
+                        // The default state is `Active`. Drain it and keep
+                        // reading so the assertion still observes the
+                        // input-record frame.
+                        assert_eq!(FRAMED_STATE_CHANGE_LENGTH, n);
+                        assert_eq!(buf[1], ClientState::Active as u8);
                     }
                     other => panic!("Unexpected tag byte 0x{other:02X}"),
                 },
