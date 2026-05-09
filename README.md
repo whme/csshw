@@ -169,12 +169,21 @@ providers:
   normalises the desktop (wallpaper, console font, DPI), optionally
   launches [Carnac](https://github.com/Code52/carnac) for the
   keystroke overlay, runs the demo, and copies the GIF back to the
-  host. Requires the optional `Containers-DisposableClientVM`
-  Windows feature.
+  host. Prerequisites (one-time):
+  1. Windows 10/11 **Pro**, **Enterprise**, or **Education**
+     (Home does not ship Windows Sandbox).
+  2. Hardware virtualisation enabled in BIOS/UEFI.
+  3. Enable the optional feature from an elevated PowerShell and
+     reboot:
+     ```powershell
+     Enable-WindowsOptionalFeature -Online `
+       -FeatureName Containers-DisposableClientVM -All
+     ```
 - `--env local` runs on the caller's interactive session - step
   away while it records, foreground stealing is part of the demo.
-  This is the only path that works in CI: GitHub-hosted runners
-  lack the nested virtualisation Windows Sandbox needs.
+  Use this when Windows Sandbox is unavailable (e.g. on Windows
+  Home) and in CI: GitHub-hosted runners lack the nested
+  virtualisation Windows Sandbox needs.
 
 The vendored binaries (ffmpeg, gifski, Carnac) are SHA-pinned and
 downloaded once into `target/demo/bin/` on first use. Pass
