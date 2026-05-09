@@ -414,30 +414,24 @@ impl DemoSystem for RealSystem {
             return Ok(());
         }
         if name.ends_with(".zip") || name.ends_with(".nupkg") {
-            let archive_str = archive.to_string_lossy().replace('\'', "''");
-            let dest_str = dest_dir.to_string_lossy().replace('\'', "''");
-            // PowerShell's `Expand-Archive` validates by file
-            // extension and refuses anything other than `.zip` (the
-            // Carnac release ships as `.nupkg`, which is a zip).
-            // Drop down to `System.IO.Compression.ZipFile`, which is
-            // format-only. The `Add-Type` call is a no-op if the
-            // assembly is already loaded.
-            let script = format!(
-                "$ProgressPreference='SilentlyContinue';\
-                 Add-Type -AssemblyName System.IO.Compression.FileSystem;\
-                 [System.IO.Compression.ZipFile]::ExtractToDirectory(\
-                 '{archive_str}','{dest_str}',$true)"
-            );
-            let status = std::process::Command::new("powershell")
-                .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-                .status()
-                .map_err(|e| anyhow::anyhow!("failed to spawn powershell for extract: {e}"))?;
-            if !status.success() {
-                anyhow::bail!(
-                    "ZipFile::ExtractToDirectory {} failed: {status}",
-                    archive.display()
-                );
-            }
+            // Pure-Rust extraction: PowerShell's `Expand-Archive`
+            // rejects `.nupkg` by extension, and the underlying
+            // `ZipFile::ExtractToDirectory` 3-arg overload binds
+            // differently between .NET Framework (Encoding) and
+            // .NET Core (bool overwriteFiles), so it's not portable
+            // across PowerShell editions. The `zip` crate has no
+            // such ambiguity.
+            let f = std::fs::File::open(archive)
+                .map_err(|e| anyhow::anyhow!("failed to open {}: {e}", archive.display()))?;
+            let mut zip_archive = zip::ZipArchive::new(std::io::BufReader::new(f))
+                .map_err(|e| anyhow::anyhow!("zip open {} failed: {e}", archive.display()))?;
+            zip_archive.extract(dest_dir).map_err(|e| {
+                anyhow::anyhow!(
+                    "zip extract {} -> {} failed: {e}",
+                    archive.display(),
+                    dest_dir.display()
+                )
+            })?;
             return Ok(());
         }
         anyhow::bail!(
