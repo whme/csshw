@@ -36,10 +36,16 @@ use anyhow::{bail, Context, Result};
 
 use super::DemoSystem;
 
-/// Capture resolution and framerate. Pinned to keep recordings
-/// identical across developer machines and CI runners.
+/// Capture framerate. Pinned to keep recordings identical across
+/// developer machines and CI runners. The capture resolution is
+/// deliberately *not* pinned: gdigrab's `-video_size` crops from
+/// the desktop's top-left corner, and Windows Sandbox auto-sizes
+/// to the host monitor with no stable hook for forcing a specific
+/// resolution. Letting gdigrab default to the actual primary
+/// monitor size means the entire sandbox window is captured; the
+/// downstream `scale=1280:-1` step in [`stop_ffmpeg_and_encode`]
+/// normalises the encoded GIF width regardless of source size.
 const CAPTURE_FRAMERATE: &str = "30";
-const CAPTURE_VIDEO_SIZE: &str = "1920x1080";
 
 /// Encode parameters for the GIF. Re-used in the retry ladder if the
 /// output exceeds the size budget (deferred to v3).
@@ -84,8 +90,6 @@ pub fn spawn_ffmpeg_gdigrab(ffmpeg_exe: &Path, out_raw: &Path) -> Result<Child> 
             "gdigrab",
             "-framerate",
             CAPTURE_FRAMERATE,
-            "-video_size",
-            CAPTURE_VIDEO_SIZE,
             "-i",
             "desktop",
             "-c:v",

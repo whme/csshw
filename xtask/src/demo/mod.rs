@@ -16,7 +16,7 @@
 //! into `target/demo/bin/` and verified by [`bin::ensure_bins`]),
 //! so a developer no longer needs ffmpeg, gifski, or Carnac on
 //! `PATH`. The sandbox provider boots the demo inside a fresh
-//! Windows Sandbox VM with a normalised desktop (wallpaper, console
+//! Windows Sandbox VM with a normalised desktop (console
 //! font, DPI) and an optional Carnac keystroke overlay; Sandbox
 //! cannot run on GitHub-hosted runners (no nested virtualisation),
 //! so v1 is the local-iteration path. CI workflows and the
@@ -184,11 +184,23 @@ pub trait DemoSystem {
     /// Idempotent.
     fn terminate_sandbox(&self) -> Result<()>;
 
-    /// Run `cargo build -p csshw` against `workspace`, leaving
-    /// `target/debug/csshw.exe` ready for the sandbox bootstrap to
-    /// pick up. Production impl shells out to `cargo`; tests stub
-    /// it to a no-op.
-    fn cargo_build_csshw(&self, workspace: &Path) -> Result<()>;
+    /// Return `true` while the in-flight Windows Sandbox VM is still
+    /// alive. Used by the sentinel poll loop to detect the case where
+    /// the user closes the sandbox window manually before the
+    /// bootstrap writes `done.flag`. The launcher process exits soon
+    /// after spawning the VM, so this checks the user-facing
+    /// `WindowsSandboxClient.exe` by image name.
+    fn is_sandbox_running(&self) -> bool;
+
+    /// Build the demo's csshw + xtask binaries with a statically
+    /// linked MSVC runtime into `target_dir`, ready to be staged
+    /// into the sandbox. Static linking removes the runtime
+    /// dependency on `VCRUNTIME140.dll` / `MSVCP140.dll`, which the
+    /// Windows Sandbox base image does not ship. A separate target
+    /// directory is used so the static-CRT artifacts do not
+    /// invalidate the developer's normal cargo cache. Production
+    /// impl shells out to `cargo`; tests stub it to a no-op.
+    fn cargo_build_demo_artifacts(&self, workspace: &Path, target_dir: &Path) -> Result<()>;
 
     /// Print an informational message to stdout.
     fn print_info(&self, message: &str);
@@ -229,8 +241,20 @@ impl Default for RealSystem {
 
 mod windows_input;
 
+/// Environment variable that, if set, overrides the workspace path
+/// resolved by [`RealSystem::workspace_root`]. The sandbox bootstrap
+/// sets it before invoking `xtask record-demo --env local` because
+/// `CARGO_MANIFEST_DIR` is baked at compile time on the host and so
+/// points at a path that does not exist inside the VM.
+const WORKSPACE_OVERRIDE_ENV: &str = "CSSHW_DEMO_WORKSPACE";
+
 impl DemoSystem for RealSystem {
     fn workspace_root(&self) -> Result<PathBuf> {
+        if let Ok(override_path) = std::env::var(WORKSPACE_OVERRIDE_ENV) {
+            if !override_path.is_empty() {
+                return Ok(PathBuf::from(override_path));
+            }
+        }
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
         Path::new(manifest_dir)
             .parent()
@@ -489,17 +513,57 @@ impl DemoSystem for RealSystem {
         Ok(())
     }
 
-    fn cargo_build_csshw(&self, workspace: &Path) -> Result<()> {
+    fn is_sandbox_running(&self) -> bool {
+        // `WindowsSandbox.exe` is just a launcher - it returns
+        // almost immediately after the VM starts, so the spawned
+        // child handle is unreliable. The user-facing client is
+        // the long-lived process; query it by image name.
+        let output = std::process::Command::new("tasklist")
+            .args([
+                "/FI",
+                "IMAGENAME eq WindowsSandboxClient.exe",
+                "/NH",
+                "/FO",
+                "CSV",
+            ])
+            .stderr(std::process::Stdio::null())
+            .output();
+        match output {
+            Ok(o) if o.status.success() => {
+                // `tasklist` prints a localised "no tasks" banner
+                // when nothing matches; on a hit it prints one CSV
+                // row containing the image name.
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                stdout.contains("WindowsSandboxClient.exe")
+            }
+            _ => false,
+        }
+    }
+
+    fn cargo_build_demo_artifacts(&self, workspace: &Path, target_dir: &Path) -> Result<()> {
+        // Static MSVC runtime so the resulting .exe has no runtime
+        // dependency on `VCRUNTIME140.dll` / `MSVCP140.dll`. The
+        // Windows Sandbox base image ships without the VC++
+        // Redistributable, so a default cargo build produces
+        // executables that fail to load inside the VM.
+        //
+        // A dedicated `--target-dir` is used so the differing
+        // RUSTFLAGS do not invalidate the developer's normal cargo
+        // cache on every demo run.
+        //
         // Spawn cargo with stdout/stderr inherited so the user sees
-        // build progress live. Debug profile only - the demo neither
-        // benefits from optimisations nor wants the longer build.
+        // build progress live. Debug profile only - the demo
+        // neither benefits from optimisations nor wants the longer
+        // release build.
         let status = std::process::Command::new("cargo")
-            .args(["build", "-p", "csshw"])
+            .args(["build", "-p", "csshw", "-p", "xtask", "--target-dir"])
+            .arg(target_dir)
             .current_dir(workspace)
+            .env("RUSTFLAGS", "-C target-feature=+crt-static")
             .status()
             .map_err(|e| anyhow::anyhow!("failed to spawn cargo build: {e}"))?;
         if !status.success() {
-            anyhow::bail!("cargo build -p csshw failed: {status}");
+            anyhow::bail!("cargo build for demo artifacts failed: {status}");
         }
         Ok(())
     }

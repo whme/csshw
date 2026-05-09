@@ -36,7 +36,8 @@ mock! {
         fn extract_archive(&self, archive: &Path, dest_dir: &Path) -> anyhow::Result<()>;
         fn spawn_sandbox(&self, wsb_path: &Path) -> anyhow::Result<()>;
         fn terminate_sandbox(&self) -> anyhow::Result<()>;
-        fn cargo_build_csshw(&self, workspace: &Path) -> anyhow::Result<()>;
+        fn is_sandbox_running(&self) -> bool;
+        fn cargo_build_demo_artifacts(&self, workspace: &Path, target_dir: &Path) -> anyhow::Result<()>;
         fn print_info(&self, message: &str);
         fn print_debug(&self, message: &str);
     }

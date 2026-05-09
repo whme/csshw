@@ -7,46 +7,16 @@
 # the desired state is already in place.
 #
 # Settings applied:
-#   - Wallpaper: solid #0F1419 (csshw brand colour) via
-#     SystemParametersInfo SPI_SETDESKWALLPAPER.
 #   - Console font: Cascadia Mono 18 pt for both cmd.exe and
 #     powershell.exe via HKCU\Console\<exe>.
 #   - Logical resolution: 1920x1080 at 100 % DPI scale.
 #   - Hide desktop icons; disable taskbar auto-hide animation.
+#
+# The wallpaper is intentionally left at the Windows default: the
+# sandbox already ships a clean stock background, and the host run
+# (--env local) must not modify the developer's wallpaper.
 
 $ErrorActionPreference = 'Stop'
-
-function Set-SolidWallpaper {
-    [CmdletBinding()]
-    param([Parameter(Mandatory)] [string] $HexColor)
-
-    $rgb = $HexColor.TrimStart('#')
-    $r = [Convert]::ToInt32($rgb.Substring(0, 2), 16)
-    $g = [Convert]::ToInt32($rgb.Substring(2, 2), 16)
-    $b = [Convert]::ToInt32($rgb.Substring(4, 2), 16)
-
-    # Solid colour wallpaper is set in two steps:
-    #  1. Write Control Panel\Colors!Background (space-separated RGB).
-    #  2. Clear the desktop wallpaper image so the solid colour shows.
-    Set-ItemProperty -Path 'HKCU:\Control Panel\Colors' `
-        -Name 'Background' -Value "$r $g $b"
-    Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' `
-        -Name 'Wallpaper' -Value ''
-
-    # Push the change into the running session via SystemParametersInfo.
-    # SPI_SETDESKWALLPAPER = 0x0014; SPIF_UPDATEINIFILE | SPIF_SENDCHANGE = 0x03.
-    if (-not ('SpiNative' -as [type])) {
-        Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-public class SpiNative {
-    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-    public static extern bool SystemParametersInfo(uint a, uint b, string c, uint d);
-}
-'@
-    }
-    [void][SpiNative]::SystemParametersInfo(0x14, 0, '', 0x03)
-}
 
 function Set-ConsoleFont {
     [CmdletBinding()]
@@ -97,7 +67,6 @@ function Set-DesktopChromeOff {
 
 # --- Apply ----------------------------------------------------------------
 
-Set-SolidWallpaper -HexColor '#0F1419'
 Set-ConsoleFont -FaceName 'Cascadia Mono' -PointSize 18
 Set-DpiScaleHundred
 Set-DesktopChromeOff

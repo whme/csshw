@@ -1,8 +1,9 @@
 //! Vendored binary management for the `record-demo` recorder.
 //!
 //! v0 expected `ffmpeg` and `gifski` on `PATH`. v1 ships SHA-pinned
-//! download URLs for ffmpeg, gifski, and Carnac, fetches them once
-//! into `target/demo/bin/<name>/`, verifies the SHA-256 of every
+//! download URLs for ffmpeg, gifski, Carnac, and the VC++
+//! redistributable, fetches them once into
+//! `target/demo/bin/<name>/`, verifies the SHA-256 of every
 //! download against the constants in this module, and extracts the
 //! archive into a deterministic on-disk layout that
 //! [`crate::demo::recorder`] and the sandbox bootstrap can rely on.
@@ -14,6 +15,7 @@
 //!   ffmpeg/<top>/bin/ffmpeg.exe        # Gyan ffmpeg essentials zip
 //!   gifski/win/gifski.exe              # gifski release tar.xz
 //!   carnac/lib/net45/Carnac.exe        # Carnac release zip (nested)
+//!   vcredist/vc_redist.x64.exe         # VC++ redist installer (no extract)
 //! ```
 //!
 //! Where `<top>` is `ffmpeg-<version>-essentials_build`. The expected
@@ -117,6 +119,39 @@ pub const CARNAC: Pin = Pin {
     inner_archive: Some("carnac-2.3.13-full.nupkg"),
 };
 
+/// Visual C++ Redistributable pin (x64).
+///
+/// The Windows Sandbox base image ships UCRT but **not** the MSVC
+/// runtime DLLs (`vcruntime140.dll`, `msvcp140.dll`, ...). Upstream
+/// gifski for Windows is dynamically linked against `vcruntime140`,
+/// so without the redist installed in the sandbox the in-VM
+/// `gifski.exe` fails immediately with `STATUS_DLL_NOT_FOUND`
+/// (NTSTATUS `0xC0000135`).
+///
+/// Vendoring Microsoft's standalone redistributable installer is
+/// the canonical fix: `sandbox-bootstrap.ps1` runs
+/// `vc_redist.x64.exe /install /quiet /norestart` before invoking
+/// xtask, so the sandbox's real `System32` carries the full MSVC
+/// runtime by the time gifski is launched. This handles every
+/// future MSVC-built tool we may vendor in addition to gifski.
+///
+/// Unlike the other pins this one is a self-contained executable
+/// rather than an archive: `archive_name` and `exe_rel` are equal,
+/// which signals [`ensure_pin`] to skip the extraction step.
+///
+/// The `aka.ms` URL is Microsoft's permalink; if Microsoft ships a
+/// new redist version with a different SHA, the pin verification
+/// fails loudly and the developer refreshes the constants below
+/// using the same workflow as for the other pins.
+pub const VC_REDIST: Pin = Pin {
+    name: "vcredist",
+    url: "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+    sha256: "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b",
+    archive_name: "vc_redist.x64.exe",
+    exe_rel: "vc_redist.x64.exe",
+    inner_archive: None,
+};
+
 /// Resolved paths to the cached vendored binaries used by the
 /// recorder.
 ///
@@ -161,6 +196,10 @@ pub fn ensure_bins<S: DemoSystem>(system: &S, bin_root: &Path) -> Result<BinSet>
     // referenced from Rust; the bootstrap script uses its
     // canonical sandbox-side mount path.
     ensure_pin(system, &CARNAC, bin_root)?;
+    // Same for the VC++ redistributable: the bootstrap installs it
+    // inside the sandbox via its canonical mount path, the host
+    // never invokes it directly.
+    ensure_pin(system, &VC_REDIST, bin_root)?;
     Ok(BinSet { ffmpeg, gifski })
 }
 
@@ -199,17 +238,24 @@ pub fn ensure_pin<S: DemoSystem>(system: &S, pin: &Pin, bin_root: &Path) -> Resu
         "bin: {} sha256 verified ({})",
         pin.name, pin.sha256
     ));
-    system.extract_archive(&archive, &cache)?;
-    if let Some(inner) = pin.inner_archive {
-        let inner_path = cache.join(inner);
-        if !system.path_exists(&inner_path) {
-            bail!(
-                "bin: inner archive {} missing after extracting {}",
-                inner_path.display(),
-                archive.display()
-            );
+    // Self-contained executables (e.g. the VC++ redistributable
+    // installer) live in pins where `archive_name` equals
+    // `exe_rel`: the downloaded file IS the entry binary. Skip
+    // extraction in that case - calling `extract_archive` on a
+    // standalone .exe would fail.
+    if pin.archive_name != pin.exe_rel {
+        system.extract_archive(&archive, &cache)?;
+        if let Some(inner) = pin.inner_archive {
+            let inner_path = cache.join(inner);
+            if !system.path_exists(&inner_path) {
+                bail!(
+                    "bin: inner archive {} missing after extracting {}",
+                    inner_path.display(),
+                    archive.display()
+                );
+            }
+            system.extract_archive(&inner_path, &cache)?;
         }
-        system.extract_archive(&inner_path, &cache)?;
     }
     if !system.path_exists(&exe) {
         bail!(

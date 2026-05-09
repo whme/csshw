@@ -20,8 +20,8 @@ mod imp {
     use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
     use windows::Win32::System::Threading::AttachThreadInput;
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
-        KEYEVENTF_UNICODE, VIRTUAL_KEY,
+        SendInput, VkKeyScanW, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+        KEYEVENTF_KEYUP, VIRTUAL_KEY,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GetForegroundWindow, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
@@ -119,75 +119,108 @@ mod imp {
         Ok(())
     }
 
-    /// Send a single Unicode codepoint via `SendInput(KEYEVENTF_UNICODE)`.
+    /// Send a single character by translating it into virtual-key
+    /// events via `VkKeyScanW`, applying shift / ctrl / alt modifiers
+    /// as needed.
+    ///
+    /// The earlier implementation used `SendInput(KEYEVENTF_UNICODE)`,
+    /// which delivers the keystroke to the foreground window's message
+    /// queue but surfaces at low-level keyboard hooks
+    /// (`WH_KEYBOARD_LL`) with `vkCode = VK_PACKET (0xE7)`. Carnac
+    /// reads the hook and renders unmapped vkCodes as the literal text
+    /// "Packet", so a `whoami` broadcast showed up in the overlay as
+    /// six "Packet" rows. Translating to a real virtual-key sequence
+    /// first means the hook sees the actual key and the overlay
+    /// displays the character that was typed.
+    ///
+    /// Only characters that the current keyboard layout maps to a
+    /// single keystroke are supported. The canonical demo script types
+    /// ASCII text on the en-US layout the sandbox boots into, where
+    /// every character has a `VkKeyScanW` entry; surrogate-pair
+    /// codepoints, dead keys, and unmapped chars are rejected with an
+    /// error so the demo fails loudly rather than silently injecting
+    /// a `VK_PACKET` Carnac cannot decode.
     pub fn send_unicode_char(c: char) -> Result<()> {
-        // BMP characters fit in a single u16; supplementary plane
-        // codepoints need surrogate pairs. We synthesise both halves
-        // when needed.
+        // BMP-only: every char in the v0 script is ASCII, and Unicode
+        // codepoints that need a surrogate pair would require multiple
+        // VkKeyScanW lookups with no guarantee of a meaningful mapping.
         let mut buf = [0u16; 2];
         let units = c.encode_utf16(&mut buf);
-        for unit in units.iter().copied() {
-            push_unicode(unit)?;
+        if units.len() != 1 {
+            anyhow::bail!(
+                "send_unicode_char: {c:?} requires a UTF-16 surrogate pair; \
+                 the demo script is restricted to BMP keyboard characters"
+            );
         }
-        Ok(())
-    }
-
-    /// Send VK_DOWN + VK_UP for a single Unicode code unit.
-    fn push_unicode(unit: u16) -> Result<()> {
-        let down = INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VIRTUAL_KEY(0),
-                    wScan: unit,
-                    dwFlags: KEYEVENTF_UNICODE,
-                    time: 0,
-                    dwExtraInfo: 0,
-                },
-            },
-        };
-        let up = INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VIRTUAL_KEY(0),
-                    wScan: unit,
-                    dwFlags: KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
-                    time: 0,
-                    dwExtraInfo: 0,
-                },
-            },
-        };
-        send_pair(&[down, up])
+        // SAFETY: VkKeyScanW takes a UTF-16 code unit by value and has
+        // no out-pointer. Returns -1 when no key on the active layout
+        // produces this character.
+        let scan = unsafe { VkKeyScanW(units[0]) };
+        if scan == -1 {
+            anyhow::bail!(
+                "send_unicode_char: no VkKeyScanW mapping for {c:?} on the current layout"
+            );
+        }
+        let vk = (scan & 0xFF) as u16;
+        let shift_state = (scan >> 8) & 0xFF;
+        // VkKeyScanW shift-state bits: 1=Shift, 2=Ctrl, 4=Alt.
+        let shift = shift_state & 1 != 0;
+        let ctrl = shift_state & 2 != 0;
+        let alt = shift_state & 4 != 0;
+        /// Windows `VK_SHIFT`.
+        const VK_SHIFT: u16 = 0x10;
+        /// Windows `VK_CONTROL`.
+        const VK_CONTROL: u16 = 0x11;
+        /// Windows `VK_MENU` (Alt).
+        const VK_MENU: u16 = 0x12;
+        let mut events: Vec<INPUT> = Vec::with_capacity(8);
+        if shift {
+            events.push(make_vk_input(VK_SHIFT, false));
+        }
+        if ctrl {
+            events.push(make_vk_input(VK_CONTROL, false));
+        }
+        if alt {
+            events.push(make_vk_input(VK_MENU, false));
+        }
+        events.push(make_vk_input(vk, false));
+        events.push(make_vk_input(vk, true));
+        if alt {
+            events.push(make_vk_input(VK_MENU, true));
+        }
+        if ctrl {
+            events.push(make_vk_input(VK_CONTROL, true));
+        }
+        if shift {
+            events.push(make_vk_input(VK_SHIFT, true));
+        }
+        send_pair(&events)
     }
 
     /// Send a virtual-key down + up pair.
     pub fn send_vk(vk: u16) -> Result<()> {
-        let down = INPUT {
+        send_pair(&[make_vk_input(vk, false), make_vk_input(vk, true)])
+    }
+
+    /// Build a single `INPUT_KEYBOARD` event for the given virtual key.
+    fn make_vk_input(vk: u16, key_up: bool) -> INPUT {
+        let flags = if key_up {
+            KEYEVENTF_KEYUP
+        } else {
+            KEYBD_EVENT_FLAGS(0)
+        };
+        INPUT {
             r#type: INPUT_KEYBOARD,
             Anonymous: INPUT_0 {
                 ki: KEYBDINPUT {
                     wVk: VIRTUAL_KEY(vk),
                     wScan: 0,
-                    dwFlags: KEYBD_EVENT_FLAGS(0),
+                    dwFlags: flags,
                     time: 0,
                     dwExtraInfo: 0,
                 },
             },
-        };
-        let up = INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VIRTUAL_KEY(vk),
-                    wScan: 0,
-                    dwFlags: KEYEVENTF_KEYUP,
-                    time: 0,
-                    dwExtraInfo: 0,
-                },
-            },
-        };
-        send_pair(&[down, up])
+        }
     }
 
     fn send_pair(events: &[INPUT]) -> Result<()> {

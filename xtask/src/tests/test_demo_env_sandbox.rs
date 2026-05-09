@@ -39,7 +39,8 @@ mock! {
         fn extract_archive(&self, archive: &Path, dest_dir: &Path) -> anyhow::Result<()>;
         fn spawn_sandbox(&self, wsb_path: &Path) -> anyhow::Result<()>;
         fn terminate_sandbox(&self) -> anyhow::Result<()>;
-        fn cargo_build_csshw(&self, workspace: &Path) -> anyhow::Result<()>;
+        fn is_sandbox_running(&self) -> bool;
+        fn cargo_build_demo_artifacts(&self, workspace: &Path, target_dir: &Path) -> anyhow::Result<()>;
         fn print_info(&self, message: &str);
         fn print_debug(&self, message: &str);
     }
@@ -63,6 +64,14 @@ fn test_prepare_layout_resolves_known_paths_under_workspace() {
     assert!(s(&layout.bin_dir).ends_with("ws/target/demo/bin"));
     assert!(s(&layout.assets_dir).ends_with("ws/xtask/demo-assets"));
     assert!(s(&layout.out_dir).ends_with("ws/target/demo/out"));
+    // work_dir lives under the writable out mount so files the
+    // in-VM xtask writes (and the binaries the host builds for it)
+    // surface on the host without an extra copy.
+    assert!(s(&layout.work_dir).ends_with("ws/target/demo/out/work"));
+    // build_target_dir is `<work_dir>/target` so cargo's debug exes
+    // land at the path xtask's local provider expects
+    // (`<workspace>/target/debug/csshw.exe`).
+    assert!(s(&layout.build_target_dir).ends_with("ws/target/demo/out/work/target"));
     assert!(s(&layout.wsb_path).ends_with("ws/target/demo/csshw-demo.wsb"));
     assert!(s(&layout.sentinel).ends_with("ws/target/demo/out/done.flag"));
     assert!(s(&layout.sandbox_gif).ends_with("ws/target/demo/out/csshw.gif"));
@@ -81,10 +90,6 @@ fn test_render_wsb_pins_mount_layout_and_logon_command() {
     assert!(body.contains("<Configuration>"), "{body}");
     assert!(body.contains("<MappedFolders>"), "{body}");
     assert!(
-        body.contains("<SandboxFolder>C:\\demo\\repo</SandboxFolder>"),
-        "{body}"
-    );
-    assert!(
         body.contains("<SandboxFolder>C:\\demo\\bin</SandboxFolder>"),
         "{body}"
     );
@@ -96,10 +101,22 @@ fn test_render_wsb_pins_mount_layout_and_logon_command() {
         body.contains("<SandboxFolder>C:\\demo\\out</SandboxFolder>"),
         "{body}"
     );
+    // The workspace itself is intentionally not mounted: the host
+    // builds the binaries directly into the writable out mount.
+    assert!(
+        !body.contains("<SandboxFolder>C:\\demo\\repo</SandboxFolder>"),
+        "the legacy whole-workspace mount must not regress: {body}"
+    );
+    // The previous design carried a separate read-only stage mount;
+    // the writable out mount now subsumes it.
+    assert!(
+        !body.contains("<SandboxFolder>C:\\demo\\stage</SandboxFolder>"),
+        "the old stage mount must not reappear: {body}"
+    );
     // The out folder is the only writable mount.
     let ro_count = body.matches("<ReadOnly>true</ReadOnly>").count();
     let rw_count = body.matches("<ReadOnly>false</ReadOnly>").count();
-    assert_eq!(ro_count, 3, "expected 3 RO mounts: {body}");
+    assert_eq!(ro_count, 2, "expected 2 RO mounts: {body}");
     assert_eq!(rw_count, 1, "expected 1 RW mount: {body}");
     // LogonCommand routes through the bootstrap script.
     assert!(body.contains("<LogonCommand>"), "{body}");
@@ -133,23 +150,27 @@ fn test_render_wsb_passes_no_overlay_flag_when_set() {
 }
 
 #[test]
-fn test_render_wsb_uses_workspace_host_path_for_repo_mount() {
+fn test_render_wsb_uses_workspace_host_path_for_out_mount() {
     // Arrange
     let layout = prepare_layout(Path::new("D:\\some place\\ws"));
 
     // Act
     let body = render_wsb(&layout, false);
 
-    // Assert
+    // Assert: the writable out mount carries the full host path
+    // through unescaped (Windows paths cannot contain XML special
+    // chars).
     assert!(
-        body.contains("<HostFolder>D:\\some place\\ws</HostFolder>"),
+        body.contains("<HostFolder>D:\\some place\\ws\\target\\demo\\out</HostFolder>"),
         "host path leaks straight to XML: {body}"
     );
 }
 
 #[test]
 fn test_wait_for_sentinel_returns_when_file_appears() {
-    // Arrange: report missing for two polls then present.
+    // Arrange: report missing for two polls then present. The
+    // 20-second liveness grace window means is_sandbox_running is
+    // never queried in this fast-success path.
     let mut mock = quiet_mock();
     let calls: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
     let slot = calls.clone();
@@ -173,4 +194,34 @@ fn test_wait_for_sentinel_returns_when_file_appears() {
     // Two misses cause two sleeps; the third hit returns
     // immediately without sleeping.
     assert_eq!(*sleeps.lock().unwrap(), 2);
+}
+
+#[test]
+fn test_wait_for_sentinel_bails_when_sandbox_closes_after_grace_window() {
+    // Arrange: the sentinel never appears. is_sandbox_running is
+    // only consulted after the grace window of poll iterations,
+    // which the mocked sleeps make zero-cost in wall-clock terms.
+    let mut mock = quiet_mock();
+    mock.expect_path_exists().returning(|_| false);
+    mock.expect_sleep().returning(|_| ());
+    let liveness_calls: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
+    let liveness_slot = liveness_calls.clone();
+    mock.expect_is_sandbox_running().returning(move || {
+        *liveness_slot.lock().unwrap() += 1;
+        false
+    });
+
+    // Act
+    let res = wait_for_sentinel(&mock, Path::new("/dev/null/done.flag"));
+
+    // Assert
+    let err = res.expect_err("expected an error when the sandbox disappears");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("sandbox VM is no longer running"),
+        "error should explain the sandbox closure: {msg}"
+    );
+    // Liveness is queried exactly once - the first check after the
+    // grace window fires the bail.
+    assert_eq!(*liveness_calls.lock().unwrap(), 1);
 }
