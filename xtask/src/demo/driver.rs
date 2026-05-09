@@ -50,17 +50,21 @@ pub fn run<S: DemoSystem>(
     let mut state = DriverState::new(raw_path, no_record);
     let mut deferred: Option<anyhow::Error> = None;
     for (i, step) in steps.iter().enumerate() {
-        if let Err(e) = run_step(system, &mut state, i, step) {
+        if let Err(e) = run_step(system, &mut state, i, step, out_gif) {
             deferred = Some(e);
             break;
         }
     }
-    // Best-effort cleanup if a capture was left running.
+    // Best-effort cleanup if a capture was left running. Mark
+    // `capturing` false up front so a failing `stop_recording` here
+    // can't be re-entered (e.g. by a future caller looping over
+    // `run`); the production `RealSystem::stop_recording` consumes
+    // the in-flight ffmpeg child handle, so a second call would error
+    // with "no active capture".
     if state.capturing {
+        state.capturing = false;
         if let Err(e) = system.stop_recording(&state.raw_path, out_gif) {
             system.print_debug(&format!("cleanup stop_recording failed: {e}"));
-        } else {
-            state.capturing = false;
         }
     }
     if let Some(e) = deferred {
@@ -100,6 +104,7 @@ fn run_step<S: DemoSystem>(
     state: &mut DriverState,
     index: usize,
     step: &Step,
+    out_gif: &Path,
 ) -> Result<()> {
     system.print_debug(&format!("step {index}: {step:?}"));
     match step {
@@ -135,10 +140,12 @@ fn run_step<S: DemoSystem>(
                 system.print_info(&format!("step {index}: StopCapture skipped (--no-record)"));
                 return Ok(());
             }
-            // The final GIF path is `raw_path` with `.gif` extension.
-            let gif_path = state.raw_path.with_extension("gif");
-            system.stop_recording(&state.raw_path, &gif_path)?;
+            // Mark the capture as stopped up front so a failing
+            // `stop_recording` cannot be retried by the cleanup path
+            // in `run` (which would double-consume the ffmpeg child
+            // and report "no active capture").
             state.capturing = false;
+            system.stop_recording(&state.raw_path, out_gif)?;
             Ok(())
         }
         Step::Marker(m) => {

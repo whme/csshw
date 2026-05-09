@@ -92,6 +92,11 @@ pub trait DemoSystem {
     /// Copy `from` to `to`, replacing any existing file.
     fn copy_file(&self, from: &Path, to: &Path) -> Result<()>;
 
+    /// Return whether `path` exists on disk. Routed through the
+    /// trait (rather than `Path::exists`) so the env layer can be
+    /// unit-tested with a pure mock.
+    fn file_exists(&self, path: &Path) -> bool;
+
     /// Enumerate visible top-level windows.
     fn enum_windows(&self) -> Result<Vec<WindowInfo>>;
 
@@ -197,6 +202,10 @@ impl DemoSystem for RealSystem {
         std::fs::copy(from, to).map(|_| ()).map_err(|e| {
             anyhow::anyhow!("failed to copy {} -> {}: {e}", from.display(), to.display())
         })
+    }
+
+    fn file_exists(&self, path: &Path) -> bool {
+        path.exists()
     }
 
     fn enum_windows(&self) -> Result<Vec<WindowInfo>> {
@@ -310,6 +319,14 @@ pub fn record_demo<S: DemoSystem>(
     no_record: bool,
     no_overlay: bool,
 ) -> Result<()> {
+    // The demo subcommand drives Windows desktop input via
+    // `windows_input` and captures the screen with ffmpeg gdigrab,
+    // both of which only exist on Windows. Bail early with a clear
+    // message instead of letting the caller hit a misleading
+    // "csshw.exe not found" or "gdigrab unavailable" error mid-run.
+    if !cfg!(target_os = "windows") {
+        anyhow::bail!("record-demo is Windows-only; this is a non-Windows build");
+    }
     let workspace = system.workspace_root()?;
     let out = out.unwrap_or_else(|| workspace.join("target/demo/csshw.gif"));
     let script = script::build_canonical_v0().build()?;

@@ -20,6 +20,7 @@ mock! {
         fn ensure_dir(&self, path: &Path) -> anyhow::Result<()>;
         fn write_file(&self, path: &Path, content: &str) -> anyhow::Result<()>;
         fn copy_file(&self, from: &Path, to: &Path) -> anyhow::Result<()>;
+        fn file_exists(&self, path: &Path) -> bool;
         fn enum_windows(&self) -> anyhow::Result<Vec<WindowInfo>>;
         fn set_foreground(&self, hwnd: u64) -> anyhow::Result<()>;
         fn send_unicode_char(&self, c: char) -> anyhow::Result<()>;

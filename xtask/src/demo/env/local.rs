@@ -51,7 +51,7 @@ pub fn run<S: DemoSystem>(
     // Copy csshw.exe into the demo directory. csshw rebases its cwd
     // to its own exe_dir on startup (src/cli.rs:548), so the config
     // we just wrote is only picked up if csshw runs from there.
-    let source_exe = locate_csshw_exe(&workspace)?;
+    let source_exe = locate_csshw_exe(system, &workspace)?;
     let demo_exe = layout.csshw_cwd.join("csshw.exe");
     system.copy_file(&source_exe, &demo_exe)?;
 
@@ -77,11 +77,13 @@ pub fn run<S: DemoSystem>(
 ///
 /// Prefers a release build (smaller, no debug overhead) and falls back
 /// to debug. v0 fails loudly if neither exists; v1 will offer to build
-/// it for the caller.
-fn locate_csshw_exe(workspace: &Path) -> Result<PathBuf> {
+/// it for the caller. The existence check goes through
+/// [`DemoSystem::file_exists`] so this function is unit-testable with
+/// a pure mock.
+fn locate_csshw_exe<S: DemoSystem>(system: &S, workspace: &Path) -> Result<PathBuf> {
     for profile in ["release", "debug"] {
         let candidate = workspace.join("target").join(profile).join("csshw.exe");
-        if candidate.exists() {
+        if system.file_exists(&candidate) {
             return Ok(candidate);
         }
     }
