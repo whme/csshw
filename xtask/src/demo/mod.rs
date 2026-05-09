@@ -9,15 +9,23 @@
 //! subprocess spawning, sleeps). Tests mock [`DemoSystem`] to assert
 //! step semantics with zero real-system effects.
 //!
-//! v0 scope: a single `--env local` provider that runs on the caller's
-//! own desktop (no isolation) and a hard-coded canonical script that
-//! launches `csshw alpha bravo`, types a broadcast command, and stops.
-//! Sandbox + Carnac + visual normalisation arrive in v1; CI workflows
-//! and the orphan-branch publish flow arrive in v2; the full
-//! control-mode + vim + ping scene arrives in v3.
+//! v1 scope: two `--env` providers (`local` and `sandbox`) sharing
+//! the v0 hard-coded canonical script that launches `csshw alpha
+//! bravo`, types a broadcast command, and stops. The recorder uses
+//! SHA-pinned vendored ffmpeg + gifski + Carnac (downloaded once
+//! into `target/demo/bin/` and verified by [`bin::ensure_bins`]),
+//! so a developer no longer needs ffmpeg, gifski, or Carnac on
+//! `PATH`. The sandbox provider boots the demo inside a fresh
+//! Windows Sandbox VM with a normalised desktop (wallpaper, console
+//! font, DPI) and an optional Carnac keystroke overlay; Sandbox
+//! cannot run on GitHub-hosted runners (no nested virtualisation),
+//! so v1 is the local-iteration path. CI workflows and the
+//! orphan-branch publish flow arrive in v2; the full control-mode +
+//! vim + ping scene arrives in v3.
 
 #![cfg_attr(coverage_nightly, coverage(off))]
 
+pub mod bin;
 pub mod config_override;
 pub mod driver;
 pub mod dsl;
@@ -43,6 +51,14 @@ pub enum DemoEnv {
     /// No isolation - the caller is expected to step away while the
     /// demo records.
     Local,
+    /// Run inside a fresh Windows Sandbox VM. Mounts the workspace
+    /// read-only, mounts a writable output folder for the GIF, mounts
+    /// the cached vendored binaries, and runs the demo via a
+    /// `LogonCommand` that boots
+    /// `xtask/demo-assets/sandbox-bootstrap.ps1`. Cannot run on
+    /// GitHub-hosted runners because they lack nested virtualisation;
+    /// `--env ci-runner` (v2) is the canonical recording path.
+    Sandbox,
 }
 
 /// One top-level window snapshot returned by [`DemoSystem::enum_windows`].
@@ -132,6 +148,40 @@ pub trait DemoSystem {
     /// (frame extraction + gifski), and produce `out_gif`.
     fn stop_recording(&self, out_raw: &Path, out_gif: &Path) -> Result<()>;
 
+    /// Return `true` when `path` exists on the host filesystem. Used
+    /// for cache hits in [`bin`] and for the sandbox sentinel poll in
+    /// [`env::sandbox`].
+    fn path_exists(&self, path: &Path) -> bool;
+
+    /// Return the size of `path` in bytes. Used by the recorder to
+    /// poll until ffmpeg has written its first capture frames.
+    fn file_size(&self, path: &Path) -> Result<u64>;
+
+    /// Download `url` to `dest`, replacing any existing file. Failure
+    /// to fetch (HTTP error, redirect loop, transport error) returns
+    /// an error.
+    fn http_download(&self, url: &str, dest: &Path) -> Result<()>;
+
+    /// Compute the lower-case hex SHA-256 digest of `path`.
+    fn sha256_file(&self, path: &Path) -> Result<String>;
+
+    /// Extract `archive` into `dest_dir`. Supports `.zip` and
+    /// `.tar.xz` based on the file's extension. The destination is
+    /// created if it does not exist; existing contents are not
+    /// removed (callers are expected to extract into a clean
+    /// directory).
+    fn extract_archive(&self, archive: &Path, dest_dir: &Path) -> Result<()>;
+
+    /// Launch `WindowsSandbox.exe` against `wsb_path`. Production
+    /// impl tracks the child internally so
+    /// [`terminate_sandbox`](Self::terminate_sandbox) can shut it
+    /// down on cleanup.
+    fn spawn_sandbox(&self, wsb_path: &Path) -> Result<()>;
+
+    /// Best-effort terminate the in-flight Windows Sandbox process.
+    /// Idempotent.
+    fn terminate_sandbox(&self) -> Result<()>;
+
     /// Print an informational message to stdout.
     fn print_info(&self, message: &str);
 
@@ -141,13 +191,15 @@ pub trait DemoSystem {
 
 /// Production implementation of [`DemoSystem`].
 ///
-/// Holds two long-lived child processes between method calls:
-/// the in-flight ffmpeg gdigrab capture, and the spawned csshw
-/// daemon. All Windows-API calls live in the `windows_input` private
-/// module behind `cfg(target_os = "windows")`.
+/// Holds three long-lived child processes between method calls:
+/// the in-flight ffmpeg gdigrab capture, the spawned csshw daemon,
+/// and (for `--env sandbox`) the WindowsSandbox.exe host. All
+/// Windows-API calls live in the `windows_input` private module
+/// behind `cfg(target_os = "windows")`.
 pub struct RealSystem {
     capture: std::sync::Mutex<Option<std::process::Child>>,
     csshw: std::sync::Mutex<Option<std::process::Child>>,
+    sandbox: std::sync::Mutex<Option<std::process::Child>>,
 }
 
 impl RealSystem {
@@ -156,6 +208,7 @@ impl RealSystem {
         Self {
             capture: std::sync::Mutex::new(None),
             csshw: std::sync::Mutex::new(None),
+            sandbox: std::sync::Mutex::new(None),
         }
     }
 }
@@ -253,23 +306,172 @@ impl DemoSystem for RealSystem {
     }
 
     fn start_recording(&self, out_raw: &Path) -> Result<()> {
+        let workspace = self.workspace_root()?;
+        let bin_dir = workspace.join("target").join("demo").join("bin");
+        let bins = bin::ensure_bins(self, &bin_dir)?;
         let mut slot = self.capture.lock().expect("capture mutex poisoned");
         if slot.is_some() {
             anyhow::bail!("start_recording called while a capture is already running");
         }
-        let child = recorder::spawn_ffmpeg_gdigrab(out_raw)?;
+        let child = recorder::spawn_ffmpeg_gdigrab(&bins.ffmpeg, out_raw)?;
+        // Block until ffmpeg has actually started writing frames so
+        // the demo's first keystrokes are captured. The trait `sleep`
+        // and `file_size` are used so tests can short-circuit.
+        recorder::wait_for_capture_baseline(self, out_raw)?;
         *slot = Some(child);
         Ok(())
     }
 
     fn stop_recording(&self, out_raw: &Path, out_gif: &Path) -> Result<()> {
+        let workspace = self.workspace_root()?;
+        let bin_dir = workspace.join("target").join("demo").join("bin");
+        let bins = bin::ensure_bins(self, &bin_dir)?;
         let child = self
             .capture
             .lock()
             .expect("capture mutex poisoned")
             .take()
             .ok_or_else(|| anyhow::anyhow!("stop_recording called with no active capture"))?;
-        recorder::stop_ffmpeg_and_encode(child, out_raw, out_gif)
+        recorder::stop_ffmpeg_and_encode(child, &bins.ffmpeg, &bins.gifski, out_raw, out_gif)
+    }
+
+    fn path_exists(&self, path: &Path) -> bool {
+        path.exists()
+    }
+
+    fn file_size(&self, path: &Path) -> Result<u64> {
+        std::fs::metadata(path)
+            .map(|m| m.len())
+            .map_err(|e| anyhow::anyhow!("failed to stat {}: {e}", path.display()))
+    }
+
+    fn http_download(&self, url: &str, dest: &Path) -> Result<()> {
+        if let Some(parent) = dest.parent() {
+            self.ensure_dir(parent)?;
+        }
+        // Use PowerShell's Invoke-WebRequest so we inherit the OS's
+        // TLS root store and avoid pulling a Rust HTTP client into
+        // xtask. `-UseBasicParsing` skips the IE engine warm-up; the
+        // first run on a fresh sandbox would otherwise prompt for IE
+        // first-launch configuration. Single-quoted PS strings keep
+        // backslashes in `dest` literal.
+        let dest_str = dest.to_string_lossy().replace('\'', "''");
+        let url_str = url.replace('\'', "''");
+        let script = format!(
+            "$ProgressPreference='SilentlyContinue';\
+             [Net.ServicePointManager]::SecurityProtocol=\
+             [Net.SecurityProtocolType]::Tls12;\
+             Invoke-WebRequest -UseBasicParsing -Uri '{url_str}' -OutFile '{dest_str}'"
+        );
+        let status = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .status()
+            .map_err(|e| anyhow::anyhow!("failed to spawn powershell for download: {e}"))?;
+        if !status.success() {
+            anyhow::bail!("powershell Invoke-WebRequest {url} -> {dest:?} failed: {status}");
+        }
+        Ok(())
+    }
+
+    fn sha256_file(&self, path: &Path) -> Result<String> {
+        use sha2::{Digest, Sha256};
+        let mut file = std::fs::File::open(path)
+            .map_err(|e| anyhow::anyhow!("failed to open {} for hashing: {e}", path.display()))?;
+        let mut hasher = Sha256::new();
+        std::io::copy(&mut file, &mut hasher)
+            .map_err(|e| anyhow::anyhow!("failed to read {} for hashing: {e}", path.display()))?;
+        let digest = hasher.finalize();
+        Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
+    }
+
+    fn extract_archive(&self, archive: &Path, dest_dir: &Path) -> Result<()> {
+        self.ensure_dir(dest_dir)?;
+        let name = archive
+            .file_name()
+            .map(|s| s.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        if name.ends_with(".tar.xz") || name.ends_with(".tar.gz") || name.ends_with(".tar") {
+            // Windows 10 1803+ ships BSD tar.exe on PATH. We invoke it
+            // with `-C` so the destination is unambiguous.
+            let status = std::process::Command::new("tar")
+                .arg("-xf")
+                .arg(archive)
+                .arg("-C")
+                .arg(dest_dir)
+                .status()
+                .map_err(|e| anyhow::anyhow!("failed to spawn tar: {e}"))?;
+            if !status.success() {
+                anyhow::bail!("tar -xf {} failed: {status}", archive.display());
+            }
+            return Ok(());
+        }
+        if name.ends_with(".zip") || name.ends_with(".nupkg") {
+            let archive_str = archive.to_string_lossy().replace('\'', "''");
+            let dest_str = dest_dir.to_string_lossy().replace('\'', "''");
+            // Expand-Archive is idempotent only with -Force; we
+            // already create the dest fresh in callers so -Force is
+            // safe.
+            let script = format!(
+                "$ProgressPreference='SilentlyContinue';\
+                 Expand-Archive -Force -LiteralPath '{archive_str}' \
+                 -DestinationPath '{dest_str}'"
+            );
+            let status = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+                .status()
+                .map_err(|e| anyhow::anyhow!("failed to spawn powershell for extract: {e}"))?;
+            if !status.success() {
+                anyhow::bail!("Expand-Archive {} failed: {status}", archive.display());
+            }
+            return Ok(());
+        }
+        anyhow::bail!(
+            "extract_archive: unsupported archive extension for {}",
+            archive.display()
+        )
+    }
+
+    fn spawn_sandbox(&self, wsb_path: &Path) -> Result<()> {
+        let mut slot = self.sandbox.lock().expect("sandbox mutex poisoned");
+        if slot.is_some() {
+            anyhow::bail!("spawn_sandbox called while a sandbox is already running");
+        }
+        let child = std::process::Command::new("WindowsSandbox.exe")
+            .arg(wsb_path)
+            .spawn()
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "failed to spawn WindowsSandbox.exe. Enable the \
+                     \"Windows Sandbox\" optional feature first \
+                     (`Enable-WindowsOptionalFeature -Online \
+                     -FeatureName Containers-DisposableClientVM`): {e}"
+                )
+            })?;
+        *slot = Some(child);
+        Ok(())
+    }
+
+    fn terminate_sandbox(&self) -> Result<()> {
+        if let Some(mut child) = self.sandbox.lock().expect("sandbox mutex poisoned").take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        // Belt-and-braces: WindowsSandbox.exe is the launcher, but
+        // the sandbox VM itself is hosted by `vmcompute` and the
+        // user-facing `WindowsSandboxClient.exe`. A stale client
+        // can outlive the launcher. Best-effort taskkill mirrors
+        // [`Self::terminate_csshw`].
+        let _ = std::process::Command::new("taskkill")
+            .args(["/IM", "WindowsSandboxClient.exe", "/F"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        let _ = std::process::Command::new("taskkill")
+            .args(["/IM", "WindowsSandbox.exe", "/F"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        Ok(())
     }
 
     fn print_info(&self, message: &str) {
@@ -320,6 +522,7 @@ pub fn record_demo<S: DemoSystem>(
     ));
     match env {
         DemoEnv::Local => env::local::run(system, &script, &out, no_record)?,
+        DemoEnv::Sandbox => env::sandbox::run(system, &out, no_record, no_overlay)?,
     }
     Ok(())
 }

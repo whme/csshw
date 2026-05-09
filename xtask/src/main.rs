@@ -68,9 +68,16 @@ enum Command {
     CheckTypography,
     /// Record an automated demo of csshw and produce `target/demo/csshw.gif`.
     ///
-    /// v0 only supports `--env local` (runs on the caller's interactive
-    /// desktop session, no isolation) and requires `ffmpeg` and
-    /// `gifski` on PATH.
+    /// Two providers are wired:
+    /// - `--env local` runs on the caller's interactive desktop
+    ///   session; the user must step away while it records.
+    /// - `--env sandbox` boots a fresh Windows Sandbox VM with a
+    ///   normalised desktop and an optional Carnac keystroke overlay.
+    ///   Requires the `Containers-DisposableClientVM` Windows feature.
+    ///
+    /// ffmpeg, gifski, and Carnac are SHA-pinned and downloaded into
+    /// `target/demo/bin/` on first use; subsequent runs hit the warm
+    /// cache.
     RecordDemo {
         /// Output GIF path. Defaults to
         /// `<workspace>/target/demo/csshw.gif`.

@@ -16,6 +16,9 @@ toml_edit = "0.21"
 semver    = "1.0"
 # Demo subcommand (record-demo): regex-based window matching.
 regex     = "1"
+# Demo subcommand: SHA-256 verification of vendored ffmpeg / gifski /
+# Carnac binaries downloaded into `target/demo/bin/`.
+sha2      = "0.10"
 
 # Demo subcommand: Windows input synthesis (SendInput) and window
 # enumeration. Pinned to the same major version csshw_lib uses

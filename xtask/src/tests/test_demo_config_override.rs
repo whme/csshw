@@ -29,6 +29,13 @@ mock! {
         fn terminate_csshw(&self) -> anyhow::Result<()>;
         fn start_recording(&self, out_raw: &Path) -> anyhow::Result<()>;
         fn stop_recording(&self, out_raw: &Path, out_gif: &Path) -> anyhow::Result<()>;
+        fn path_exists(&self, path: &Path) -> bool;
+        fn file_size(&self, path: &Path) -> anyhow::Result<u64>;
+        fn http_download(&self, url: &str, dest: &Path) -> anyhow::Result<()>;
+        fn sha256_file(&self, path: &Path) -> anyhow::Result<String>;
+        fn extract_archive(&self, archive: &Path, dest_dir: &Path) -> anyhow::Result<()>;
+        fn spawn_sandbox(&self, wsb_path: &Path) -> anyhow::Result<()>;
+        fn terminate_sandbox(&self) -> anyhow::Result<()>;
         fn print_info(&self, message: &str);
         fn print_debug(&self, message: &str);
     }
