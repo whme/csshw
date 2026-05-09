@@ -184,6 +184,12 @@ pub trait DemoSystem {
     /// Idempotent.
     fn terminate_sandbox(&self) -> Result<()>;
 
+    /// Run `cargo build -p csshw` against `workspace`, leaving
+    /// `target/debug/csshw.exe` ready for the sandbox bootstrap to
+    /// pick up. Production impl shells out to `cargo`; tests stub
+    /// it to a no-op.
+    fn cargo_build_csshw(&self, workspace: &Path) -> Result<()>;
+
     /// Print an informational message to stdout.
     fn print_info(&self, message: &str);
 
@@ -480,6 +486,21 @@ impl DemoSystem for RealSystem {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status();
+        Ok(())
+    }
+
+    fn cargo_build_csshw(&self, workspace: &Path) -> Result<()> {
+        // Spawn cargo with stdout/stderr inherited so the user sees
+        // build progress live. Debug profile only - the demo neither
+        // benefits from optimisations nor wants the longer build.
+        let status = std::process::Command::new("cargo")
+            .args(["build", "-p", "csshw"])
+            .current_dir(workspace)
+            .status()
+            .map_err(|e| anyhow::anyhow!("failed to spawn cargo build: {e}"))?;
+        if !status.success() {
+            anyhow::bail!("cargo build -p csshw failed: {status}");
+        }
         Ok(())
     }
 

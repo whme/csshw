@@ -27,6 +27,7 @@ mock! {
         fn sleep(&self, duration: Duration);
         fn spawn_csshw(&self, exe: &Path, hosts: &[String], cwd: &Path) -> anyhow::Result<()>;
         fn terminate_csshw(&self) -> anyhow::Result<()>;
+        fn cargo_build_csshw(&self, workspace: &Path) -> anyhow::Result<()>;
         fn start_recording(&self, out_raw: &Path) -> anyhow::Result<()>;
         fn stop_recording(&self, out_raw: &Path, out_gif: &Path) -> anyhow::Result<()>;
         fn path_exists(&self, path: &Path) -> bool;

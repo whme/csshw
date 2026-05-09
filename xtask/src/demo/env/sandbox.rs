@@ -254,6 +254,14 @@ pub fn run<S: DemoSystem>(
     bin::ensure_bins(system, &layout.bin_dir)
         .with_context(|| "preparing target/demo/bin/ for sandbox mount")?;
 
+    // Build csshw on the host so the sandbox bootstrap can find
+    // a ready-to-run csshw.exe under the read-only repo mount.
+    // The sandbox itself has no Rust toolchain.
+    system.print_info("sandbox env: building csshw on host (cargo build -p csshw)");
+    system
+        .cargo_build_csshw(&layout.workspace)
+        .with_context(|| "building csshw on the host before launching sandbox")?;
+
     // Wipe leftover sentinels and GIFs from previous runs so the
     // poll loop can use plain "exists" without a timestamp check.
     system.ensure_dir(&layout.out_dir)?;
