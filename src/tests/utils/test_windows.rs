@@ -5,7 +5,7 @@
 
 use crate::utils::windows::{
     clear_screen, is_windows_10, read_console_input, read_keyboard_input, set_console_border_color,
-    set_console_color, utf16_buffer_to_string, MockWindowsApi, KEY_EVENT,
+    set_console_color, try_set_console_color, utf16_buffer_to_string, MockWindowsApi, KEY_EVENT,
 };
 use windows::Win32::Foundation::COLORREF;
 use windows::Win32::System::Console::{
@@ -218,6 +218,51 @@ mod console_color_test {
             result.is_err(),
             "Should panic when set_console_text_attribute fails"
         );
+    }
+
+    /// Tests that the fallible variant returns the underlying API error
+    /// instead of panicking, so best-effort callers can log and continue.
+    #[test]
+    fn test_try_set_console_color_returns_error() {
+        let mut mock_api = MockWindowsApi::new();
+        let test_color = CONSOLE_CHARACTER_ATTRIBUTES(0x0F);
+
+        mock_api
+            .expect_set_console_text_attribute()
+            .with(mockall::predicate::eq(test_color))
+            .times(1)
+            .returning(|_| return Err(windows::core::Error::from_win32()));
+
+        let result = try_set_console_color(&mock_api, test_color);
+        assert!(result.is_err());
+    }
+
+    /// Tests that the fallible variant succeeds and repaints every row when
+    /// all underlying API calls succeed.
+    #[test]
+    fn test_try_set_console_color_success() {
+        let mut mock_api = MockWindowsApi::new();
+        let test_color = CONSOLE_CHARACTER_ATTRIBUTES(0x0F);
+
+        let mut buffer_info = CONSOLE_SCREEN_BUFFER_INFO::default();
+        buffer_info.dwSize.X = 80;
+        buffer_info.dwSize.Y = 25;
+
+        mock_api
+            .expect_set_console_text_attribute()
+            .with(mockall::predicate::eq(test_color))
+            .times(1)
+            .returning(|_| return Ok(()));
+        mock_api
+            .expect_get_console_screen_buffer_info()
+            .times(1)
+            .return_const(Ok(buffer_info));
+        mock_api
+            .expect_fill_console_output_attribute()
+            .times(25)
+            .returning(|_, _, _| return Ok(80));
+
+        assert!(try_set_console_color(&mock_api, test_color).is_ok());
     }
 }
 

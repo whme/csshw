@@ -731,6 +731,28 @@ fn test_apply_state_visuals_no_op_when_state_unchanged() {
 }
 
 #[test]
+fn test_apply_state_visuals_swallows_api_error() {
+    // A transient console-API failure during the recolor must not panic the
+    // client - the visual cue is best-effort, and the daemon-driven state
+    // machine remains correct regardless of the repaint outcome.
+    let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
+
+    let mut mock_api = MockWindowsApi::new();
+    mock_api
+        .expect_set_console_text_attribute()
+        .with(mockall::predicate::eq(DISABLED_CONSOLE_ATTRIBUTES))
+        .times(1)
+        .returning(|_| return Err(windows::core::Error::from_win32()));
+
+    apply_state_visuals(
+        &mock_api,
+        ClientState::Active,
+        ClientState::Disabled,
+        Some(original),
+    );
+}
+
+#[test]
 fn test_apply_state_visuals_skipped_when_original_attrs_unavailable() {
     // When startup failed to capture the original attributes we degrade
     // gracefully and leave the console untouched even on a real

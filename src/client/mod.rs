@@ -12,7 +12,7 @@ use std::time::Duration;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::utils::config::ClientConfig;
-use crate::utils::windows::{get_console_title, set_console_color, WindowsApi};
+use crate::utils::windows::{get_console_title, try_set_console_color, WindowsApi};
 use ssh2_config::{ParseRule, SshConfig};
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::process::{Child, Command};
@@ -82,6 +82,11 @@ const DISABLED_CONSOLE_ATTRIBUTES: CONSOLE_CHARACTER_ATTRIBUTES = CONSOLE_CHARAC
 /// at startup failed, in which case we degrade gracefully and leave the
 /// console untouched.
 ///
+/// Disabled-state visuals are best-effort: a transient console API failure
+/// during the recolor is logged and swallowed rather than panicking the
+/// client, since the visual cue is non-critical and the daemon-driven
+/// state machine remains correct regardless of the repaint outcome.
+///
 /// # Arguments
 ///
 /// * `api`             - The Windows API implementation to use.
@@ -106,7 +111,12 @@ fn apply_state_visuals(
         ClientState::Active => original,
         ClientState::Disabled => DISABLED_CONSOLE_ATTRIBUTES,
     };
-    set_console_color(api, attrs);
+    if let Err(err) = try_set_console_color(api, attrs) {
+        warn!(
+            "Failed to repaint console for state transition {:?} -> {:?}: {}",
+            prev, next, err
+        );
+    }
 }
 
 /// Write the given [INPUT_RECORD_0] to the console input buffer using the provided API.
