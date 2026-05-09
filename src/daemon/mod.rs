@@ -1100,6 +1100,14 @@ async fn named_pipe_server_routine(
                             "Named pipe server routine lagged behind broadcast channel - dropping {} record(s)",
                             skipped
                         );
+                        // Probe and yield so sustained lag cannot starve
+                        // the keep-alive tick (the `select!` is `biased`
+                        // toward `recv`) and so a closed pipe is still
+                        // detected promptly under load.
+                        if !probe_pipe_alive(&server) {
+                            return;
+                        }
+                        tokio::task::yield_now().await;
                         continue;
                     }
                     Err(RecvError::Closed) => {
