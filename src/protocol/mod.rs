@@ -37,10 +37,6 @@ pub const SERIALIZED_PID_LENGTH: usize = 4;
 pub const TAG_INPUT_RECORD: u8 = 0x00;
 
 /// Tag byte reserved for client state-change messages.
-///
-/// Not yet emitted by the daemon. Reserved here to lock in the wire-format
-/// numbering used by the issue #179 follow-up PR that wires the
-/// [`ClientState`] enum onto the wire.
 pub const TAG_STATE_CHANGE: u8 = 0x01;
 
 /// Tag byte identifying a zero-payload keep-alive message on the

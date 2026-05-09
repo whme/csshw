@@ -330,8 +330,8 @@ mod daemon_test {
         return (Arc::new(Mutex::new(clients)), state_tx);
     }
 
-    /// Verifies that when a client's [`PipeServerState`] is set to
-    /// [`PipeServerState::Disabled`], the pipe server routine consumes
+    /// Verifies that when a client's [`ClientState`] is set to
+    /// [`ClientState::Disabled`], the pipe server routine consumes
     /// broadcast messages but does not forward them through the pipe.
     /// Only keep-alive packets should arrive on the client side.
     #[tokio::test]
@@ -349,7 +349,7 @@ mod daemon_test {
             .pipe_mode(PipeMode::Message)
             .create(&pipe_name)?;
         let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
-        let (clients, pipe_server_state) = make_clients_with_pid_and_state(TEST_PID);
+        let (clients, state_tx) = make_clients_with_pid_and_state(TEST_PID);
         send_pid(&named_pipe_client, TEST_PID).await?;
         let future = tokio::spawn(async move {
             named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
@@ -385,7 +385,7 @@ mod daemon_test {
         assert!(got_data);
 
         // Disable the client.
-        pipe_server_state.send_replace(ClientState::Disabled);
+        state_tx.send_replace(ClientState::Disabled);
 
         // Send more data - it must NOT arrive at the client.
         const SENDS: usize = 5;
@@ -477,11 +477,11 @@ mod daemon_test {
             .pipe_mode(PipeMode::Message)
             .create(&pipe_name)?;
         let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
-        let (clients, pipe_server_state) = make_clients_with_pid_and_state(TEST_PID);
+        let (clients, state_tx) = make_clients_with_pid_and_state(TEST_PID);
 
         // Disable up front so the routine throttles consumption and
         // cannot drain the broadcast buffer before we overflow it.
-        pipe_server_state.send_replace(ClientState::Disabled);
+        state_tx.send_replace(ClientState::Disabled);
 
         // Overflow the bounded broadcast buffer before the routine
         // begins pulling from it so the first `try_recv` observes

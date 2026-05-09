@@ -755,9 +755,7 @@ impl<'a> Daemon<'a> {
 
     /// Push a new [`ClientState`] for the client identified by `pid`.
     ///
-    /// No-op if no client matches `pid`. Called from the
-    /// `[t]oggle enabled` and `e[n]able all` control-mode handlers via
-    /// [`Daemon::update_client_states`].
+    /// No-op if no client matches `pid`.
     ///
     /// # Arguments
     ///
@@ -1038,7 +1036,7 @@ fn launch_client_console<W: WindowsApi>(
 /// broadcast input records to the named pipe and emit periodic
 /// keep-alives during idle periods.
 ///
-/// A biased [`tokio::select`] polls the `receiver` first and falls back
+/// A biased [`tokio::select!`] polls the `receiver` first and falls back
 /// to a periodic keep-alive tick when no input is ready. Input records
 /// are gated on the current [`ClientState`]: [`ClientState::Active`]
 /// forwards the record, [`ClientState::Disabled`] drops it - and probes
@@ -1133,7 +1131,7 @@ async fn named_pipe_server_routine(
                 }
             }
             _ = keepalive.tick() => {
-                if !write_framed_message(&server, &[TAG_KEEP_ALIVE]).await {
+                if !probe_pipe_alive(&server) {
                     return;
                 }
             }
@@ -1177,14 +1175,6 @@ async fn write_framed_message(server: &NamedPipeServer, frame: &[u8]) -> bool {
             panic!("Timed out waiting for named pipe server to become writable",)
         });
         match server.try_write(&frame[written..]) {
-            Ok(0) => {
-                // Tokio convention: 0-byte successful write means EOF.
-                debug!(
-                    "Named pipe server ({:?}) is closed, stopping named pipe server routine",
-                    server
-                );
-                return false;
-            }
             Ok(n) => {
                 written += n;
                 if written < frame.len() {
