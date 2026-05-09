@@ -7,6 +7,7 @@
 
 mod changelog;
 mod coverage;
+mod demo;
 mod inject_agent_token;
 mod readme;
 mod release;
@@ -65,6 +66,28 @@ enum Command {
     /// Scan tracked text files for forbidden decorative Unicode
     /// punctuation and fail with a list of offending locations.
     CheckTypography,
+    /// Record an automated demo of csshw and produce `target/demo/csshw.gif`.
+    ///
+    /// v0 only supports `--env local` (runs on the caller's interactive
+    /// desktop session, no isolation) and requires `ffmpeg` and
+    /// `gifski` on PATH.
+    RecordDemo {
+        /// Output GIF path. Defaults to
+        /// `<workspace>/target/demo/csshw.gif`.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Recording environment provider.
+        #[arg(long, value_enum, default_value_t = demo::DemoEnv::Local)]
+        env: demo::DemoEnv,
+        /// Skip ffmpeg capture; useful for iterating on the demo
+        /// script without burning a recording cycle.
+        #[arg(long)]
+        no_record: bool,
+        /// Skip the keystroke overlay. v0 always behaves as if this
+        /// is set; the flag exists so v1+ scripts can opt out.
+        #[arg(long)]
+        no_overlay: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -100,6 +123,14 @@ fn main() -> Result<()> {
         }
         Command::CheckTypography => {
             typography::check_typography(&typography::RealSystem)?;
+        }
+        Command::RecordDemo {
+            out,
+            env,
+            no_record,
+            no_overlay,
+        } => {
+            demo::record_demo(&demo::RealSystem::new(), out, env, no_record, no_overlay)?;
         }
     }
     Ok(())
