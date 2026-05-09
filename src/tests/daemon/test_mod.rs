@@ -7,19 +7,16 @@ mod daemon_test {
 
     use tokio::{
         net::windows::named_pipe::{ClientOptions, NamedPipeClient, PipeMode, ServerOptions},
-        sync::broadcast,
+        sync::{broadcast, watch},
     };
     use windows::Win32::Foundation::{HANDLE, HWND};
 
     use crate::{
-        daemon::{
-            named_pipe_server_routine, resolve_cluster_tags, toggle_pipe_server_states, Client,
-            Clients, HWNDWrapper, PipeServerState,
-        },
+        daemon::{named_pipe_server_routine, resolve_cluster_tags, Client, Clients, HWNDWrapper},
         protocol::{
-            serialization::serialize_pid, FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH,
-            SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH, TAG_INPUT_RECORD,
-            TAG_KEEP_ALIVE,
+            serialization::serialize_pid, ClientState, FRAMED_INPUT_RECORD_LENGTH,
+            FRAMED_KEEP_ALIVE_LENGTH, SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
+            TAG_INPUT_RECORD, TAG_KEEP_ALIVE,
         },
         utils::{config::Cluster, constants::PIPE_NAME},
     };
@@ -52,7 +49,7 @@ mod daemon_test {
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: pid,
-            pipe_server_state: Arc::new(Mutex::new(PipeServerState::Enabled)),
+            state_tx: watch::channel(ClientState::Active).0,
         });
         return Arc::new(Mutex::new(clients));
     }
@@ -142,12 +139,17 @@ mod daemon_test {
             named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
         });
 
+        // Push 5 input records up front; once the routine drains them the
+        // broadcast channel goes idle and the 5 ms keep-alive branch of the
+        // select! starts firing, letting us assert both behaviours in one
+        // loop.
+        const TARGET_INPUT_FRAMES: usize = 5;
+        for _ in 0..TARGET_INPUT_FRAMES {
+            sender.send([2; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
+        }
         let mut keep_alive_received = false;
         let mut successful_iterations = 0;
-        // Verify the routine forwards the data through the pipe
         loop {
-            // Send data to the routine
-            sender.send([2; SERIALIZED_INPUT_RECORD_0_LENGTH])?;
             // Wait for the pipe to be readable
             named_pipe_client.readable().await?;
             let mut buf = [0u8; FRAMED_INPUT_RECORD_LENGTH];
@@ -166,9 +168,6 @@ mod daemon_test {
                         assert_eq!(FRAMED_INPUT_RECORD_LENGTH, n);
                         assert_eq!([2; SERIALIZED_INPUT_RECORD_0_LENGTH], buf[1..]);
                         successful_iterations += 1;
-                        if successful_iterations >= 5 {
-                            break;
-                        }
                     }
                     other => panic!("Unexpected tag byte 0x{other:02X}"),
                 },
@@ -179,8 +178,12 @@ mod daemon_test {
                     return Err(e.into());
                 }
             }
+            if keep_alive_received && successful_iterations >= TARGET_INPUT_FRAMES {
+                break;
+            }
         }
         assert!(keep_alive_received);
+        assert!(successful_iterations >= TARGET_INPUT_FRAMES);
         // Drop the client, closing the pipe.
         drop(named_pipe_client);
         // We expect the routine to exit gracefully.
@@ -310,25 +313,25 @@ mod daemon_test {
     }
 
     /// Construct a [`Clients`] collection holding a single [`Client`] whose
-    /// `process_id` equals `pid`, returning both the collection and the
-    /// shared [`PipeServerState`] handle so the caller can mutate it.
+    /// `process_id` equals `pid`, returning both the collection and a clone
+    /// of the [`watch::Sender<ClientState>`] so the caller can mutate it.
     fn make_clients_with_pid_and_state(
         pid: u32,
-    ) -> (Arc<Mutex<Clients>>, Arc<Mutex<PipeServerState>>) {
-        let state = Arc::new(Mutex::new(PipeServerState::Enabled));
+    ) -> (Arc<Mutex<Clients>>, watch::Sender<ClientState>) {
+        let (state_tx, _state_rx) = watch::channel(ClientState::Active);
         let mut clients = Clients::new();
         clients.push(Client {
             hostname: format!("test-host-{pid}"),
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: pid,
-            pipe_server_state: Arc::clone(&state),
+            state_tx: state_tx.clone(),
         });
-        return (Arc::new(Mutex::new(clients)), state);
+        return (Arc::new(Mutex::new(clients)), state_tx);
     }
 
-    /// Verifies that when a client's [`PipeServerState`] is set to
-    /// [`PipeServerState::Disabled`], the pipe server routine consumes
+    /// Verifies that when a client's [`ClientState`] is set to
+    /// [`ClientState::Disabled`], the pipe server routine consumes
     /// broadcast messages but does not forward them through the pipe.
     /// Only keep-alive packets should arrive on the client side.
     #[tokio::test]
@@ -346,7 +349,7 @@ mod daemon_test {
             .pipe_mode(PipeMode::Message)
             .create(&pipe_name)?;
         let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
-        let (clients, pipe_server_state) = make_clients_with_pid_and_state(TEST_PID);
+        let (clients, state_tx) = make_clients_with_pid_and_state(TEST_PID);
         send_pid(&named_pipe_client, TEST_PID).await?;
         let future = tokio::spawn(async move {
             named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
@@ -382,7 +385,7 @@ mod daemon_test {
         assert!(got_data);
 
         // Disable the client.
-        *pipe_server_state.lock().unwrap() = PipeServerState::Disabled;
+        state_tx.send_replace(ClientState::Disabled);
 
         // Send more data - it must NOT arrive at the client.
         const SENDS: usize = 5;
@@ -474,11 +477,11 @@ mod daemon_test {
             .pipe_mode(PipeMode::Message)
             .create(&pipe_name)?;
         let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
-        let (clients, pipe_server_state) = make_clients_with_pid_and_state(TEST_PID);
+        let (clients, state_tx) = make_clients_with_pid_and_state(TEST_PID);
 
         // Disable up front so the routine throttles consumption and
         // cannot drain the broadcast buffer before we overflow it.
-        *pipe_server_state.lock().unwrap() = PipeServerState::Disabled;
+        state_tx.send_replace(ClientState::Disabled);
 
         // Overflow the bounded broadcast buffer before the routine
         // begins pulling from it so the first `try_recv` observes
@@ -555,7 +558,7 @@ mod daemon_test {
                 window_handle: HWND(std::ptr::null_mut()),
                 process_handle: HANDLE::default(),
                 process_id: pid,
-                pipe_server_state: Arc::new(Mutex::new(PipeServerState::Enabled)),
+                state_tx: watch::channel(ClientState::Active).0,
             };
         };
         clients.push(make_client(1000));
@@ -573,21 +576,21 @@ mod daemon_test {
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: 1000,
-            pipe_server_state: Arc::new(Mutex::new(PipeServerState::Enabled)),
+            state_tx: watch::channel(ClientState::Active).0,
         };
         let client_b = Client {
             hostname: "host-b".to_owned(),
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: 2000,
-            pipe_server_state: Arc::new(Mutex::new(PipeServerState::Enabled)),
+            state_tx: watch::channel(ClientState::Active).0,
         };
         let client_c = Client {
             hostname: "host-c".to_owned(),
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: 3000,
-            pipe_server_state: Arc::new(Mutex::new(PipeServerState::Enabled)),
+            state_tx: watch::channel(ClientState::Active).0,
         };
 
         clients.push(client_a);
@@ -616,32 +619,38 @@ mod daemon_test {
         assert_eq!(hostnames_after_retain, vec!["host-a", "host-c"]);
     }
 
-    /// Builds a [`Client`] with the given PID and initial [`PipeServerState`].
-    fn make_client_with_state(pid: u32, state: PipeServerState) -> Client {
+    /// Builds a [`Client`] with the given PID and initial [`ClientState`].
+    fn make_client_with_state(pid: u32, state: ClientState) -> Client {
+        let (state_tx, _state_rx) = watch::channel(state);
         return Client {
             hostname: format!("host-{pid}"),
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: pid,
-            pipe_server_state: Arc::new(Mutex::new(state)),
+            state_tx,
         };
     }
 
-    /// Verifies that [`toggle_pipe_server_states`] flips each client's
-    /// [`PipeServerState`] independently and is its own inverse over two
-    /// invocations.
+    /// Verifies that the per-client toggle (snapshot then flip via
+    /// `send_replace`) flips each client's [`ClientState`] independently
+    /// and is its own inverse over two invocations.
+    ///
+    /// Mirrors the snapshot-then-flip logic in
+    /// [`crate::daemon::Daemon::handle_control_mode`]'s `VK_T` arm so the
+    /// per-client toggle behaviour is exercised without standing up a full
+    /// [`crate::daemon::Daemon`].
     #[test]
-    fn test_toggle_pipe_server_states_flips_each_client_independently() {
+    fn test_toggle_flips_each_client_independently() {
         let mut clients = Clients::new();
-        clients.push(make_client_with_state(1, PipeServerState::Enabled));
-        clients.push(make_client_with_state(2, PipeServerState::Disabled));
-        clients.push(make_client_with_state(3, PipeServerState::Enabled));
-        clients.push(make_client_with_state(4, PipeServerState::Disabled));
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Disabled));
+        clients.push(make_client_with_state(3, ClientState::Active));
+        clients.push(make_client_with_state(4, ClientState::Disabled));
 
-        let snapshot = |c: &Clients| -> Vec<PipeServerState> {
+        let snapshot = |c: &Clients| -> Vec<ClientState> {
             return c
                 .iter()
-                .map(|client| return *client.pipe_server_state.lock().unwrap())
+                .map(|client| return *client.state_tx.borrow())
                 .collect();
         };
 
@@ -649,27 +658,45 @@ mod daemon_test {
         assert_eq!(
             initial,
             vec![
-                PipeServerState::Enabled,
-                PipeServerState::Disabled,
-                PipeServerState::Enabled,
-                PipeServerState::Disabled,
+                ClientState::Active,
+                ClientState::Disabled,
+                ClientState::Active,
+                ClientState::Disabled,
             ]
         );
 
-        // First press of `t`: every client flips.
-        toggle_pipe_server_states(&clients);
+        // Press `t` once: snapshot every state, then flip each.
+        let toggle = |c: &Clients| {
+            let flips: Vec<ClientState> = c
+                .iter()
+                .map(|client| {
+                    return match *client.state_tx.borrow() {
+                        ClientState::Active => ClientState::Disabled,
+                        ClientState::Disabled => ClientState::Active,
+                    };
+                })
+                .collect();
+            // `send_replace` succeeds even when no task has subscribed;
+            // tests don't spin up the pipe-server routine that would
+            // normally observe the value via `borrow()`.
+            for (client, flipped) in c.iter().zip(flips) {
+                client.state_tx.send_replace(flipped);
+            }
+        };
+
+        toggle(&clients);
         assert_eq!(
             snapshot(&clients),
             vec![
-                PipeServerState::Disabled,
-                PipeServerState::Enabled,
-                PipeServerState::Disabled,
-                PipeServerState::Enabled,
+                ClientState::Disabled,
+                ClientState::Active,
+                ClientState::Disabled,
+                ClientState::Active,
             ]
         );
 
-        // Second press of `t`: every client flips back to its initial state.
-        toggle_pipe_server_states(&clients);
+        // Press `t` again: every client flips back to its initial state.
+        toggle(&clients);
         assert_eq!(snapshot(&clients), initial);
     }
 }
