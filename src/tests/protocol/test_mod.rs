@@ -153,7 +153,10 @@ mod framed_message_test {
     fn unwrap_input_record(msg: &DaemonToClientMessage) -> INPUT_RECORD_0 {
         match msg {
             DaemonToClientMessage::InputRecord(record) => return *record,
-            DaemonToClientMessage::KeepAlive => panic!("expected InputRecord, got KeepAlive"),
+            other => panic!(
+                "expected InputRecord, got {:?}",
+                std::mem::discriminant(other)
+            ),
         }
     }
 
