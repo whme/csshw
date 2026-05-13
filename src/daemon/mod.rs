@@ -790,13 +790,14 @@ impl<'a> Daemon<'a> {
         }
     }
 
-    /// Returns whether control mode is active or not given the input_record.
+    /// Updates `self.control_mode_state` for the given input record and
+    /// reports whether control mode owned the keystroke.
     ///
-    /// For control mode to be active this function needs to be called
-    /// multiple times, as a key press translates to an input record and
-    /// the key combination that activates control mode has 2 keys:
-    /// `Ctrl + A`.
-    /// The current control mode state is stored in `self.control_mode_state`.
+    /// Entering control mode requires this function to be called twice
+    /// because the activating chord `Ctrl + A` produces two input
+    /// records (the modifier press and the `A` key). Once active, every
+    /// subsequent key - including the `Esc` that exits control mode -
+    /// is reported as consumed so callers do not forward it to clients.
     ///
     /// # Arguments
     ///
@@ -805,7 +806,10 @@ impl<'a> Daemon<'a> {
     ///
     /// # Returns
     ///
-    /// Whether or not control mode is active.
+    /// Whether the input record was consumed by control mode. Returns
+    /// `true` while control mode is active (including the `Esc`
+    /// keystroke that exits it), so callers must not forward such
+    /// records to clients.
     fn control_mode_is_active<W: WindowsApi>(
         &mut self,
         windows_api: &W,
@@ -817,7 +821,7 @@ impl<'a> Daemon<'a> {
         {
             if key_event.wVirtualKeyCode == VK_ESCAPE.0 {
                 self.quit_control_mode(windows_api);
-                return false;
+                return true;
             }
             return true;
         }
