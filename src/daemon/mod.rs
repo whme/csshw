@@ -562,13 +562,10 @@ impl<'a> Daemon<'a> {
                             let number_of_existing_clients = clients.lock().unwrap().len();
                             let new_clients = launch_clients(
                                 windows_api,
-                                resolve_cluster_tags(
+                                expand_hosts(
                                     hostnames.split(' ').map(|x| return x.trim()).collect(),
                                     self.clusters,
-                                )
-                                .into_iter()
-                                .map(|x| return x.to_owned())
-                                .collect(),
+                                ),
                                 &self.username,
                                 self.port,
                                 self.debug,
@@ -859,6 +856,29 @@ pub fn resolve_cluster_tags<'a>(hosts: Vec<&'a str>, clusters: &'a [Cluster]) ->
         }
     }
     return resolved_hosts;
+}
+
+/// Resolve cluster tags in `hosts` and expand brace expressions
+/// (e.g. `host{1..3}.local`) in each resulting hostname.
+///
+/// Used by the control-mode `[c]reate window(s)` path so hostname
+/// input behaves the same as on the CLI. Each cluster-resolved
+/// hostname is passed through [`bracoxide::explode`] individually;
+/// hostnames that do not contain a brace expression are kept as-is.
+///
+/// # Arguments
+///
+/// * `hosts`    - User-supplied hostnames and/or cluster tags.
+/// * `clusters` - Available cluster definitions.
+///
+/// # Returns
+///
+/// The fully resolved, brace-expanded list of hostnames.
+pub fn expand_hosts(hosts: Vec<&str>, clusters: &[Cluster]) -> Vec<String> {
+    return resolve_cluster_tags(hosts, clusters)
+        .into_iter()
+        .flat_map(|host| return explode(host).unwrap_or_else(|_| return vec![host.to_owned()]))
+        .collect();
 }
 
 /// Launches a client console for each given host and waits for

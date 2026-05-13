@@ -12,7 +12,10 @@ mod daemon_test {
     use windows::Win32::Foundation::{HANDLE, HWND};
 
     use crate::{
-        daemon::{named_pipe_server_routine, resolve_cluster_tags, Client, Clients, HWNDWrapper},
+        daemon::{
+            expand_hosts, named_pipe_server_routine, resolve_cluster_tags, Client, Clients,
+            HWNDWrapper,
+        },
         protocol::{
             serialization::serialize_pid, ClientState, FRAMED_INPUT_RECORD_LENGTH,
             FRAMED_KEEP_ALIVE_LENGTH, FRAMED_STATE_CHANGE_LENGTH, SERIALIZED_INPUT_RECORD_0_LENGTH,
@@ -114,6 +117,49 @@ mod daemon_test {
             resolve_cluster_tags(hosts, &clusters),
             vec!["host1", "host2", "host3"]
         );
+    }
+
+    #[test]
+    fn test_expand_hosts_brace_only() {
+        let hosts: Vec<&str> = vec!["host{1..3}.local"];
+        let clusters: Vec<Cluster> = vec![];
+        assert_eq!(
+            expand_hosts(hosts, &clusters),
+            vec!["host1.local", "host2.local", "host3.local"]
+        );
+    }
+
+    #[test]
+    fn test_expand_hosts_cluster_with_brace_member() {
+        let hosts: Vec<&str> = vec!["clusterA"];
+        let clusters: Vec<Cluster> = vec![Cluster {
+            name: "clusterA".to_string(),
+            hosts: vec!["box{1..2}.local".to_string()],
+        }];
+        assert_eq!(
+            expand_hosts(hosts, &clusters),
+            vec!["box1.local", "box2.local"]
+        );
+    }
+
+    #[test]
+    fn test_expand_hosts_mixed_cluster_tag_and_brace() {
+        let hosts: Vec<&str> = vec!["clusterA", "edge{1..2}.local"];
+        let clusters: Vec<Cluster> = vec![Cluster {
+            name: "clusterA".to_string(),
+            hosts: vec!["a".to_string(), "b".to_string()],
+        }];
+        assert_eq!(
+            expand_hosts(hosts, &clusters),
+            vec!["a", "b", "edge1.local", "edge2.local"]
+        );
+    }
+
+    #[test]
+    fn test_expand_hosts_plain_hostnames_unchanged() {
+        let hosts: Vec<&str> = vec!["a.local", "b.local"];
+        let clusters: Vec<Cluster> = vec![];
+        assert_eq!(expand_hosts(hosts, &clusters), vec!["a.local", "b.local"]);
     }
 
     #[tokio::test]
