@@ -990,4 +990,142 @@ mod daemon_test {
         toggle(&clients);
         assert_eq!(snapshot(&clients), initial);
     }
+
+    /// Collects every client's [`ClientState`] in insertion order.
+    fn snapshot_states(clients: &Clients) -> Vec<ClientState> {
+        return clients
+            .iter()
+            .map(|client| return *client.state_tx.borrow())
+            .collect();
+    }
+
+    /// Applies the `(pid, state)` updates the
+    /// `EnableDisableSubmenu` arms build, by writing through each
+    /// client's [`watch::Sender`].
+    ///
+    /// Mirrors the apply phase of
+    /// [`crate::daemon::Daemon::update_client_states`] without
+    /// standing up a full [`crate::daemon::Daemon`].
+    fn apply_first_client_updates(clients: &Clients, updates: Vec<(u32, ClientState)>) {
+        for (pid, state) in updates {
+            if let Some(client) = clients.get_by_pid(pid) {
+                client.state_tx.send_replace(state);
+            }
+        }
+    }
+
+    /// Builds the `(pid, ClientState::Active)` update list the
+    /// `EnableDisableSubmenu`'s `VK_E` arm produces.
+    fn enable_first_client_updates(clients: &Clients) -> Vec<(u32, ClientState)> {
+        return clients
+            .iter()
+            .next()
+            .map(|client| return vec![(client.process_id, ClientState::Active)])
+            .unwrap_or_default();
+    }
+
+    /// Builds the `(pid, ClientState::Disabled)` update list the
+    /// `EnableDisableSubmenu`'s `VK_D` arm produces.
+    fn disable_first_client_updates(clients: &Clients) -> Vec<(u32, ClientState)> {
+        return clients
+            .iter()
+            .next()
+            .map(|client| return vec![(client.process_id, ClientState::Disabled)])
+            .unwrap_or_default();
+    }
+
+    /// Builds the `(pid, flipped)` update list the
+    /// `EnableDisableSubmenu`'s `VK_T` arm produces by snapshotting
+    /// the current first-client state.
+    fn toggle_first_client_updates(clients: &Clients) -> Vec<(u32, ClientState)> {
+        return clients
+            .iter()
+            .next()
+            .map(|client| {
+                let flipped = match *client.state_tx.borrow() {
+                    ClientState::Active => ClientState::Disabled,
+                    ClientState::Disabled => ClientState::Active,
+                };
+                return vec![(client.process_id, flipped)];
+            })
+            .unwrap_or_default();
+    }
+
+    /// Verifies the `EnableDisableSubmenu`'s `VK_E` arm only enables
+    /// the first client and leaves the rest of the cluster untouched.
+    #[test]
+    fn test_first_window_enable_only_affects_first_client() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Disabled));
+        clients.push(make_client_with_state(2, ClientState::Disabled));
+        clients.push(make_client_with_state(3, ClientState::Disabled));
+
+        apply_first_client_updates(&clients, enable_first_client_updates(&clients));
+
+        assert_eq!(
+            snapshot_states(&clients),
+            vec![
+                ClientState::Active,
+                ClientState::Disabled,
+                ClientState::Disabled,
+            ]
+        );
+    }
+
+    /// Verifies the `EnableDisableSubmenu`'s `VK_D` arm only disables
+    /// the first client and leaves the rest of the cluster untouched.
+    #[test]
+    fn test_first_window_disable_only_affects_first_client() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.push(make_client_with_state(3, ClientState::Active));
+
+        apply_first_client_updates(&clients, disable_first_client_updates(&clients));
+
+        assert_eq!(
+            snapshot_states(&clients),
+            vec![
+                ClientState::Disabled,
+                ClientState::Active,
+                ClientState::Active,
+            ]
+        );
+    }
+
+    /// Verifies the `EnableDisableSubmenu`'s `VK_T` arm flips only the
+    /// first client and is its own inverse over two invocations.
+    #[test]
+    fn test_first_window_toggle_only_affects_first_client() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Disabled));
+        clients.push(make_client_with_state(3, ClientState::Active));
+
+        let initial = snapshot_states(&clients);
+
+        apply_first_client_updates(&clients, toggle_first_client_updates(&clients));
+        assert_eq!(
+            snapshot_states(&clients),
+            vec![
+                ClientState::Disabled,
+                ClientState::Disabled,
+                ClientState::Active,
+            ]
+        );
+
+        apply_first_client_updates(&clients, toggle_first_client_updates(&clients));
+        assert_eq!(snapshot_states(&clients), initial);
+    }
+
+    /// Verifies the submenu update builders are no-ops when the
+    /// client list is empty - i.e. the daemon never panics if the
+    /// user opens the submenu before any client has launched.
+    #[test]
+    fn test_first_window_submenu_updates_are_empty_for_empty_clients() {
+        let clients = Clients::new();
+        assert!(enable_first_client_updates(&clients).is_empty());
+        assert!(disable_first_client_updates(&clients).is_empty());
+        assert!(toggle_first_client_updates(&clients).is_empty());
+    }
 }
