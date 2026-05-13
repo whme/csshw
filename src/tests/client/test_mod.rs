@@ -10,11 +10,16 @@ use windows::Win32::System::Console::{
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::client::{
-    build_ssh_arguments, is_alt_shift_c_combination, resolve_username, send_pid_handshake,
-    write_console_input,
+    apply_state_visuals, build_ssh_arguments, is_alt_shift_c_combination, read_write_loop,
+    resolve_username, send_pid_handshake, write_console_input, ReadWriteResult,
+    DISABLED_CONSOLE_ATTRIBUTES,
 };
+use crate::protocol::serialization::{serialize_client_state, serialize_input_record_0};
+use crate::protocol::{ClientState, TAG_INPUT_RECORD, TAG_STATE_CHANGE};
 use crate::utils::config::ClientConfig;
 use crate::utils::windows::MockWindowsApi;
+use tokio::sync::watch;
+use windows::Win32::System::Console::{CONSOLE_CHARACTER_ATTRIBUTES, CONSOLE_SCREEN_BUFFER_INFO};
 
 // Test constants - consistent dummy values used throughout tests
 const TEST_USERNAME: &str = "testuser";
@@ -486,6 +491,261 @@ fn test_write_console_input() {
         // Execute the function under test
         write_console_input(&mock_api, test_input_record);
     }
+}
+
+#[tokio::test]
+async fn test_read_write_loop_dispatches_state_change_and_input_record(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io;
+    use tokio::net::windows::named_pipe::{ClientOptions, PipeMode, ServerOptions};
+    use windows::Win32::System::Console::INPUT_RECORD_0;
+
+    // Use a per-test unique pipe name so parallel test runs don't collide
+    // on the global PIPE_NAME.
+    let pipe_name = format!(
+        r"\\.\pipe\csshw-test-read-write-loop-{}",
+        std::process::id()
+    );
+    let server = ServerOptions::new()
+        .access_inbound(true)
+        .access_outbound(true)
+        .pipe_mode(PipeMode::Message)
+        .create(&pipe_name)?;
+    let client = ClientOptions::new().open(&pipe_name)?;
+    server.connect().await?;
+
+    // Build a StateChange frame followed by an InputRecord frame so the
+    // test exercises both the state-update dispatch and the input-forwarding
+    // regression path in a single call.
+    let input_record = INPUT_RECORD_0 {
+        KeyEvent: KEY_EVENT_RECORD {
+            bKeyDown: true.into(),
+            wRepeatCount: 1,
+            wVirtualKeyCode: VK_C.0,
+            wVirtualScanCode: 0,
+            uChar: KEY_EVENT_RECORD_0 {
+                UnicodeChar: b'c' as u16,
+            },
+            dwControlKeyState: 0,
+        },
+    };
+    let mut payload: Vec<u8> = Vec::new();
+    payload.push(TAG_STATE_CHANGE);
+    payload.push(serialize_client_state(ClientState::Active));
+    payload.push(TAG_INPUT_RECORD);
+    payload.extend_from_slice(&serialize_input_record_0(&input_record));
+
+    // Push the framed bytes onto the pipe so the client side can consume
+    // them via [`read_write_loop`].
+    let mut written = 0usize;
+    while written < payload.len() {
+        server.writable().await?;
+        match server.try_write(&payload[written..]) {
+            Ok(0) => return Err("pipe closed before write completed".into()),
+            Ok(n) => written += n,
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    // The mock API must observe exactly one [`write_console_input`] call -
+    // proves the input-forwarding path still runs after the state-change
+    // dispatch.
+    let mut mock_api = MockWindowsApi::new();
+    mock_api
+        .expect_write_console_input()
+        .times(1)
+        .returning(|_, number_written| {
+            *number_written = 1;
+            return Ok(());
+        });
+
+    let mut internal_buffer: Vec<u8> = Vec::new();
+    // Initialize the watch channel with the *opposite* state so that a
+    // successful dispatch is visible as a value change, not a same-value
+    // replay.
+    let (state_tx, state_rx) = watch::channel(ClientState::Disabled);
+    // Wait until the client side has bytes available.
+    client.readable().await?;
+    let result = read_write_loop(&mock_api, &client, &mut internal_buffer, &state_tx).await;
+
+    match result {
+        ReadWriteResult::Success {
+            remainder,
+            key_event_records,
+        } => {
+            assert!(remainder.is_empty());
+            assert_eq!(key_event_records.len(), 1);
+            assert_eq!(key_event_records[0].wVirtualKeyCode, VK_C.0);
+        }
+        _ => panic!("expected ReadWriteResult::Success"),
+    }
+    // The state byte applied through the StateChange frame must be reflected
+    // in the watch channel handed back to the caller.
+    assert_eq!(*state_rx.borrow(), ClientState::Active);
+    return Ok(());
+}
+
+#[tokio::test]
+async fn test_read_write_loop_dispatches_disabled_state_change(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io;
+    use tokio::net::windows::named_pipe::{ClientOptions, PipeMode, ServerOptions};
+
+    let pipe_name = format!(
+        r"\\.\pipe\csshw-test-read-write-loop-disabled-{}",
+        std::process::id()
+    );
+    let server = ServerOptions::new()
+        .access_inbound(true)
+        .access_outbound(true)
+        .pipe_mode(PipeMode::Message)
+        .create(&pipe_name)?;
+    let client = ClientOptions::new().open(&pipe_name)?;
+    server.connect().await?;
+
+    // A lone StateChange(Disabled) frame - no input records this time, so
+    // the API must not see any `write_console_input` calls.
+    let payload: Vec<u8> = vec![
+        TAG_STATE_CHANGE,
+        serialize_client_state(ClientState::Disabled),
+    ];
+
+    let mut written = 0usize;
+    while written < payload.len() {
+        server.writable().await?;
+        match server.try_write(&payload[written..]) {
+            Ok(0) => return Err("pipe closed before write completed".into()),
+            Ok(n) => written += n,
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    let mock_api = MockWindowsApi::new();
+    let mut internal_buffer: Vec<u8> = Vec::new();
+    let (state_tx, state_rx) = watch::channel(ClientState::Active);
+
+    client.readable().await?;
+    let result = read_write_loop(&mock_api, &client, &mut internal_buffer, &state_tx).await;
+
+    match result {
+        ReadWriteResult::Success {
+            remainder,
+            key_event_records,
+        } => {
+            assert!(remainder.is_empty());
+            assert!(key_event_records.is_empty());
+        }
+        _ => panic!("expected ReadWriteResult::Success"),
+    }
+    assert_eq!(*state_rx.borrow(), ClientState::Disabled);
+    return Ok(());
+}
+
+/// Helper: build a `CONSOLE_SCREEN_BUFFER_INFO` with the buffer size used
+/// for the `apply_state_visuals` tests below.
+fn buffer_info(rows: i16) -> CONSOLE_SCREEN_BUFFER_INFO {
+    let mut info = CONSOLE_SCREEN_BUFFER_INFO::default();
+    info.dwSize.X = 80;
+    info.dwSize.Y = rows;
+    return info;
+}
+
+#[test]
+fn test_apply_state_visuals_active_to_disabled_repaints_with_disabled_palette() {
+    let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
+    let rows: i16 = 25;
+
+    let mut mock_api = MockWindowsApi::new();
+    mock_api
+        .expect_set_console_text_attribute()
+        .with(mockall::predicate::eq(DISABLED_CONSOLE_ATTRIBUTES))
+        .times(1)
+        .returning(|_| return Ok(()));
+    mock_api
+        .expect_get_console_screen_buffer_info()
+        .times(1)
+        .return_const(Ok(buffer_info(rows)));
+    mock_api
+        .expect_fill_console_output_attribute()
+        .times(rows as usize)
+        .returning(|_, _, _| return Ok(80));
+    // Win11 reports build >= 22000, so the post-fill invalidate is gated off.
+    mock_api
+        .expect_get_os_version()
+        .returning(|| return "10.0.22000".to_string());
+
+    apply_state_visuals(
+        &mock_api,
+        ClientState::Active,
+        ClientState::Disabled,
+        Some(original),
+    );
+}
+
+#[test]
+fn test_apply_state_visuals_disabled_to_active_restores_original_attrs() {
+    let original = CONSOLE_CHARACTER_ATTRIBUTES(0x5A);
+    let rows: i16 = 30;
+
+    let mut mock_api = MockWindowsApi::new();
+    mock_api
+        .expect_set_console_text_attribute()
+        .with(mockall::predicate::eq(original))
+        .times(1)
+        .returning(|_| return Ok(()));
+    mock_api
+        .expect_get_console_screen_buffer_info()
+        .times(1)
+        .return_const(Ok(buffer_info(rows)));
+    mock_api
+        .expect_fill_console_output_attribute()
+        .times(rows as usize)
+        .returning(|_, _, _| return Ok(80));
+    mock_api
+        .expect_get_os_version()
+        .returning(|| return "10.0.22000".to_string());
+
+    apply_state_visuals(
+        &mock_api,
+        ClientState::Disabled,
+        ClientState::Active,
+        Some(original),
+    );
+}
+
+#[test]
+fn test_apply_state_visuals_no_op_when_state_unchanged() {
+    let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
+
+    // No expectations set: any call to the API would cause the mockall
+    // strict-mock to fail, proving the no-transition branch is silent.
+    let mock_api = MockWindowsApi::new();
+
+    apply_state_visuals(
+        &mock_api,
+        ClientState::Active,
+        ClientState::Active,
+        Some(original),
+    );
+    apply_state_visuals(
+        &mock_api,
+        ClientState::Disabled,
+        ClientState::Disabled,
+        Some(original),
+    );
+}
+
+#[test]
+fn test_apply_state_visuals_skipped_when_original_attrs_unavailable() {
+    // When startup failed to capture the original attributes we degrade
+    // gracefully and leave the console untouched even on a real
+    // transition.
+    let mock_api = MockWindowsApi::new();
+
+    apply_state_visuals(&mock_api, ClientState::Active, ClientState::Disabled, None);
+    apply_state_visuals(&mock_api, ClientState::Disabled, ClientState::Active, None);
 }
 
 #[tokio::test]

@@ -1,8 +1,9 @@
 use windows::Win32::System::Console::{INPUT_RECORD_0, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0};
 
 use crate::protocol::{
-    DaemonToClientMessage, FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH,
-    SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH, TAG_INPUT_RECORD, TAG_KEEP_ALIVE,
+    ClientState, DaemonToClientMessage, FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH,
+    FRAMED_STATE_CHANGE_LENGTH, SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
+    TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
 };
 
 /// Serialize a [KEY_EVENT_RECORD_0] into a `Vec<u8>` using custom binary format.
@@ -53,6 +54,20 @@ pub fn serialize_pid(pid: u32) -> [u8; SERIALIZED_PID_LENGTH] {
     return pid.to_le_bytes();
 }
 
+/// Serialize a [`ClientState`] into its single-byte wire representation.
+///
+/// # Arguments
+///
+/// * `state` - The client state to serialize.
+///
+/// # Returns
+///
+/// The state's `#[repr(u8)]` discriminant, used as the payload of a tagged
+/// [`crate::protocol::TAG_STATE_CHANGE`] frame.
+pub fn serialize_client_state(state: ClientState) -> u8 {
+    return state as u8;
+}
+
 /// Serialize a [`DaemonToClientMessage`] into its tagged-envelope wire
 /// representation.
 ///
@@ -73,6 +88,12 @@ pub fn serialize_daemon_to_client_message(msg: &DaemonToClientMessage) -> Vec<u8
             let mut buf = Vec::with_capacity(FRAMED_INPUT_RECORD_LENGTH);
             buf.push(TAG_INPUT_RECORD);
             buf.extend_from_slice(&serialize_input_record_0(record));
+            return buf;
+        }
+        DaemonToClientMessage::StateChange(state) => {
+            let mut buf = Vec::with_capacity(FRAMED_STATE_CHANGE_LENGTH);
+            buf.push(TAG_STATE_CHANGE);
+            buf.push(serialize_client_state(*state));
             return buf;
         }
         DaemonToClientMessage::KeepAlive => {

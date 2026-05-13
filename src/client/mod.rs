@@ -12,20 +12,23 @@ use std::time::Duration;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::utils::config::ClientConfig;
-use crate::utils::windows::{get_console_title, WindowsApi};
+use crate::utils::windows::{get_console_title, set_console_color, WindowsApi};
 use ssh2_config::{ParseRule, SshConfig};
 use tokio::net::windows::named_pipe::NamedPipeClient;
 use tokio::process::{Child, Command};
+use tokio::sync::watch;
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
 use windows::Win32::System::Console::{
-    INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT, KEY_EVENT_RECORD, LEFT_ALT_PRESSED, RIGHT_ALT_PRESSED,
-    SHIFT_PRESSED,
+    BACKGROUND_INTENSITY, CONSOLE_CHARACTER_ATTRIBUTES, FOREGROUND_BLUE, FOREGROUND_GREEN,
+    FOREGROUND_RED, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT, KEY_EVENT_RECORD, LEFT_ALT_PRESSED,
+    RIGHT_ALT_PRESSED, SHIFT_PRESSED,
 };
 
 use crate::{
     protocol::{
         deserialization::parse_daemon_to_client_messages, serialization::serialize_pid,
-        DaemonToClientMessage, SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
+        ClientState, DaemonToClientMessage, SERIALIZED_INPUT_RECORD_0_LENGTH,
+        SERIALIZED_PID_LENGTH,
     },
     utils::constants::{PIPE_NAME, PKG_NAME},
 };
@@ -56,6 +59,54 @@ enum ReadWriteResult {
     Err,
     /// The pipe was closed.
     Disconnect,
+}
+
+/// Console attributes applied while the client is in
+/// [`ClientState::Disabled`].
+///
+/// The default-grey foreground (red+green+blue, no intensity) on a
+/// `BACKGROUND_INTENSITY`-only background paints the window as light text on
+/// a muted dark-grey background - a clear "this client is greyed out" cue
+/// that mirrors the daemon's existing reuse of `set_console_color` while
+/// staying visually distinct from the daemon's bright-red palette.
+const DISABLED_CONSOLE_ATTRIBUTES: CONSOLE_CHARACTER_ATTRIBUTES = CONSOLE_CHARACTER_ATTRIBUTES(
+    FOREGROUND_RED.0 | FOREGROUND_GREEN.0 | FOREGROUND_BLUE.0 | BACKGROUND_INTENSITY.0,
+);
+
+/// Repaint the console to reflect a [`ClientState`] transition.
+///
+/// Called from the visuals task whenever the watch channel observes a new
+/// state. Does nothing when `prev == next` (the watch channel notifies on
+/// every send, including no-op replays) and also does nothing when
+/// `original_attrs` is `None` - that signals the initial buffer-info read
+/// at startup failed, in which case we degrade gracefully and leave the
+/// console untouched.
+///
+/// # Arguments
+///
+/// * `api`             - The Windows API implementation to use.
+/// * `prev`            - State applied on the previous invocation.
+/// * `next`            - State just observed on the watch channel.
+/// * `original_attrs`  - Console attributes captured at startup. Used to
+///                       restore the pristine appearance when transitioning
+///                       back to [`ClientState::Active`].
+fn apply_state_visuals(
+    api: &dyn WindowsApi,
+    prev: ClientState,
+    next: ClientState,
+    original_attrs: Option<CONSOLE_CHARACTER_ATTRIBUTES>,
+) {
+    if prev == next {
+        return;
+    }
+    let Some(original) = original_attrs else {
+        return;
+    };
+    let attrs = match next {
+        ClientState::Active => original,
+        ClientState::Disabled => DISABLED_CONSOLE_ATTRIBUTES,
+    };
+    set_console_color(api, attrs);
 }
 
 /// Write the given [INPUT_RECORD_0] to the console input buffer using the provided API.
@@ -191,9 +242,12 @@ async fn launch_ssh_process(
 ///
 /// Input records are written to the console input buffer using the provided API
 /// and their key-event payloads are returned via `ReadWriteResult::Success` so
-/// the caller can detect the Alt+Shift+C close combination. Keep-alive frames
-/// are ignored. Partial trailing frames are returned as `remainder` for the
-/// next call to prepend.
+/// the caller can detect the Alt+Shift+C close combination. State-change frames
+/// are forwarded via [`watch::Sender::send_replace`] on `state_tx`, making the
+/// authoritative [`ClientState`] visible to every watch subscriber (currently
+/// the visuals task in [`main`]) without coupling this loop to any
+/// state-dependent rendering. Keep-alive frames are ignored. Partial trailing
+/// frames are returned as `remainder` for the next call to prepend.
 ///
 /// # Arguments
 ///
@@ -202,6 +256,9 @@ async fn launch_ssh_process(
 ///                           the named pipe created by the daemon.
 /// * `internal_buffer`     - Vector containing the unconsumed bytes (possibly an
 ///                           incomplete trailing frame) from a previous call.
+/// * `state_tx`            - Watch sender used to broadcast every
+///                           [`DaemonToClientMessage::StateChange`] payload as
+///                           the client's authoritative [`ClientState`].
 /// # Returns
 ///
 /// A `ReadWriteResult` indicating whether we were able to read from the named pipe and write the available INPUT_RECORDs
@@ -212,6 +269,7 @@ async fn read_write_loop(
     api: &dyn WindowsApi,
     named_pipe_client: &NamedPipeClient,
     internal_buffer: &mut Vec<u8>,
+    state_tx: &watch::Sender<ClientState>,
 ) -> ReadWriteResult {
     let mut buf: [u8; SERIALIZED_INPUT_RECORD_0_LENGTH * 10] =
         [0; SERIALIZED_INPUT_RECORD_0_LENGTH * 10];
@@ -231,6 +289,9 @@ async fn read_write_loop(
                     DaemonToClientMessage::InputRecord(input_record) => {
                         write_console_input(api, input_record);
                         key_event_records.push(unsafe { input_record.KeyEvent });
+                    }
+                    DaemonToClientMessage::StateChange(state) => {
+                        state_tx.send_replace(state);
                     }
                     DaemonToClientMessage::KeepAlive => {}
                 }
@@ -336,9 +397,12 @@ async fn send_pid_handshake(named_pipe_client: &NamedPipeClient) {
 ///
 /// # Arguments
 ///
-/// * `api` - The Windows API implementation to use.
-/// * `child` - Handle to the running SSH process.
-async fn run(api: &dyn WindowsApi, child: &mut Child) {
+/// * `api`         - The Windows API implementation to use.
+/// * `child`       - Handle to the running SSH process.
+/// * `state_tx`    - Watch sender used by [`read_write_loop`] to broadcast the
+///                   client's authoritative [`ClientState`] to subscribers
+///                   such as the visuals task in [`main`].
+async fn run(api: &dyn WindowsApi, child: &mut Child, state_tx: &watch::Sender<ClientState>) {
     // Many clients trying to open the pipe at the same time can cause
     // a file not found error, so keep trying until we managed to open it
     let named_pipe_client: NamedPipeClient = loop {
@@ -366,7 +430,7 @@ async fn run(api: &dyn WindowsApi, child: &mut Child) {
                 panic!("Named client pipe is not ready to be read",)
             });
 
-        match read_write_loop(api, &named_pipe_client, &mut internal_buffer).await {
+        match read_write_loop(api, &named_pipe_client, &mut internal_buffer, state_tx).await {
             ReadWriteResult::Success {
                 remainder,
                 key_event_records,
@@ -440,6 +504,24 @@ pub async fn main(
     cli_port: Option<u16>,
     config: &ClientConfig,
 ) {
+    // Capture the console's original attributes before anything (title task,
+    // SSH child) gets a chance to write output. This snapshot is what the
+    // visuals task reverts to on a `Disabled -> Active` transition.
+    let original_attrs: Option<CONSOLE_CHARACTER_ATTRIBUTES> = match api
+        .get_console_screen_buffer_info()
+    {
+        Ok(info) => Some(info.wAttributes),
+        Err(err) => {
+            warn!(
+                "Failed to capture original console attributes; disabled-state visuals will be skipped: {}",
+                err
+            );
+            None
+        }
+    };
+
+    let (state_tx, state_rx) = watch::channel(ClientState::Active);
+
     let (host, inline_port) =
         host.rsplit_once(':')
             .map_or((host.as_str(), None), |(host, port)| {
@@ -484,15 +566,39 @@ pub async fn main(
     };
     let child_task = async {
         let mut child = launch_ssh_process(&resolved_username, host, port, config).await;
-        run(api, &mut child).await;
+        run(api, &mut child, &state_tx).await;
         return child;
     };
 
-    // Use tokio::select to run both tasks concurrently
+    // Visuals task: subscribes to the state watch channel and repaints the
+    // console whenever the daemon flips this client between Active and
+    // Disabled. Decoupling the redraw from `read_write_loop` keeps named-pipe
+    // I/O off the critical path of the (potentially slow) per-row
+    // `fill_console_output_attribute` calls inside `set_console_color`.
+    let visuals_task = {
+        let mut state_rx = state_rx;
+        async move {
+            let mut prev = *state_rx.borrow_and_update();
+            while state_rx.changed().await.is_ok() {
+                let next = *state_rx.borrow_and_update();
+                apply_state_visuals(api, prev, next, original_attrs);
+                prev = next;
+            }
+        }
+    };
+
+    // Use tokio::select to run all tasks concurrently. The title and visuals
+    // tasks are infinite by construction: as long as `state_tx` lives in this
+    // scope the watch channel stays open, so `visuals_task` cannot fall out
+    // of its loop. If either ever does complete, that is a logic bug, not a
+    // shutdown path.
     let child = tokio::select! {
         child = child_task => child,
         _ = title_task => {
             panic!("Title task should never complete");
+        }
+        _ = visuals_task => {
+            panic!("Visuals task should never complete");
         }
     };
 

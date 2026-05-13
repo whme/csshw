@@ -15,9 +15,11 @@ use std::{thread, time};
 
 use crate::get_console_window_handle;
 use crate::protocol::{
-    deserialization::deserialize_pid, serialization::serialize_input_record_0, ClientState,
-    FRAMED_INPUT_RECORD_LENGTH, SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
-    TAG_INPUT_RECORD, TAG_KEEP_ALIVE,
+    deserialization::deserialize_pid,
+    serialization::{serialize_client_state, serialize_input_record_0},
+    ClientState, FRAMED_INPUT_RECORD_LENGTH, FRAMED_STATE_CHANGE_LENGTH,
+    SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH, TAG_INPUT_RECORD, TAG_KEEP_ALIVE,
+    TAG_STATE_CHANGE,
 };
 use crate::utils::config::{Cluster, DaemonConfig};
 use crate::utils::debug::StringRepr;
@@ -42,7 +44,6 @@ use tokio::{
         watch,
     },
     task::JoinHandle,
-    time::MissedTickBehavior,
 };
 use windows::Win32::System::Console::{
     CONSOLE_CHARACTER_ATTRIBUTES, INPUT_RECORD_0, LEFT_CTRL_PRESSED, RIGHT_CTRL_PRESSED,
@@ -82,9 +83,11 @@ struct Client {
     process_id: u32,
     /// Authoritative source for this client's [`ClientState`].
     ///
-    /// The daemon writes through this sender; the pipe-server task clones
-    /// it after PID correlation and reads via `borrow()` to gate input
-    /// forwarding.
+    /// The daemon broadcasts new state values through the [`watch::Sender`];
+    /// the assigned pipe-server task subscribes upon successful PID
+    /// correlation and forwards every change to the client over the named
+    /// pipe. [`watch::Sender`] is itself [`Clone`], so cloning a [`Client`]
+    /// produces another sender that drives the same channel.
     state_tx: watch::Sender<ClientState>,
 }
 
@@ -755,18 +758,26 @@ impl<'a> Daemon<'a> {
 
     /// Push a new [`ClientState`] for the client identified by `pid`.
     ///
-    /// No-op if no client matches `pid`.
+    /// Looks the client up by PID and broadcasts the new state through its
+    /// [`watch::Sender`]. The pipe-server task subscribed to that sender
+    /// observes the change and forwards a [`crate::protocol::TAG_STATE_CHANGE`]
+    /// frame to the client over the named pipe. Called from the
+    /// control-mode handlers for `[t]oggle enabled` and `e[n]able all` via
+    /// [`Daemon::update_client_states`].
     ///
     /// # Arguments
     ///
     /// * `clients` - The daemon's tracked clients.
     /// * `pid`     - Process id of the client whose state should change.
-    /// * `state`   - The new state to record.
+    /// * `state`   - The new state to broadcast.
     fn set_client_state(&self, clients: &Clients, pid: u32, state: ClientState) {
         if let Some(client) = clients.get_by_pid(pid) {
-            // `send_replace` keeps the stored value authoritative even
-            // with no subscribers; `send` would `Err` and leave it
-            // untouched. The pipe-server task only reads via `borrow()`.
+            // `send_replace` always updates the stored value (unlike `send`,
+            // which returns `Err` and leaves the value untouched when there
+            // are no active receivers). This matters during the brief window
+            // between [`Client`] construction and the pipe-server task's
+            // `subscribe()`: any state change pushed in that window must
+            // still be visible to the next subscriber via `borrow`.
             client.state_tx.send_replace(state);
         }
     }
@@ -911,8 +922,10 @@ async fn launch_clients<W: WindowsApi + 'static + Clone>(
                 len_hosts + index_offset,
                 aspect_ratio_adjustment,
             );
-            // Held on the [`Client`] to keep the channel alive; the
-            // pipe-server task clones the sender after PID correlation.
+            // The receiver is dropped immediately; pipe-server tasks acquire
+            // their own receivers via `state_tx.subscribe()` after PID
+            // correlation. Holding the sender on the [`Client`] keeps the
+            // channel alive for the lifetime of the client.
             let (state_tx, _state_rx) = watch::channel(ClientState::Active);
             return (
                 index,
@@ -1032,28 +1045,26 @@ fn launch_client_console<W: WindowsApi>(
     );
 }
 
-/// Connect, correlate the connecting client by PID, then forward
-/// broadcast input records to the named pipe and emit periodic
-/// keep-alives during idle periods.
+/// Correlate the connecting client by PID, then multiplex input records,
+/// [`ClientState`] updates, and keep-alives onto the named pipe.
 ///
-/// A biased [`tokio::select!`] polls the `receiver` first and falls back
-/// to a periodic keep-alive tick when no input is ready. Input records
-/// are gated on the current [`ClientState`]: [`ClientState::Active`]
-/// forwards the record, [`ClientState::Disabled`] drops it - and probes
-/// the pipe so a disabled client cannot hide a disconnect under
-/// sustained input. Any failed write terminates the routine.
+/// The post-subscribe initial-state push is intentional: `state_rx.changed`
+/// only fires on transitions observed *after* `subscribe`, so a state set
+/// in the brief window between [`Client`] construction and `subscribe`
+/// would otherwise leave the client on its default until the next
+/// transition.
 ///
-/// # Arguments
+/// The `select!` is biased toward `recv` so the keep-alive tick never
+/// preempts active input traffic; the [`ClientState::Disabled`] arm
+/// therefore probes the pipe itself, otherwise sustained input would
+/// hide a disconnect.
 ///
-/// * `server`   - The named pipe server.
-/// * `receiver` - Broadcast receiver of serialized input records.
-/// * `clients`  - Tracked clients, used for PID correlation and to
-///                obtain the [`watch::Sender`] for this server.
+/// # Errors and termination
 ///
-/// # Panics
-///
-/// Panics if the connecting client sends a PID that is not present in
-/// `clients`.
+/// An unknown PID exits the process (production) or panics (tests) -
+/// the daemon's bookkeeping is broken and recovery is not possible.
+/// A failed pipe write or a dropped [`watch::Sender`] ends the routine
+/// cleanly.
 async fn named_pipe_server_routine(
     server: NamedPipeServer,
     receiver: &mut Receiver<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
@@ -1067,8 +1078,8 @@ async fn named_pipe_server_routine(
 
     // Correlate the connecting client by reading its 4 byte PID.
     let pid = read_client_pid(&server).await;
-    let state_tx = match clients.lock().unwrap().get_by_pid(pid) {
-        Some(client) => client.state_tx.clone(),
+    let mut state_rx = match clients.lock().unwrap().get_by_pid(pid) {
+        Some(client) => client.state_tx.subscribe(),
         None => {
             error!(
                 "Named pipe server received unknown PID {} - daemon bookkeeping broken",
@@ -1083,8 +1094,13 @@ async fn named_pipe_server_routine(
         }
     };
 
-    let mut keepalive = tokio::time::interval(Duration::from_millis(5));
-    keepalive.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    // Initial state push - see fn docs.
+    let initial_state = *state_rx.borrow_and_update();
+    let initial_frame: [u8; FRAMED_STATE_CHANGE_LENGTH] =
+        [TAG_STATE_CHANGE, serialize_client_state(initial_state)];
+    if !write_framed_message(&server, &initial_frame).await {
+        return;
+    }
 
     loop {
         tokio::select! {
@@ -1115,9 +1131,8 @@ async fn named_pipe_server_routine(
                         panic!("Failed to receive data from the Receiver");
                     }
                 };
-                // Copy the value out before any `.await` so the `watch::Ref`
-                // (which is not `Send`) does not span the await.
-                let current_state = *state_tx.borrow();
+                // Copy out before any `.await` - `watch::Ref` is not `Send`.
+                let current_state = *state_rx.borrow();
                 match current_state {
                     ClientState::Active => {}
                     ClientState::Disabled => {
@@ -1138,8 +1153,25 @@ async fn named_pipe_server_routine(
                     return;
                 }
             }
-            _ = keepalive.tick() => {
-                if !probe_pipe_alive(&server) {
+            changed_result = state_rx.changed() => {
+                // Sender dropped - the daemon has removed this client from its
+                // bookkeeping, so there is nothing left to forward.
+                if changed_result.is_err() {
+                    debug!(
+                        "Client state sender dropped, stopping named pipe server routine ({:?})",
+                        server
+                    );
+                    return;
+                }
+                let state = *state_rx.borrow_and_update();
+                let frame: [u8; FRAMED_STATE_CHANGE_LENGTH] =
+                    [TAG_STATE_CHANGE, serialize_client_state(state)];
+                if !write_framed_message(&server, &frame).await {
+                    return;
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_millis(5)) => {
+                if !write_framed_message(&server, &[TAG_KEEP_ALIVE]).await {
                     return;
                 }
             }
