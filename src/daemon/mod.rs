@@ -46,8 +46,8 @@ use tokio::{
     task::JoinHandle,
 };
 use windows::Win32::System::Console::{
-    CONSOLE_CHARACTER_ATTRIBUTES, INPUT_RECORD_0, KEY_EVENT_RECORD, LEFT_CTRL_PRESSED,
-    RIGHT_CTRL_PRESSED,
+    CONSOLE_CHARACTER_ATTRIBUTES, INPUT_RECORD_0, KEY_EVENT_RECORD, LEFT_ALT_PRESSED,
+    LEFT_CTRL_PRESSED, RIGHT_ALT_PRESSED, RIGHT_CTRL_PRESSED, SHIFT_PRESSED,
 };
 
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -67,6 +67,119 @@ mod workspace;
 /// to send the input records read from the console input buffer
 /// to the named pipe servers connected to each client in parallel.
 const SENDER_CAPACITY: usize = 1024 * 1024;
+
+/// Bits in `KEY_EVENT_RECORD::dwControlKeyState` that represent
+/// "real" modifier keys (Ctrl / Alt / Shift) as opposed to lock
+/// toggles (`CAPSLOCK_ON`, `NUMLOCK_ON`, `SCROLLLOCK_ON`) or the
+/// `ENHANCED_KEY` flag.
+///
+/// Control-mode key classification ANDs `dwControlKeyState` with
+/// this mask before matching; otherwise an enabled CapsLock or
+/// NumLock would make `dwControlKeyState` non-zero and silently
+/// skip every `(VK_*, 0)` arm.
+const MODIFIER_MASK: u32 =
+    LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED | LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED | SHIFT_PRESSED;
+
+/// Top-level control-mode action a keystroke classifies into.
+///
+/// Extracted from [`Daemon::handle_input_record`]'s dispatch match
+/// so the classification - including the [`MODIFIER_MASK`] step -
+/// can be regression tested without instantiating a full
+/// [`Daemon`].
+#[derive(Debug, PartialEq, Eq)]
+enum ControlModeAction {
+    /// `[r]` - rearrange every client window.
+    Retile,
+    /// `[e]` - open the enable/disable input submenu.
+    OpenEnableDisableSubmenu,
+    /// `[t]` - flip each client's [`ClientState`].
+    ToggleEnabled,
+    /// `[n]` - force every client back to [`ClientState::Active`].
+    EnableAll,
+    /// `[c]` - prompt for new hostnames and launch additional clients.
+    CreateWindows,
+    /// `[h]` - copy the active clients' hostnames to the clipboard.
+    CopyHostnames,
+    /// Any other key in the active control-mode prompt.
+    NoOp,
+}
+
+/// Enable/disable-submenu action a keystroke classifies into.
+///
+/// Extracted from [`Daemon::handle_enable_disable_submenu_key`]'s
+/// dispatch match for the same reason as [`ControlModeAction`].
+#[derive(Debug, PartialEq, Eq)]
+enum EnableDisableSubmenuAction {
+    /// `[e]` - force the targeted client(s) to [`ClientState::Active`].
+    Enable,
+    /// `[d]` - force the targeted client(s) to [`ClientState::Disabled`].
+    Disable,
+    /// `[t]` - flip the targeted client(s)' [`ClientState`].
+    Toggle,
+    /// Any other key while the submenu is open.
+    NoOp,
+}
+
+/// Classifies a top-level control-mode keystroke.
+///
+/// `control_key_state` is ANDed with [`MODIFIER_MASK`] so lock
+/// toggles (`CAPSLOCK_ON`, `NUMLOCK_ON`, `SCROLLLOCK_ON`) and the
+/// `ENHANCED_KEY` flag never bleed into the match - the
+/// `(VK_*, 0)` arms must still fire while any of those bits are
+/// set. Any "real" modifier bit (Ctrl / Alt / Shift) survives the
+/// mask and falls through to [`ControlModeAction::NoOp`].
+///
+/// # Arguments
+///
+/// * `virtual_key`       - The pressed key's [`VIRTUAL_KEY`].
+/// * `control_key_state` - The raw `dwControlKeyState` field from
+///                         the [`KEY_EVENT_RECORD`].
+///
+/// # Returns
+///
+/// The [`ControlModeAction`] the dispatch should execute.
+fn classify_control_mode_key(
+    virtual_key: VIRTUAL_KEY,
+    control_key_state: u32,
+) -> ControlModeAction {
+    return match (virtual_key, control_key_state & MODIFIER_MASK) {
+        (VK_R, 0) => ControlModeAction::Retile,
+        (VK_E, 0) => ControlModeAction::OpenEnableDisableSubmenu,
+        (VK_T, 0) => ControlModeAction::ToggleEnabled,
+        (VK_N, 0) => ControlModeAction::EnableAll,
+        (VK_C, 0) => ControlModeAction::CreateWindows,
+        (VK_H, 0) => ControlModeAction::CopyHostnames,
+        _ => ControlModeAction::NoOp,
+    };
+}
+
+/// Classifies an enable/disable-submenu keystroke.
+///
+/// See [`classify_control_mode_key`] for the [`MODIFIER_MASK`]
+/// rationale; the same lock-state / `ENHANCED_KEY` masking applies
+/// to the submenu so its `[e]`, `[d]`, `[t]` bindings keep working
+/// regardless of lock state.
+///
+/// # Arguments
+///
+/// * `virtual_key`       - The pressed key's [`VIRTUAL_KEY`].
+/// * `control_key_state` - The raw `dwControlKeyState` field from
+///                         the [`KEY_EVENT_RECORD`].
+///
+/// # Returns
+///
+/// The [`EnableDisableSubmenuAction`] the dispatch should execute.
+fn classify_enable_disable_submenu_key(
+    virtual_key: VIRTUAL_KEY,
+    control_key_state: u32,
+) -> EnableDisableSubmenuAction {
+    return match (virtual_key, control_key_state & MODIFIER_MASK) {
+        (VK_E, 0) => EnableDisableSubmenuAction::Enable,
+        (VK_D, 0) => EnableDisableSubmenuAction::Disable,
+        (VK_T, 0) => EnableDisableSubmenuAction::Toggle,
+        _ => EnableDisableSubmenuAction::NoOp,
+    };
+}
 
 /// Representation of a client
 #[derive(Clone)]
@@ -547,11 +660,11 @@ impl<'a> Daemon<'a> {
                 self.handle_enable_disable_submenu_key(clients, key_event);
                 return;
             }
-            match (
+            match classify_control_mode_key(
                 VIRTUAL_KEY(key_event.wVirtualKeyCode),
                 key_event.dwControlKeyState,
             ) {
-                (VK_R, 0) => {
+                ControlModeAction::Retile => {
                     self.rearrange_client_windows(
                         windows_api,
                         &clients.lock().unwrap(),
@@ -559,13 +672,13 @@ impl<'a> Daemon<'a> {
                     );
                     self.arrange_daemon_console(windows_api, workspace_area);
                 }
-                (VK_E, 0) => {
+                ControlModeAction::OpenEnableDisableSubmenu => {
                     clear_screen(windows_api);
                     println!("Enable/Disable input (first window) (Esc to exit)");
                     println!("[e]nable, [d]isable, [t]oggle");
                     self.control_mode_state = ControlModeState::EnableDisableSubmenu;
                 }
-                (VK_T, 0) => {
+                ControlModeAction::ToggleEnabled => {
                     // Snapshot before flipping so each client toggles relative
                     // to its own pre-loop state, not to writes this loop has
                     // already made.
@@ -583,7 +696,7 @@ impl<'a> Daemon<'a> {
                     });
                     self.quit_control_mode(windows_api);
                 }
-                (VK_N, 0) => {
+                ControlModeAction::EnableAll => {
                     self.update_client_states(clients, |clients_guard| {
                         return clients_guard
                             .iter()
@@ -592,7 +705,7 @@ impl<'a> Daemon<'a> {
                     });
                     self.quit_control_mode(windows_api);
                 }
-                (VK_C, 0) => {
+                ControlModeAction::CreateWindows => {
                     clear_screen(windows_api);
                     // TODO: make ESC abort
                     println!("Hostname(s) or cluster tag(s): (leave empty to abort)");
@@ -644,7 +757,7 @@ impl<'a> Daemon<'a> {
                     let _ = windows_api.focus_window_with_automation(daemon_window);
                     self.quit_control_mode(windows_api);
                 }
-                (VK_H, 0) => {
+                ControlModeAction::CopyHostnames => {
                     let mut active_hostnames: Vec<String> = vec![];
                     for client in clients.lock().unwrap().iter() {
                         if windows_api.is_window(client.window_handle) {
@@ -654,7 +767,7 @@ impl<'a> Daemon<'a> {
                     cli_clipboard::set_contents(active_hostnames.join(" ")).unwrap();
                     self.quit_control_mode(windows_api);
                 }
-                _ => {}
+                ControlModeAction::NoOp => {}
             }
             return;
         }
@@ -802,11 +915,11 @@ impl<'a> Daemon<'a> {
         clients: &Mutex<Clients>,
         key_event: KEY_EVENT_RECORD,
     ) {
-        match (
+        match classify_enable_disable_submenu_key(
             VIRTUAL_KEY(key_event.wVirtualKeyCode),
             key_event.dwControlKeyState,
         ) {
-            (VK_E, 0) => {
+            EnableDisableSubmenuAction::Enable => {
                 self.update_client_states(clients, |clients_guard| {
                     return clients_guard
                         .iter()
@@ -817,7 +930,7 @@ impl<'a> Daemon<'a> {
                         .unwrap_or_default();
                 });
             }
-            (VK_D, 0) => {
+            EnableDisableSubmenuAction::Disable => {
                 self.update_client_states(clients, |clients_guard| {
                     return clients_guard
                         .iter()
@@ -828,7 +941,7 @@ impl<'a> Daemon<'a> {
                         .unwrap_or_default();
                 });
             }
-            (VK_T, 0) => {
+            EnableDisableSubmenuAction::Toggle => {
                 // Snapshot before flipping so the first client toggles
                 // relative to its own pre-action state.
                 self.update_client_states(clients, |clients_guard| {
@@ -845,7 +958,7 @@ impl<'a> Daemon<'a> {
                         .unwrap_or_default();
                 });
             }
-            _ => {}
+            EnableDisableSubmenuAction::NoOp => {}
         }
     }
 
