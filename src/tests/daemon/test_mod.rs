@@ -10,13 +10,20 @@ mod daemon_test {
         sync::{broadcast, watch},
     };
     use windows::Win32::Foundation::{HANDLE, HWND};
-    use windows::Win32::System::Console::{KEY_EVENT_RECORD, KEY_EVENT_RECORD_0};
-    use windows::Win32::UI::Input::KeyboardAndMouse::{VIRTUAL_KEY, VK_D, VK_E, VK_T, VK_X};
+    use windows::Win32::System::Console::{
+        CAPSLOCK_ON, ENHANCED_KEY, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0, LEFT_ALT_PRESSED,
+        LEFT_CTRL_PRESSED, NUMLOCK_ON, RIGHT_ALT_PRESSED, RIGHT_CTRL_PRESSED, SCROLLLOCK_ON,
+        SHIFT_PRESSED,
+    };
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        VIRTUAL_KEY, VK_C, VK_D, VK_E, VK_H, VK_N, VK_R, VK_T, VK_X,
+    };
 
     use crate::{
         daemon::{
-            expand_hosts, named_pipe_server_routine, resolve_cluster_tags, Client, Clients,
-            ControlModeState, Daemon, HWNDWrapper,
+            classify_control_mode_key, classify_enable_disable_submenu_key, expand_hosts,
+            named_pipe_server_routine, resolve_cluster_tags, Client, Clients, ControlModeAction,
+            ControlModeState, Daemon, EnableDisableSubmenuAction, HWNDWrapper,
         },
         protocol::{
             serialization::serialize_pid, ClientState, FRAMED_INPUT_RECORD_LENGTH,
@@ -1008,13 +1015,23 @@ mod daemon_test {
     /// active modifier bits, mirroring the matcher used by the
     /// submenu's `[e]`/`[d]`/`[t]` arms.
     fn submenu_key_event(virtual_key: VIRTUAL_KEY) -> KEY_EVENT_RECORD {
+        return submenu_key_event_with_state(virtual_key, 0);
+    }
+
+    /// Same as [`submenu_key_event`] but with a caller-supplied
+    /// `dwControlKeyState`. Used by the GH #196 regression to drive
+    /// the submenu with lock-state bits engaged.
+    fn submenu_key_event_with_state(
+        virtual_key: VIRTUAL_KEY,
+        control_key_state: u32,
+    ) -> KEY_EVENT_RECORD {
         return KEY_EVENT_RECORD {
             bKeyDown: true.into(),
             wRepeatCount: 1,
             wVirtualKeyCode: virtual_key.0,
             wVirtualScanCode: 0,
             uChar: KEY_EVENT_RECORD_0 { UnicodeChar: 0 },
-            dwControlKeyState: 0,
+            dwControlKeyState: control_key_state,
         };
     }
 
@@ -1169,6 +1186,120 @@ mod daemon_test {
         daemon.handle_enable_disable_submenu_key(&clients, submenu_key_event(VK_E));
 
         assert!(clients.lock().unwrap().iter().next().is_none());
+        assert_eq!(
+            daemon.control_mode_state,
+            ControlModeState::EnableDisableSubmenu
+        );
+    }
+
+    /// Regression for GH #196: control-mode dispatch must ignore
+    /// lock toggles (`CAPSLOCK_ON`, `NUMLOCK_ON`, `SCROLLLOCK_ON`)
+    /// and the `ENHANCED_KEY` flag when matching `(VK_*, 0)` arms.
+    /// Those bits live in `dwControlKeyState` alongside the real
+    /// modifier bits (Ctrl/Alt/Shift), and an enabled CapsLock
+    /// previously made the entire field non-zero, silently skipping
+    /// every action.
+    ///
+    /// Conversely, any real modifier bit must survive the masking
+    /// so combos like Shift+R do not collapse into the plain-R arm.
+    #[test]
+    fn test_control_mode_classifiers_ignore_lock_state_and_enhanced_key() {
+        let benign_states = [
+            0,
+            CAPSLOCK_ON,
+            NUMLOCK_ON,
+            SCROLLLOCK_ON,
+            ENHANCED_KEY,
+            CAPSLOCK_ON | NUMLOCK_ON | SCROLLLOCK_ON | ENHANCED_KEY,
+        ];
+        let main_expected = [
+            (VK_R, ControlModeAction::Retile),
+            (VK_E, ControlModeAction::OpenEnableDisableSubmenu),
+            (VK_T, ControlModeAction::ToggleEnabled),
+            (VK_N, ControlModeAction::EnableAll),
+            (VK_C, ControlModeAction::CreateWindows),
+            (VK_H, ControlModeAction::CopyHostnames),
+        ];
+        let submenu_expected = [
+            (VK_E, EnableDisableSubmenuAction::Enable),
+            (VK_D, EnableDisableSubmenuAction::Disable),
+            (VK_T, EnableDisableSubmenuAction::Toggle),
+        ];
+
+        for state in benign_states {
+            for (vk, action) in &main_expected {
+                assert_eq!(
+                    &classify_control_mode_key(*vk, state),
+                    action,
+                    "main menu: VK {vk:?} with state 0x{state:08X} must classify as {action:?}",
+                );
+            }
+            for (vk, action) in &submenu_expected {
+                assert_eq!(
+                    &classify_enable_disable_submenu_key(*vk, state),
+                    action,
+                    "submenu: VK {vk:?} with state 0x{state:08X} must classify as {action:?}",
+                );
+            }
+        }
+
+        let modifier_states = [
+            LEFT_CTRL_PRESSED,
+            RIGHT_CTRL_PRESSED,
+            LEFT_ALT_PRESSED,
+            RIGHT_ALT_PRESSED,
+            SHIFT_PRESSED,
+            LEFT_CTRL_PRESSED | CAPSLOCK_ON,
+            SHIFT_PRESSED | NUMLOCK_ON | ENHANCED_KEY,
+        ];
+        for state in modifier_states {
+            for (vk, _) in &main_expected {
+                assert_eq!(
+                    classify_control_mode_key(*vk, state),
+                    ControlModeAction::NoOp,
+                    "main menu: VK {vk:?} with modifier state 0x{state:08X} must NOT fire the plain-key arm",
+                );
+            }
+            for (vk, _) in &submenu_expected {
+                assert_eq!(
+                    classify_enable_disable_submenu_key(*vk, state),
+                    EnableDisableSubmenuAction::NoOp,
+                    "submenu: VK {vk:?} with modifier state 0x{state:08X} must NOT fire the plain-key arm",
+                );
+            }
+        }
+    }
+
+    /// End-to-end regression for GH #196 at the dispatch level: when
+    /// CapsLock (or any other lock toggle) is engaged, pressing
+    /// `[e]` in the enable/disable submenu must still enable the
+    /// first client. Before the [`MODIFIER_MASK`][1] fix, the
+    /// non-zero `dwControlKeyState` would skip the `(VK_E, 0)` arm
+    /// and the press would silently do nothing.
+    ///
+    /// [1]: crate::daemon
+    #[test]
+    fn test_submenu_dispatch_ignores_lock_state_bits() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Disabled));
+        clients.push(make_client_with_state(2, ClientState::Disabled));
+        let clients = Mutex::new(clients);
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+
+        daemon.handle_enable_disable_submenu_key(
+            &clients,
+            submenu_key_event_with_state(VK_E, CAPSLOCK_ON | NUMLOCK_ON | ENHANCED_KEY),
+        );
+
+        assert_eq!(
+            snapshot_states(&clients.lock().unwrap()),
+            vec![ClientState::Active, ClientState::Disabled],
+            "VK_E with lock-state bits set must still enable the first client",
+        );
         assert_eq!(
             daemon.control_mode_state,
             ControlModeState::EnableDisableSubmenu
