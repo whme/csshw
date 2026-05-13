@@ -249,11 +249,14 @@ enum ControlModeState {
     /// The user opened the `[e]nable/disable input` submenu from
     /// [`ControlModeState::Active`].
     ///
-    /// The next non-`Esc` key is interpreted as the submenu action
-    /// (`[e]`, `[d]`, `[t]`) applied to the currently selected client.
-    /// The first iteration hardcodes the selection to the first client;
-    /// later iterations will introduce navigation across the cluster.
-    /// Like [`ControlModeState::Active`], this state suppresses input
+    /// While in this state, each non-`Esc` key is interpreted as a
+    /// submenu action (`[e]`, `[d]`, `[t]`) applied to the currently
+    /// selected client; unrecognised keys are ignored. The submenu
+    /// remains open after every key press and is left only via `Esc`,
+    /// which exits control mode entirely. The first iteration hardcodes
+    /// the selection to the first client; later iterations will
+    /// introduce navigation across the cluster. Like
+    /// [`ControlModeState::Active`], this state suppresses input
     /// forwarding to clients.
     EnableDisableSubmenu,
 }
@@ -779,13 +782,14 @@ impl<'a> Daemon<'a> {
     ///
     /// Matches the submenu's `[e]nable`, `[d]isable`, and `[t]oggle`
     /// bindings; any other key is ignored. The submenu stays open
-    /// after every key press (recognised or not) so the user can
-    /// navigate across clients and toggle them in sequence without
-    /// having to re-enter the submenu between actions. The submenu
-    /// is left only via `ESC`, which is handled by the caller. The
-    /// first iteration scopes every action to the first client
-    /// window; later iterations will introduce navigation across
-    /// the cluster.
+    /// after every key press (recognised or not) so subsequent
+    /// actions can be issued without having to re-enter the submenu
+    /// between them. The submenu is left only via `ESC`, which is
+    /// handled by the caller. The first iteration scopes every
+    /// action to the first client window; later iterations will
+    /// introduce navigation across the cluster, at which point
+    /// keeping the submenu open lets the user move between clients
+    /// and toggle them in sequence.
     ///
     /// # Arguments
     ///
