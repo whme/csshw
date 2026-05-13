@@ -194,6 +194,113 @@ mod console_color_test {
             .times(25)
             .returning(|_, _, _| return Ok(80));
 
+        // Default to Win11 so the post-fill invalidate is gated off; the
+        // dedicated tests below cover both gate branches.
+        mock_api
+            .expect_get_os_version()
+            .returning(|| return "10.0.22000".to_string());
+
+        set_console_color(&mock_api, test_color);
+    }
+
+    /// Tests that on Windows 10 the post-fill console invalidate is
+    /// issued exactly once, working around the legacy conhost leaving
+    /// the trailing row and column stale after a bulk attribute fill.
+    #[test]
+    fn test_set_console_color_invalidates_on_windows_10() {
+        let mut mock_api = MockWindowsApi::new();
+        let test_color = CONSOLE_CHARACTER_ATTRIBUTES(0x0F);
+
+        let mut buffer_info = CONSOLE_SCREEN_BUFFER_INFO::default();
+        buffer_info.dwSize.X = 80;
+        buffer_info.dwSize.Y = 25;
+
+        mock_api
+            .expect_set_console_text_attribute()
+            .times(1)
+            .returning(|_| return Ok(()));
+        mock_api
+            .expect_get_console_screen_buffer_info()
+            .times(1)
+            .return_const(Ok(buffer_info));
+        mock_api
+            .expect_fill_console_output_attribute()
+            .times(25)
+            .returning(|_, _, _| return Ok(80));
+        mock_api
+            .expect_get_os_version()
+            .returning(|| return "10.0.19045".to_string());
+        mock_api
+            .expect_invalidate_console_window()
+            .times(1)
+            .returning(|| return Ok(()));
+
+        set_console_color(&mock_api, test_color);
+    }
+
+    /// Tests that on Windows 11 the post-fill console invalidate is not
+    /// issued - the modern terminal repaints on its own.
+    #[test]
+    fn test_set_console_color_skips_invalidate_on_windows_11() {
+        let mut mock_api = MockWindowsApi::new();
+        let test_color = CONSOLE_CHARACTER_ATTRIBUTES(0x0F);
+
+        let mut buffer_info = CONSOLE_SCREEN_BUFFER_INFO::default();
+        buffer_info.dwSize.X = 80;
+        buffer_info.dwSize.Y = 25;
+
+        mock_api
+            .expect_set_console_text_attribute()
+            .times(1)
+            .returning(|_| return Ok(()));
+        mock_api
+            .expect_get_console_screen_buffer_info()
+            .times(1)
+            .return_const(Ok(buffer_info));
+        mock_api
+            .expect_fill_console_output_attribute()
+            .times(25)
+            .returning(|_, _, _| return Ok(80));
+        mock_api
+            .expect_get_os_version()
+            .returning(|| return "10.0.22631".to_string());
+        mock_api.expect_invalidate_console_window().times(0);
+
+        set_console_color(&mock_api, test_color);
+    }
+
+    /// Tests that a failing invalidate on Windows 10 is logged and does
+    /// not propagate - a stale visual is recoverable; panicking would
+    /// kill the SSH session for a non-critical visual cue.
+    #[test]
+    fn test_set_console_color_swallows_invalidate_error_on_windows_10() {
+        let mut mock_api = MockWindowsApi::new();
+        let test_color = CONSOLE_CHARACTER_ATTRIBUTES(0x0F);
+
+        let mut buffer_info = CONSOLE_SCREEN_BUFFER_INFO::default();
+        buffer_info.dwSize.X = 80;
+        buffer_info.dwSize.Y = 25;
+
+        mock_api
+            .expect_set_console_text_attribute()
+            .times(1)
+            .returning(|_| return Ok(()));
+        mock_api
+            .expect_get_console_screen_buffer_info()
+            .times(1)
+            .return_const(Ok(buffer_info));
+        mock_api
+            .expect_fill_console_output_attribute()
+            .times(25)
+            .returning(|_, _, _| return Ok(80));
+        mock_api
+            .expect_get_os_version()
+            .returning(|| return "10.0.19045".to_string());
+        mock_api
+            .expect_invalidate_console_window()
+            .times(1)
+            .returning(|| return Err(windows::core::Error::from_win32()));
+
         set_console_color(&mock_api, test_color);
     }
 

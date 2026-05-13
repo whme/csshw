@@ -671,6 +671,10 @@ fn test_apply_state_visuals_active_to_disabled_repaints_with_disabled_palette() 
         .expect_fill_console_output_attribute()
         .times(rows as usize)
         .returning(|_, _, _| return Ok(80));
+    // Win11 reports build >= 22000, so the post-fill invalidate is gated off.
+    mock_api
+        .expect_get_os_version()
+        .returning(|| return "10.0.22000".to_string());
 
     apply_state_visuals(
         &mock_api,
@@ -699,6 +703,9 @@ fn test_apply_state_visuals_disabled_to_active_restores_original_attrs() {
         .expect_fill_console_output_attribute()
         .times(rows as usize)
         .returning(|_, _, _| return Ok(80));
+    mock_api
+        .expect_get_os_version()
+        .returning(|| return "10.0.22000".to_string());
 
     apply_state_visuals(
         &mock_api,

@@ -10,7 +10,7 @@
     rustdoc::private_intra_doc_links
 )]
 
-use log::error;
+use log::{error, warn};
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStrExt;
 use std::{mem, ptr};
@@ -18,6 +18,7 @@ use std::{mem, ptr};
 use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::Foundation::{BOOL, COLORREF, FALSE, HANDLE, HWND, LPARAM, TRUE};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
+use windows::Win32::Graphics::Gdi::InvalidateRect;
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 use windows::Win32::System::Console::{
     FillConsoleOutputAttribute, GetConsoleProcessList, GetConsoleScreenBufferInfo,
@@ -201,6 +202,17 @@ pub trait WindowsApi: Send + Sync {
     ///
     /// Result indicating success or failure of the operation
     fn set_console_border_color(&self, color: &COLORREF) -> windows::core::Result<()>;
+
+    /// Marks the entire console window client area as needing a redraw.
+    ///
+    /// Used to nudge the legacy Win10 conhost into repainting from its
+    /// own buffer state after bulk attribute changes that the renderer
+    /// otherwise leaves stale on the trailing row/column.
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or failure of the operation
+    fn invalidate_console_window(&self) -> windows::core::Result<()>;
 
     /// Writes input records to the console input buffer.
     ///
@@ -629,6 +641,14 @@ impl WindowsApi for DefaultWindowsApi {
         };
     }
 
+    fn invalidate_console_window(&self) -> windows::core::Result<()> {
+        let succeeded = unsafe { InvalidateRect(Some(GetConsoleWindow()), None, false) };
+        if succeeded.as_bool() {
+            return Ok(());
+        }
+        return Err(windows::core::Error::from_win32());
+    }
+
     fn write_console_input(
         &self,
         buffer: &[INPUT_RECORD],
@@ -910,6 +930,15 @@ pub fn set_console_color(api: &dyn WindowsApi, color: CONSOLE_CHARACTER_ATTRIBUT
             COORD { X: 0, Y: y },
         )
         .unwrap();
+    }
+    // Win10 conhost leaves the bottom row + rightmost column stale after a
+    // bulk attribute fill until something forces a redraw (the user
+    // double-clicking is one such trigger). Win11+ Terminal repaints on
+    // its own.
+    if is_windows_10(api) {
+        if let Err(err) = api.invalidate_console_window() {
+            warn!("Failed to invalidate console window after recolor: {}", err);
+        }
     }
 }
 
