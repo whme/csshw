@@ -541,7 +541,7 @@ impl<'a> Daemon<'a> {
                 return;
             }
             if self.control_mode_state == ControlModeState::EnableDisableSubmenu {
-                self.handle_enable_disable_submenu_key(windows_api, clients, key_event);
+                self.handle_enable_disable_submenu_key(clients, key_event);
                 return;
             }
             match (
@@ -778,26 +778,23 @@ impl<'a> Daemon<'a> {
     /// [`ControlModeState::EnableDisableSubmenu`] state.
     ///
     /// Matches the submenu's `[e]nable`, `[d]isable`, and `[t]oggle`
-    /// bindings; any other key is ignored and leaves the submenu
-    /// active. The first iteration scopes every action to the first
-    /// client window; later iterations will introduce navigation
-    /// across the cluster.
-    ///
-    /// After a recognised key, the submenu exits via
-    /// [`Daemon::quit_control_mode`] so the next keystroke returns to
-    /// forwarding clients normally.
+    /// bindings; any other key is ignored. The submenu stays open
+    /// after every key press (recognised or not) so the user can
+    /// navigate across clients and toggle them in sequence without
+    /// having to re-enter the submenu between actions. The submenu
+    /// is left only via `ESC`, which is handled by the caller. The
+    /// first iteration scopes every action to the first client
+    /// window; later iterations will introduce navigation across
+    /// the cluster.
     ///
     /// # Arguments
     ///
-    /// * `windows_api` - The Windows API implementation to use.
-    /// * `clients`     - Shared client collection. Empty lists are a
-    ///                   no-op for `[e]`/`[d]`/`[t]` but still exit
-    ///                   the submenu.
-    /// * `key_event`   - The key-down [`KEY_EVENT_RECORD`] dispatched
-    ///                   from `handle_input_record`.
-    fn handle_enable_disable_submenu_key<W: WindowsApi>(
+    /// * `clients`   - Shared client collection. Empty lists are a
+    ///                 no-op for `[e]`/`[d]`/`[t]`.
+    /// * `key_event` - The key-down [`KEY_EVENT_RECORD`] dispatched
+    ///                 from `handle_input_record`.
+    fn handle_enable_disable_submenu_key(
         &mut self,
-        windows_api: &W,
         clients: &Mutex<Clients>,
         key_event: KEY_EVENT_RECORD,
     ) {
@@ -815,7 +812,6 @@ impl<'a> Daemon<'a> {
                         })
                         .unwrap_or_default();
                 });
-                self.quit_control_mode(windows_api);
             }
             (VK_D, 0) => {
                 self.update_client_states(clients, |clients_guard| {
@@ -827,7 +823,6 @@ impl<'a> Daemon<'a> {
                         })
                         .unwrap_or_default();
                 });
-                self.quit_control_mode(windows_api);
             }
             (VK_T, 0) => {
                 // Snapshot before flipping so the first client toggles
@@ -845,7 +840,6 @@ impl<'a> Daemon<'a> {
                         })
                         .unwrap_or_default();
                 });
-                self.quit_control_mode(windows_api);
             }
             _ => {}
         }
