@@ -10,18 +10,23 @@ mod daemon_test {
         sync::{broadcast, watch},
     };
     use windows::Win32::Foundation::{HANDLE, HWND};
+    use windows::Win32::System::Console::{KEY_EVENT_RECORD, KEY_EVENT_RECORD_0};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{VIRTUAL_KEY, VK_D, VK_E, VK_T, VK_X};
 
     use crate::{
         daemon::{
             expand_hosts, named_pipe_server_routine, resolve_cluster_tags, Client, Clients,
-            HWNDWrapper,
+            ControlModeState, Daemon, HWNDWrapper,
         },
         protocol::{
             serialization::serialize_pid, ClientState, FRAMED_INPUT_RECORD_LENGTH,
             FRAMED_KEEP_ALIVE_LENGTH, FRAMED_STATE_CHANGE_LENGTH, SERIALIZED_INPUT_RECORD_0_LENGTH,
             SERIALIZED_PID_LENGTH, TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
         },
-        utils::{config::Cluster, constants::PIPE_NAME},
+        utils::{
+            config::{Cluster, DaemonConfig},
+            constants::PIPE_NAME,
+        },
     };
 
     /// Send `pid` as a 4 byte little-endian sequence to the pipe server.
@@ -989,5 +994,184 @@ mod daemon_test {
         // Press `t` again: every client flips back to its initial state.
         toggle(&clients);
         assert_eq!(snapshot(&clients), initial);
+    }
+
+    /// Collects every client's [`ClientState`] in insertion order.
+    fn snapshot_states(clients: &Clients) -> Vec<ClientState> {
+        return clients
+            .iter()
+            .map(|client| return *client.state_tx.borrow())
+            .collect();
+    }
+
+    /// Builds a [`KEY_EVENT_RECORD`] for a key-down press with no
+    /// active modifier bits, mirroring the matcher used by the
+    /// submenu's `[e]`/`[d]`/`[t]` arms.
+    fn submenu_key_event(virtual_key: VIRTUAL_KEY) -> KEY_EVENT_RECORD {
+        return KEY_EVENT_RECORD {
+            bKeyDown: true.into(),
+            wRepeatCount: 1,
+            wVirtualKeyCode: virtual_key.0,
+            wVirtualScanCode: 0,
+            uChar: KEY_EVENT_RECORD_0 { UnicodeChar: 0 },
+            dwControlKeyState: 0,
+        };
+    }
+
+    /// Verifies that `VK_E` in the enable/disable submenu enables
+    /// only the first client and keeps the submenu open so the user
+    /// can chain further enable/disable/toggle actions across
+    /// clients without re-entering the submenu.
+    #[test]
+    fn test_submenu_e_enables_only_first_client_and_stays_open() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Disabled));
+        clients.push(make_client_with_state(2, ClientState::Disabled));
+        clients.push(make_client_with_state(3, ClientState::Disabled));
+        let clients = Mutex::new(clients);
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+
+        daemon.handle_enable_disable_submenu_key(&clients, submenu_key_event(VK_E));
+
+        assert_eq!(
+            snapshot_states(&clients.lock().unwrap()),
+            vec![
+                ClientState::Active,
+                ClientState::Disabled,
+                ClientState::Disabled,
+            ]
+        );
+        assert_eq!(
+            daemon.control_mode_state,
+            ControlModeState::EnableDisableSubmenu
+        );
+    }
+
+    /// Verifies that `VK_D` in the enable/disable submenu disables
+    /// only the first client and keeps the submenu open so the user
+    /// can chain further enable/disable/toggle actions across
+    /// clients without re-entering the submenu.
+    #[test]
+    fn test_submenu_d_disables_only_first_client_and_stays_open() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.push(make_client_with_state(3, ClientState::Active));
+        let clients = Mutex::new(clients);
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+
+        daemon.handle_enable_disable_submenu_key(&clients, submenu_key_event(VK_D));
+
+        assert_eq!(
+            snapshot_states(&clients.lock().unwrap()),
+            vec![
+                ClientState::Disabled,
+                ClientState::Active,
+                ClientState::Active,
+            ]
+        );
+        assert_eq!(
+            daemon.control_mode_state,
+            ControlModeState::EnableDisableSubmenu
+        );
+    }
+
+    /// Verifies that `VK_T` in the enable/disable submenu flips only
+    /// the first client's state, keeps the submenu open after the
+    /// flip, and is its own inverse over two consecutive presses
+    /// without needing to re-enter the submenu in between.
+    #[test]
+    fn test_submenu_t_toggles_only_first_client_and_stays_open() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Disabled));
+        clients.push(make_client_with_state(3, ClientState::Active));
+        let clients = Mutex::new(clients);
+
+        let initial = snapshot_states(&clients.lock().unwrap());
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+
+        daemon.handle_enable_disable_submenu_key(&clients, submenu_key_event(VK_T));
+        assert_eq!(
+            snapshot_states(&clients.lock().unwrap()),
+            vec![
+                ClientState::Disabled,
+                ClientState::Disabled,
+                ClientState::Active,
+            ]
+        );
+        assert_eq!(
+            daemon.control_mode_state,
+            ControlModeState::EnableDisableSubmenu
+        );
+
+        // Second press without re-entering the submenu: the submenu
+        // must still be open from the first press, and the toggle is
+        // its own inverse.
+        daemon.handle_enable_disable_submenu_key(&clients, submenu_key_event(VK_T));
+        assert_eq!(snapshot_states(&clients.lock().unwrap()), initial);
+        assert_eq!(
+            daemon.control_mode_state,
+            ControlModeState::EnableDisableSubmenu
+        );
+    }
+
+    /// Verifies that an unrecognised key in the enable/disable
+    /// submenu leaves every client state unchanged and keeps the
+    /// submenu open for the next press.
+    #[test]
+    fn test_submenu_ignores_unmapped_key() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Disabled));
+        let clients = Mutex::new(clients);
+
+        let initial = snapshot_states(&clients.lock().unwrap());
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+
+        daemon.handle_enable_disable_submenu_key(&clients, submenu_key_event(VK_X));
+
+        assert_eq!(snapshot_states(&clients.lock().unwrap()), initial);
+        assert_eq!(
+            daemon.control_mode_state,
+            ControlModeState::EnableDisableSubmenu
+        );
+    }
+
+    /// Verifies that pressing `VK_E` with no clients tracked is a
+    /// no-op for the client list (and does not panic) while leaving
+    /// the submenu open for the next press.
+    #[test]
+    fn test_submenu_no_panic_with_empty_clients() {
+        let clients = Mutex::new(Clients::new());
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+
+        daemon.handle_enable_disable_submenu_key(&clients, submenu_key_event(VK_E));
+
+        assert!(clients.lock().unwrap().iter().next().is_none());
+        assert_eq!(
+            daemon.control_mode_state,
+            ControlModeState::EnableDisableSubmenu
+        );
     }
 }

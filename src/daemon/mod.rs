@@ -46,11 +46,12 @@ use tokio::{
     task::JoinHandle,
 };
 use windows::Win32::System::Console::{
-    CONSOLE_CHARACTER_ATTRIBUTES, INPUT_RECORD_0, LEFT_CTRL_PRESSED, RIGHT_CTRL_PRESSED,
+    CONSOLE_CHARACTER_ATTRIBUTES, INPUT_RECORD_0, KEY_EVENT_RECORD, LEFT_CTRL_PRESSED,
+    RIGHT_CTRL_PRESSED,
 };
 
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    VIRTUAL_KEY, VK_A, VK_C, VK_E, VK_ESCAPE, VK_H, VK_N, VK_R, VK_T,
+    VIRTUAL_KEY, VK_A, VK_C, VK_D, VK_E, VK_ESCAPE, VK_H, VK_N, VK_R, VK_T,
 };
 use windows::Win32::UI::WindowsAndMessaging::{SW_RESTORE, SW_SHOWMINIMIZED};
 use windows::Win32::{
@@ -245,6 +246,19 @@ enum ControlModeState {
     ///
     /// Active control mode prevents any input records from being sent to clients.
     Active,
+    /// The user opened the `[e]nable/disable input` submenu from
+    /// [`ControlModeState::Active`].
+    ///
+    /// While in this state, each non-`Esc` key is interpreted as a
+    /// submenu action (`[e]`, `[d]`, `[t]`) applied to the currently
+    /// selected client; unrecognised keys are ignored. The submenu
+    /// remains open after every key press and is left only via `Esc`,
+    /// which exits control mode entirely. The first iteration hardcodes
+    /// the selection to the first client; later iterations will
+    /// introduce navigation across the cluster. Like
+    /// [`ControlModeState::Active`], this state suppresses input
+    /// forwarding to clients.
+    EnableDisableSubmenu,
 }
 
 /// The daemon is responsible to launch a client for
@@ -272,6 +286,29 @@ struct Daemon<'a> {
 }
 
 impl<'a> Daemon<'a> {
+    /// Builds a minimal [`Daemon`] suitable for unit tests.
+    ///
+    /// Populates every field with defaults that do not touch the
+    /// Windows API or the network. Tests pick the
+    /// [`ControlModeState`] they need to exercise; everything else
+    /// stays inert.
+    #[cfg(test)]
+    fn for_test(
+        config: &'a DaemonConfig,
+        clusters: &'a [Cluster],
+        control_mode_state: ControlModeState,
+    ) -> Self {
+        return Self {
+            hosts: Vec::new(),
+            username: None,
+            port: None,
+            config,
+            clusters,
+            control_mode_state,
+            debug: false,
+        };
+    }
+
     /// Launches all client windows and blocks on the main run loop.
     ///
     /// Sets up the daemon console by disabling processed input mode and applying
@@ -497,13 +534,17 @@ impl<'a> Daemon<'a> {
                 clear_screen(windows_api);
                 println!("Control Mode (Esc to exit)");
                 println!(
-                    "[c]reate window(s), [r]etile, [t]oggle enabled, e[n]able all, copy active [h]ostname(s)"
+                    "[c]reate window(s), [r]etile, [e]nable/disable input, [t]oggle enabled, e[n]able all, copy active [h]ostname(s)"
                 );
                 self.control_mode_state = ControlModeState::Active;
                 return;
             }
             let key_event = unsafe { input_record.KeyEvent };
             if !key_event.bKeyDown.as_bool() {
+                return;
+            }
+            if self.control_mode_state == ControlModeState::EnableDisableSubmenu {
+                self.handle_enable_disable_submenu_key(clients, key_event);
                 return;
             }
             match (
@@ -519,7 +560,10 @@ impl<'a> Daemon<'a> {
                     self.arrange_daemon_console(windows_api, workspace_area);
                 }
                 (VK_E, 0) => {
-                    // TODO: Select windows
+                    clear_screen(windows_api);
+                    println!("Enable/Disable input (first window) (Esc to exit)");
+                    println!("[e]nable, [d]isable, [t]oggle");
+                    self.control_mode_state = ControlModeState::EnableDisableSubmenu;
                 }
                 (VK_T, 0) => {
                     // Snapshot before flipping so each client toggles relative
@@ -655,7 +699,9 @@ impl<'a> Daemon<'a> {
         input_record: INPUT_RECORD_0,
     ) -> bool {
         let key_event = unsafe { input_record.KeyEvent };
-        if self.control_mode_state == ControlModeState::Active {
+        if self.control_mode_state == ControlModeState::Active
+            || self.control_mode_state == ControlModeState::EnableDisableSubmenu
+        {
             if key_event.wVirtualKeyCode == VK_ESCAPE.0 {
                 self.quit_control_mode(windows_api);
                 return false;
@@ -728,6 +774,78 @@ impl<'a> Daemon<'a> {
                 valid_clients.len(),
                 self.config.aspect_ratio_adjustement,
             )
+        }
+    }
+
+    /// Dispatch a key press received while the daemon is in the
+    /// [`ControlModeState::EnableDisableSubmenu`] state.
+    ///
+    /// Matches the submenu's `[e]nable`, `[d]isable`, and `[t]oggle`
+    /// bindings; any other key is ignored. The submenu stays open
+    /// after every key press (recognised or not) so subsequent
+    /// actions can be issued without having to re-enter the submenu
+    /// between them. The submenu is left only via `ESC`, which is
+    /// handled by the caller. The first iteration scopes every
+    /// action to the first client window; later iterations will
+    /// introduce navigation across the cluster, at which point
+    /// keeping the submenu open lets the user move between clients
+    /// and toggle them in sequence.
+    ///
+    /// # Arguments
+    ///
+    /// * `clients`   - Shared client collection. Empty lists are a
+    ///                 no-op for `[e]`/`[d]`/`[t]`.
+    /// * `key_event` - The key-down [`KEY_EVENT_RECORD`] dispatched
+    ///                 from `handle_input_record`.
+    fn handle_enable_disable_submenu_key(
+        &mut self,
+        clients: &Mutex<Clients>,
+        key_event: KEY_EVENT_RECORD,
+    ) {
+        match (
+            VIRTUAL_KEY(key_event.wVirtualKeyCode),
+            key_event.dwControlKeyState,
+        ) {
+            (VK_E, 0) => {
+                self.update_client_states(clients, |clients_guard| {
+                    return clients_guard
+                        .iter()
+                        .next()
+                        .map(|client| {
+                            return vec![(client.process_id, ClientState::Active)];
+                        })
+                        .unwrap_or_default();
+                });
+            }
+            (VK_D, 0) => {
+                self.update_client_states(clients, |clients_guard| {
+                    return clients_guard
+                        .iter()
+                        .next()
+                        .map(|client| {
+                            return vec![(client.process_id, ClientState::Disabled)];
+                        })
+                        .unwrap_or_default();
+                });
+            }
+            (VK_T, 0) => {
+                // Snapshot before flipping so the first client toggles
+                // relative to its own pre-action state.
+                self.update_client_states(clients, |clients_guard| {
+                    return clients_guard
+                        .iter()
+                        .next()
+                        .map(|client| {
+                            let flipped = match *client.state_tx.borrow() {
+                                ClientState::Active => ClientState::Disabled,
+                                ClientState::Disabled => ClientState::Active,
+                            };
+                            return vec![(client.process_id, flipped)];
+                        })
+                        .unwrap_or_default();
+                });
+            }
+            _ => {}
         }
     }
 
