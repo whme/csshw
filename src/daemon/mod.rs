@@ -46,7 +46,8 @@ use tokio::{
     task::JoinHandle,
 };
 use windows::Win32::System::Console::{
-    CONSOLE_CHARACTER_ATTRIBUTES, INPUT_RECORD_0, LEFT_CTRL_PRESSED, RIGHT_CTRL_PRESSED,
+    CONSOLE_CHARACTER_ATTRIBUTES, INPUT_RECORD_0, KEY_EVENT_RECORD, LEFT_CTRL_PRESSED,
+    RIGHT_CTRL_PRESSED,
 };
 
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -282,6 +283,29 @@ struct Daemon<'a> {
 }
 
 impl<'a> Daemon<'a> {
+    /// Builds a minimal [`Daemon`] suitable for unit tests.
+    ///
+    /// Populates every field with defaults that do not touch the
+    /// Windows API or the network. Tests pick the
+    /// [`ControlModeState`] they need to exercise; everything else
+    /// stays inert.
+    #[cfg(test)]
+    fn for_test(
+        config: &'a DaemonConfig,
+        clusters: &'a [Cluster],
+        control_mode_state: ControlModeState,
+    ) -> Self {
+        return Self {
+            hosts: Vec::new(),
+            username: None,
+            port: None,
+            config,
+            clusters,
+            control_mode_state,
+            debug: false,
+        };
+    }
+
     /// Launches all client windows and blocks on the main run loop.
     ///
     /// Sets up the daemon console by disabling processed input mode and applying
@@ -517,54 +541,7 @@ impl<'a> Daemon<'a> {
                 return;
             }
             if self.control_mode_state == ControlModeState::EnableDisableSubmenu {
-                match (
-                    VIRTUAL_KEY(key_event.wVirtualKeyCode),
-                    key_event.dwControlKeyState,
-                ) {
-                    (VK_E, 0) => {
-                        self.update_client_states(clients, |clients_guard| {
-                            return clients_guard
-                                .iter()
-                                .next()
-                                .map(|client| {
-                                    return vec![(client.process_id, ClientState::Active)];
-                                })
-                                .unwrap_or_default();
-                        });
-                        self.quit_control_mode(windows_api);
-                    }
-                    (VK_D, 0) => {
-                        self.update_client_states(clients, |clients_guard| {
-                            return clients_guard
-                                .iter()
-                                .next()
-                                .map(|client| {
-                                    return vec![(client.process_id, ClientState::Disabled)];
-                                })
-                                .unwrap_or_default();
-                        });
-                        self.quit_control_mode(windows_api);
-                    }
-                    (VK_T, 0) => {
-                        // Snapshot before flipping so the first client toggles
-                        // relative to its own pre-action state.
-                        self.update_client_states(clients, |clients_guard| {
-                            return clients_guard
-                                .iter()
-                                .next()
-                                .map(|client| {
-                                    let flipped = match *client.state_tx.borrow() {
-                                        ClientState::Active => ClientState::Disabled,
-                                        ClientState::Disabled => ClientState::Active,
-                                    };
-                                    return vec![(client.process_id, flipped)];
-                                })
-                                .unwrap_or_default();
-                        });
-                        self.quit_control_mode(windows_api);
-                    }
-                    _ => {}
-                }
+                self.handle_enable_disable_submenu_key(windows_api, clients, key_event);
                 return;
             }
             match (
@@ -794,6 +771,83 @@ impl<'a> Daemon<'a> {
                 valid_clients.len(),
                 self.config.aspect_ratio_adjustement,
             )
+        }
+    }
+
+    /// Dispatch a key press received while the daemon is in the
+    /// [`ControlModeState::EnableDisableSubmenu`] state.
+    ///
+    /// Matches the submenu's `[e]nable`, `[d]isable`, and `[t]oggle`
+    /// bindings; any other key is ignored and leaves the submenu
+    /// active. The first iteration scopes every action to the first
+    /// client window; later iterations will introduce navigation
+    /// across the cluster.
+    ///
+    /// After a recognised key, the submenu exits via
+    /// [`Daemon::quit_control_mode`] so the next keystroke returns to
+    /// forwarding clients normally.
+    ///
+    /// # Arguments
+    ///
+    /// * `windows_api` - The Windows API implementation to use.
+    /// * `clients`     - Shared client collection. Empty lists are a
+    ///                   no-op for `[e]`/`[d]`/`[t]` but still exit
+    ///                   the submenu.
+    /// * `key_event`   - The key-down [`KEY_EVENT_RECORD`] dispatched
+    ///                   from `handle_input_record`.
+    fn handle_enable_disable_submenu_key<W: WindowsApi>(
+        &mut self,
+        windows_api: &W,
+        clients: &Mutex<Clients>,
+        key_event: KEY_EVENT_RECORD,
+    ) {
+        match (
+            VIRTUAL_KEY(key_event.wVirtualKeyCode),
+            key_event.dwControlKeyState,
+        ) {
+            (VK_E, 0) => {
+                self.update_client_states(clients, |clients_guard| {
+                    return clients_guard
+                        .iter()
+                        .next()
+                        .map(|client| {
+                            return vec![(client.process_id, ClientState::Active)];
+                        })
+                        .unwrap_or_default();
+                });
+                self.quit_control_mode(windows_api);
+            }
+            (VK_D, 0) => {
+                self.update_client_states(clients, |clients_guard| {
+                    return clients_guard
+                        .iter()
+                        .next()
+                        .map(|client| {
+                            return vec![(client.process_id, ClientState::Disabled)];
+                        })
+                        .unwrap_or_default();
+                });
+                self.quit_control_mode(windows_api);
+            }
+            (VK_T, 0) => {
+                // Snapshot before flipping so the first client toggles
+                // relative to its own pre-action state.
+                self.update_client_states(clients, |clients_guard| {
+                    return clients_guard
+                        .iter()
+                        .next()
+                        .map(|client| {
+                            let flipped = match *client.state_tx.borrow() {
+                                ClientState::Active => ClientState::Disabled,
+                                ClientState::Disabled => ClientState::Active,
+                            };
+                            return vec![(client.process_id, flipped)];
+                        })
+                        .unwrap_or_default();
+                });
+                self.quit_control_mode(windows_api);
+            }
+            _ => {}
         }
     }
 

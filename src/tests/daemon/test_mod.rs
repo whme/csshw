@@ -10,18 +10,26 @@ mod daemon_test {
         sync::{broadcast, watch},
     };
     use windows::Win32::Foundation::{HANDLE, HWND};
+    use windows::Win32::System::Console::{
+        CONSOLE_SCREEN_BUFFER_INFO, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0,
+    };
+    use windows::Win32::UI::Input::KeyboardAndMouse::{VIRTUAL_KEY, VK_D, VK_E, VK_T, VK_X};
 
     use crate::{
         daemon::{
             expand_hosts, named_pipe_server_routine, resolve_cluster_tags, Client, Clients,
-            HWNDWrapper,
+            ControlModeState, Daemon, HWNDWrapper,
         },
         protocol::{
             serialization::serialize_pid, ClientState, FRAMED_INPUT_RECORD_LENGTH,
             FRAMED_KEEP_ALIVE_LENGTH, FRAMED_STATE_CHANGE_LENGTH, SERIALIZED_INPUT_RECORD_0_LENGTH,
             SERIALIZED_PID_LENGTH, TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
         },
-        utils::{config::Cluster, constants::PIPE_NAME},
+        utils::{
+            config::{Cluster, DaemonConfig},
+            constants::PIPE_NAME,
+            windows::MockWindowsApi,
+        },
     };
 
     /// Send `pid` as a 4 byte little-endian sequence to the pipe server.
@@ -999,133 +1007,180 @@ mod daemon_test {
             .collect();
     }
 
-    /// Applies the `(pid, state)` updates the
-    /// `EnableDisableSubmenu` arms build, by writing through each
-    /// client's [`watch::Sender`].
-    ///
-    /// Mirrors the apply phase of
-    /// [`crate::daemon::Daemon::update_client_states`] without
-    /// standing up a full [`crate::daemon::Daemon`].
-    fn apply_first_client_updates(clients: &Clients, updates: Vec<(u32, ClientState)>) {
-        for (pid, state) in updates {
-            if let Some(client) = clients.get_by_pid(pid) {
-                client.state_tx.send_replace(state);
-            }
-        }
+    /// Builds a [`KEY_EVENT_RECORD`] for a key-down press with no
+    /// active modifier bits, mirroring the matcher used by the
+    /// submenu's `[e]`/`[d]`/`[t]` arms.
+    fn submenu_key_event(virtual_key: VIRTUAL_KEY) -> KEY_EVENT_RECORD {
+        return KEY_EVENT_RECORD {
+            bKeyDown: true.into(),
+            wRepeatCount: 1,
+            wVirtualKeyCode: virtual_key.0,
+            wVirtualScanCode: 0,
+            uChar: KEY_EVENT_RECORD_0 { UnicodeChar: 0 },
+            dwControlKeyState: 0,
+        };
     }
 
-    /// Builds the `(pid, ClientState::Active)` update list the
-    /// `EnableDisableSubmenu`'s `VK_E` arm produces.
-    fn enable_first_client_updates(clients: &Clients) -> Vec<(u32, ClientState)> {
-        return clients
-            .iter()
-            .next()
-            .map(|client| return vec![(client.process_id, ClientState::Active)])
-            .unwrap_or_default();
+    /// Registers the [`MockWindowsApi`] expectations required by
+    /// [`Daemon::quit_control_mode`] -> `print_instructions` ->
+    /// `clear_screen`. The daemon never blocks on these results in
+    /// tests, so any consistent stub is fine.
+    fn expect_quit_control_mode_console(api: &mut MockWindowsApi) {
+        api.expect_get_console_screen_buffer_info()
+            .returning(|| return Ok(CONSOLE_SCREEN_BUFFER_INFO::default()));
+        api.expect_scroll_console_screen_buffer()
+            .returning(|_, _, _| return Ok(()));
+        api.expect_set_console_cursor_position()
+            .returning(|_| return Ok(()));
     }
 
-    /// Builds the `(pid, ClientState::Disabled)` update list the
-    /// `EnableDisableSubmenu`'s `VK_D` arm produces.
-    fn disable_first_client_updates(clients: &Clients) -> Vec<(u32, ClientState)> {
-        return clients
-            .iter()
-            .next()
-            .map(|client| return vec![(client.process_id, ClientState::Disabled)])
-            .unwrap_or_default();
-    }
-
-    /// Builds the `(pid, flipped)` update list the
-    /// `EnableDisableSubmenu`'s `VK_T` arm produces by snapshotting
-    /// the current first-client state.
-    fn toggle_first_client_updates(clients: &Clients) -> Vec<(u32, ClientState)> {
-        return clients
-            .iter()
-            .next()
-            .map(|client| {
-                let flipped = match *client.state_tx.borrow() {
-                    ClientState::Active => ClientState::Disabled,
-                    ClientState::Disabled => ClientState::Active,
-                };
-                return vec![(client.process_id, flipped)];
-            })
-            .unwrap_or_default();
-    }
-
-    /// Verifies the `EnableDisableSubmenu`'s `VK_E` arm only enables
-    /// the first client and leaves the rest of the cluster untouched.
+    /// Verifies that `VK_E` in the enable/disable submenu enables only
+    /// the first client and exits control mode.
     #[test]
-    fn test_first_window_enable_only_affects_first_client() {
+    fn test_submenu_e_enables_only_first_client() {
         let mut clients = Clients::new();
         clients.push(make_client_with_state(1, ClientState::Disabled));
         clients.push(make_client_with_state(2, ClientState::Disabled));
         clients.push(make_client_with_state(3, ClientState::Disabled));
+        let clients = Mutex::new(clients);
 
-        apply_first_client_updates(&clients, enable_first_client_updates(&clients));
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+
+        let mut mock_api = MockWindowsApi::new();
+        expect_quit_control_mode_console(&mut mock_api);
+
+        daemon.handle_enable_disable_submenu_key(&mock_api, &clients, submenu_key_event(VK_E));
 
         assert_eq!(
-            snapshot_states(&clients),
+            snapshot_states(&clients.lock().unwrap()),
             vec![
                 ClientState::Active,
                 ClientState::Disabled,
                 ClientState::Disabled,
             ]
         );
+        assert_eq!(daemon.control_mode_state, ControlModeState::Inactive);
     }
 
-    /// Verifies the `EnableDisableSubmenu`'s `VK_D` arm only disables
-    /// the first client and leaves the rest of the cluster untouched.
+    /// Verifies that `VK_D` in the enable/disable submenu disables
+    /// only the first client and exits control mode.
     #[test]
-    fn test_first_window_disable_only_affects_first_client() {
+    fn test_submenu_d_disables_only_first_client() {
         let mut clients = Clients::new();
         clients.push(make_client_with_state(1, ClientState::Active));
         clients.push(make_client_with_state(2, ClientState::Active));
         clients.push(make_client_with_state(3, ClientState::Active));
+        let clients = Mutex::new(clients);
 
-        apply_first_client_updates(&clients, disable_first_client_updates(&clients));
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+
+        let mut mock_api = MockWindowsApi::new();
+        expect_quit_control_mode_console(&mut mock_api);
+
+        daemon.handle_enable_disable_submenu_key(&mock_api, &clients, submenu_key_event(VK_D));
 
         assert_eq!(
-            snapshot_states(&clients),
+            snapshot_states(&clients.lock().unwrap()),
             vec![
                 ClientState::Disabled,
                 ClientState::Active,
                 ClientState::Active,
             ]
         );
+        assert_eq!(daemon.control_mode_state, ControlModeState::Inactive);
     }
 
-    /// Verifies the `EnableDisableSubmenu`'s `VK_T` arm flips only the
-    /// first client and is its own inverse over two invocations.
+    /// Verifies that `VK_T` in the enable/disable submenu flips only
+    /// the first client's state and is its own inverse over two
+    /// invocations. Each invocation also exits control mode, so the
+    /// test re-enters the submenu before the second press.
     #[test]
-    fn test_first_window_toggle_only_affects_first_client() {
+    fn test_submenu_t_toggles_only_first_client() {
         let mut clients = Clients::new();
         clients.push(make_client_with_state(1, ClientState::Active));
         clients.push(make_client_with_state(2, ClientState::Disabled));
         clients.push(make_client_with_state(3, ClientState::Active));
+        let clients = Mutex::new(clients);
 
-        let initial = snapshot_states(&clients);
+        let initial = snapshot_states(&clients.lock().unwrap());
 
-        apply_first_client_updates(&clients, toggle_first_client_updates(&clients));
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+
+        let mut mock_api = MockWindowsApi::new();
+        expect_quit_control_mode_console(&mut mock_api);
+
+        daemon.handle_enable_disable_submenu_key(&mock_api, &clients, submenu_key_event(VK_T));
         assert_eq!(
-            snapshot_states(&clients),
+            snapshot_states(&clients.lock().unwrap()),
             vec![
                 ClientState::Disabled,
                 ClientState::Disabled,
                 ClientState::Active,
             ]
         );
+        assert_eq!(daemon.control_mode_state, ControlModeState::Inactive);
 
-        apply_first_client_updates(&clients, toggle_first_client_updates(&clients));
-        assert_eq!(snapshot_states(&clients), initial);
+        daemon.control_mode_state = ControlModeState::EnableDisableSubmenu;
+        daemon.handle_enable_disable_submenu_key(&mock_api, &clients, submenu_key_event(VK_T));
+        assert_eq!(snapshot_states(&clients.lock().unwrap()), initial);
+        assert_eq!(daemon.control_mode_state, ControlModeState::Inactive);
     }
 
-    /// Verifies the submenu update builders are no-ops when the
-    /// client list is empty - i.e. the daemon never panics if the
-    /// user opens the submenu before any client has launched.
+    /// Verifies that an unrecognised key in the enable/disable
+    /// submenu leaves every client state unchanged and keeps the
+    /// submenu open for the next press.
     #[test]
-    fn test_first_window_submenu_updates_are_empty_for_empty_clients() {
-        let clients = Clients::new();
-        assert!(enable_first_client_updates(&clients).is_empty());
-        assert!(disable_first_client_updates(&clients).is_empty());
-        assert!(toggle_first_client_updates(&clients).is_empty());
+    fn test_submenu_ignores_unmapped_key() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Disabled));
+        let clients = Mutex::new(clients);
+
+        let initial = snapshot_states(&clients.lock().unwrap());
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+
+        let mock_api = MockWindowsApi::new();
+
+        daemon.handle_enable_disable_submenu_key(&mock_api, &clients, submenu_key_event(VK_X));
+
+        assert_eq!(snapshot_states(&clients.lock().unwrap()), initial);
+        assert_eq!(
+            daemon.control_mode_state,
+            ControlModeState::EnableDisableSubmenu
+        );
+    }
+
+    /// Verifies that pressing `VK_E` with no clients tracked is a
+    /// no-op for the client list (and does not panic) while still
+    /// exiting control mode.
+    #[test]
+    fn test_submenu_no_panic_with_empty_clients() {
+        let clients = Mutex::new(Clients::new());
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+
+        let mut mock_api = MockWindowsApi::new();
+        expect_quit_control_mode_console(&mut mock_api);
+
+        daemon.handle_enable_disable_submenu_key(&mock_api, &clients, submenu_key_event(VK_E));
+
+        assert!(clients.lock().unwrap().iter().next().is_none());
+        assert_eq!(daemon.control_mode_state, ControlModeState::Inactive);
     }
 }
