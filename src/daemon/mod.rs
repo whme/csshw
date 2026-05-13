@@ -1045,51 +1045,26 @@ fn launch_client_console<W: WindowsApi>(
     );
 }
 
-/// Wait for the named pipe server to connect, correlate the client by
-/// its process id, then multiplex broadcast input records, [`ClientState`]
-/// updates, and idle keep-alives onto the named pipe.
+/// Correlate the connecting client by PID, then multiplex input records,
+/// [`ClientState`] updates, and keep-alives onto the named pipe.
 ///
-/// Correlation: after [`NamedPipeServer::connect`] resolves, the client is
-/// expected to write its 4 byte little-endian process id into the pipe. The
-/// routine looks up the [`Client`] with that PID in the daemon's `clients`
-/// collection; if it is not found, the routine logs an error and terminates
-/// the daemon - an unknown PID indicates broken daemon bookkeeping and is
-/// unrecoverable.
+/// The post-subscribe initial-state push is intentional: `state_rx.changed`
+/// only fires on transitions observed *after* `subscribe`, so a state set
+/// in the brief window between [`Client`] construction and `subscribe`
+/// would otherwise leave the client on its default until the next
+/// transition.
 ///
-/// Right after `subscribe`, the routine writes one
-/// [`TAG_STATE_CHANGE`] frame carrying the current authoritative
-/// [`ClientState`] so the client converges immediately even if the
-/// daemon called [`Daemon::set_client_state`] before the client
-/// connected; without this push the freshly-subscribed receiver would
-/// not observe the pre-existing value via `changed`.
+/// The `select!` is biased toward `recv` so the keep-alive tick never
+/// preempts active input traffic; the [`ClientState::Disabled`] arm
+/// therefore probes the pipe itself, otherwise sustained input would
+/// hide a disconnect.
 ///
-/// Multiplexing: a biased [`tokio::select`] polls three branches per
-/// iteration in order - (a) the broadcast `receiver` for input records,
-/// (b) `state_rx.changed` for [`ClientState`] updates pushed by the
-/// daemon, (c) a 5 ms timer that emits a keep-alive frame so dead pipes
-/// are detected even when the daemon has nothing to send. The biased
-/// ordering ensures the keep-alive branch only fires when neither input
-/// nor state-change is ready, so it cannot interrupt active traffic.
-/// Input records are gated on the current [`ClientState`] read via
-/// `*state_rx.borrow()`: [`ClientState::Active`] forwards the record,
-/// [`ClientState::Disabled`] drops it and yields so the daemon does not
-/// tight-loop while the client is suppressed.
+/// # Errors and termination
 ///
-/// If any write to the pipe fails the pipe is considered closed and the
-/// routine ends. If the [`watch::Sender`] is dropped (i.e. the daemon
-/// removed the client from its bookkeeping) the routine likewise ends.
-///
-/// # Arguments
-///
-/// * `server`   - The named pipe server.
-/// * `receiver` - Broadcast receiver of serialized input records.
-/// * `clients`  - Tracked clients, used for PID correlation and to
-///                obtain the [`watch::Sender`] for this server.
-///
-/// # Panics
-///
-/// Panics if the connecting client sends a PID that is not present in
-/// `clients`.
+/// An unknown PID exits the process (production) or panics (tests) -
+/// the daemon's bookkeeping is broken and recovery is not possible.
+/// A failed pipe write or a dropped [`watch::Sender`] ends the routine
+/// cleanly.
 async fn named_pipe_server_routine(
     server: NamedPipeServer,
     receiver: &mut Receiver<[u8; SERIALIZED_INPUT_RECORD_0_LENGTH]>,
@@ -1119,14 +1094,7 @@ async fn named_pipe_server_routine(
         }
     };
 
-    // Push the current authoritative state immediately so the client
-    // converges right after the PID handshake. `state_rx.changed()`
-    // only fires on transitions observed *after* `subscribe`, so a
-    // state set before this point (e.g. via `Daemon::set_client_state`
-    // during the brief window between `Client` construction and
-    // `subscribe`) would otherwise leave the client stuck on its
-    // default `ClientState::Active` even though the daemon already
-    // gates forwarding on the new value.
+    // Initial state push - see fn docs.
     let initial_state = *state_rx.borrow_and_update();
     let initial_frame: [u8; FRAMED_STATE_CHANGE_LENGTH] =
         [TAG_STATE_CHANGE, serialize_client_state(initial_state)];
@@ -1163,10 +1131,7 @@ async fn named_pipe_server_routine(
                         panic!("Failed to receive data from the Receiver");
                     }
                 };
-                // Gate forwarding on the current state. The match is exhaustive
-                // so the compiler will flag this site when new variants are
-                // added. Copy the value out before any `.await` so the
-                // `watch::Ref` (not `Send`) does not span the await.
+                // Copy out before any `.await` - `watch::Ref` is not `Send`.
                 let current_state = *state_rx.borrow();
                 match current_state {
                     ClientState::Active => {}
