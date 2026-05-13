@@ -1305,4 +1305,56 @@ mod daemon_test {
             ControlModeState::EnableDisableSubmenu
         );
     }
+
+    /// Regression test for #197: when control mode is `Active` and the
+    /// user presses `Esc`, `control_mode_is_active` must report that the
+    /// keystroke was consumed (`true`) so that `handle_input_record`
+    /// suppresses the broadcast. Before the fix it returned `false`,
+    /// which leaked the `Esc` to every connected client.
+    #[test]
+    fn test_esc_in_active_state_is_consumed_and_resets_to_inactive() {
+        use crate::utils::windows::MockWindowsApi;
+        use windows::Win32::Foundation::BOOL;
+        use windows::Win32::System::Console::{CONSOLE_SCREEN_BUFFER_INFO, COORD, INPUT_RECORD_0};
+        use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
+
+        // Arrange: a daemon already in `Active` control mode and a mock
+        // that stubs the console calls `quit_control_mode` makes via
+        // `print_instructions` -> `clear_screen`.
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon = Daemon::for_test(&config, &clusters, ControlModeState::Active);
+
+        let mut mock = MockWindowsApi::new();
+        mock.expect_get_console_screen_buffer_info().returning(|| {
+            return Ok(CONSOLE_SCREEN_BUFFER_INFO {
+                dwSize: COORD { X: 80, Y: 25 },
+                ..Default::default()
+            });
+        });
+        mock.expect_scroll_console_screen_buffer()
+            .returning(|_, _, _| return Ok(()));
+        mock.expect_set_console_cursor_position()
+            .returning(|_| return Ok(()));
+
+        let esc_input = INPUT_RECORD_0 {
+            KeyEvent: KEY_EVENT_RECORD {
+                bKeyDown: BOOL(1),
+                wRepeatCount: 1,
+                wVirtualKeyCode: VK_ESCAPE.0,
+                wVirtualScanCode: 0,
+                uChar: KEY_EVENT_RECORD_0 { UnicodeChar: 0 },
+                dwControlKeyState: 0,
+            },
+        };
+
+        // Act
+        let consumed = daemon.control_mode_is_active(&mock, esc_input);
+
+        // Assert: the `Esc` is reported as owned by control mode (so the
+        // caller will skip forwarding it) and the state machine is back
+        // to `Inactive`.
+        assert!(consumed);
+        assert_eq!(daemon.control_mode_state, ControlModeState::Inactive);
+    }
 }

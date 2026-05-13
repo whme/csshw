@@ -805,7 +805,10 @@ impl<'a> Daemon<'a> {
     ///
     /// # Returns
     ///
-    /// Whether or not control mode is active.
+    /// Whether the input record was consumed by control mode. Returns
+    /// `true` while control mode is active (including the `Esc`
+    /// keystroke that exits it), so callers must not forward such
+    /// records to clients.
     fn control_mode_is_active<W: WindowsApi>(
         &mut self,
         windows_api: &W,
@@ -817,7 +820,7 @@ impl<'a> Daemon<'a> {
         {
             if key_event.wVirtualKeyCode == VK_ESCAPE.0 {
                 self.quit_control_mode(windows_api);
-                return false;
+                return true;
             }
             return true;
         }
