@@ -51,7 +51,8 @@ use windows::Win32::System::Console::{
 };
 
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    VIRTUAL_KEY, VK_A, VK_C, VK_D, VK_E, VK_ESCAPE, VK_H, VK_N, VK_R, VK_T,
+    VIRTUAL_KEY, VK_A, VK_C, VK_D, VK_DOWN, VK_E, VK_ESCAPE, VK_H, VK_J, VK_K, VK_L, VK_LEFT, VK_N,
+    VK_R, VK_RIGHT, VK_T, VK_UP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{SW_RESTORE, SW_SHOWMINIMIZED};
 use windows::Win32::{
@@ -116,8 +117,20 @@ enum EnableDisableSubmenuAction {
     Disable,
     /// `[t]` - flip the targeted client(s)' [`ClientState`].
     Toggle,
+    /// Arrow key or vim motion - move the submenu's selection cursor.
+    Navigate(NavigationDirection),
     /// Any other key while the submenu is open.
     NoOp,
+}
+
+/// Direction of a navigation keystroke inside the enable/disable
+/// submenu.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum NavigationDirection {
+    Up,
+    Down,
+    Left,
+    Right,
 }
 
 /// Classifies a top-level control-mode keystroke.
@@ -177,6 +190,12 @@ fn classify_enable_disable_submenu_key(
         (VK_E, 0) => EnableDisableSubmenuAction::Enable,
         (VK_D, 0) => EnableDisableSubmenuAction::Disable,
         (VK_T, 0) => EnableDisableSubmenuAction::Toggle,
+        (VK_UP, 0) | (VK_K, 0) => EnableDisableSubmenuAction::Navigate(NavigationDirection::Up),
+        (VK_DOWN, 0) | (VK_J, 0) => EnableDisableSubmenuAction::Navigate(NavigationDirection::Down),
+        (VK_LEFT, 0) | (VK_H, 0) => EnableDisableSubmenuAction::Navigate(NavigationDirection::Left),
+        (VK_RIGHT, 0) | (VK_L, 0) => {
+            EnableDisableSubmenuAction::Navigate(NavigationDirection::Right)
+        }
         _ => EnableDisableSubmenuAction::NoOp,
     };
 }
@@ -360,17 +379,13 @@ enum ControlModeState {
     /// Active control mode prevents any input records from being sent to clients.
     Active,
     /// The user opened the `[e]nable/disable input` submenu from
-    /// [`ControlModeState::Active`].
-    ///
-    /// While in this state, each non-`Esc` key is interpreted as a
-    /// submenu action (`[e]`, `[d]`, `[t]`) applied to the currently
-    /// selected client; unrecognised keys are ignored. The submenu
-    /// remains open after every key press and is left only via `Esc`,
-    /// which exits control mode entirely. The first iteration hardcodes
-    /// the selection to the first client; later iterations will
-    /// introduce navigation across the cluster. Like
-    /// [`ControlModeState::Active`], this state suppresses input
-    /// forwarding to clients.
+    /// [`ControlModeState::Active`]. Each non-`Esc` key is
+    /// interpreted as a submenu action (`[e]`, `[d]`, `[t]`, or a
+    /// navigation key) applied to the currently selected client;
+    /// unrecognised keys are ignored. The submenu remains open after
+    /// every key press and is left only via `Esc`, which exits
+    /// control mode entirely. Like [`ControlModeState::Active`],
+    /// this state suppresses input forwarding to clients.
     EnableDisableSubmenu,
 }
 
@@ -393,6 +408,10 @@ struct Daemon<'a> {
     clusters: &'a [Cluster],
     /// The current control mode state.
     control_mode_state: ControlModeState,
+    /// Index into [`Clients::list`] of the client currently selected
+    /// in the [`ControlModeState::EnableDisableSubmenu`] prompt.
+    /// `None` outside the submenu and whenever the cluster is empty.
+    submenu_selected_index: Option<usize>,
     /// If debug mode is enabled on the daemon it will also be enabled on all
     /// clients.
     debug: bool,
@@ -418,6 +437,7 @@ impl<'a> Daemon<'a> {
             config,
             clusters,
             control_mode_state,
+            submenu_selected_index: None,
             debug: false,
         };
     }
@@ -657,7 +677,7 @@ impl<'a> Daemon<'a> {
                 return;
             }
             if self.control_mode_state == ControlModeState::EnableDisableSubmenu {
-                self.handle_enable_disable_submenu_key(clients, key_event);
+                self.handle_enable_disable_submenu_key(windows_api, clients, key_event);
                 return;
             }
             match classify_control_mode_key(
@@ -673,10 +693,14 @@ impl<'a> Daemon<'a> {
                     self.arrange_daemon_console(windows_api, workspace_area);
                 }
                 ControlModeAction::OpenEnableDisableSubmenu => {
-                    clear_screen(windows_api);
-                    println!("Enable/Disable input (first window) (Esc to exit)");
-                    println!("[e]nable, [d]isable, [t]oggle");
+                    let clients_guard = clients.lock().unwrap();
+                    self.submenu_selected_index = if clients_guard.is_empty() {
+                        None
+                    } else {
+                        Some(0)
+                    };
                     self.control_mode_state = ControlModeState::EnableDisableSubmenu;
+                    self.render_enable_disable_submenu(windows_api, &clients_guard);
                 }
                 ControlModeAction::ToggleEnabled => {
                     // Snapshot before flipping so each client toggles relative
@@ -835,11 +859,13 @@ impl<'a> Daemon<'a> {
         return false;
     }
 
-    /// Prints the default daemon instructions to the daemon console and
-    /// sets `self.control_mode_state` to inactive.
+    /// Prints the default daemon instructions to the daemon console,
+    /// sets `self.control_mode_state` to inactive, and clears the
+    /// submenu selection cursor.
     fn quit_control_mode<W: WindowsApi>(&mut self, windows_api: &W) {
         self.print_instructions(windows_api);
         self.control_mode_state = ControlModeState::Inactive;
+        self.submenu_selected_index = None;
     }
 
     /// Clears the console screen and prints the default daemon instructions.
@@ -894,28 +920,23 @@ impl<'a> Daemon<'a> {
         }
     }
 
-    /// Dispatch a key press received while the daemon is in the
-    /// [`ControlModeState::EnableDisableSubmenu`] state.
-    ///
-    /// Matches the submenu's `[e]nable`, `[d]isable`, and `[t]oggle`
-    /// bindings; any other key is ignored. The submenu stays open
-    /// after every key press (recognised or not) so subsequent
-    /// actions can be issued without having to re-enter the submenu
-    /// between them. The submenu is left only via `ESC`, which is
-    /// handled by the caller. The first iteration scopes every
-    /// action to the first client window; later iterations will
-    /// introduce navigation across the cluster, at which point
-    /// keeping the submenu open lets the user move between clients
-    /// and toggle them in sequence.
+    /// Dispatches a key press received while the daemon is in the
+    /// [`ControlModeState::EnableDisableSubmenu`] state. `[e]/[d]/[t]`
+    /// act on the currently selected client; `Navigate` moves the
+    /// selection and redraws the prompt. The submenu is left via
+    /// `ESC`, which is handled by the caller.
     ///
     /// # Arguments
     ///
-    /// * `clients`   - Shared client collection. Empty lists are a
-    ///                 no-op for `[e]`/`[d]`/`[t]`.
-    /// * `key_event` - The key-down [`KEY_EVENT_RECORD`] dispatched
-    ///                 from `handle_input_record`.
-    fn handle_enable_disable_submenu_key(
+    /// * `windows_api` - Windows API implementation used by the
+    ///                   render helper when redrawing after navigation.
+    /// * `clients`     - Shared client collection. Empty lists are a
+    ///                   no-op for every action.
+    /// * `key_event`   - The key-down [`KEY_EVENT_RECORD`] dispatched
+    ///                   from `handle_input_record`.
+    fn handle_enable_disable_submenu_key<W: WindowsApi>(
         &mut self,
+        windows_api: &W,
         clients: &Mutex<Clients>,
         key_event: KEY_EVENT_RECORD,
     ) {
@@ -924,34 +945,28 @@ impl<'a> Daemon<'a> {
             key_event.dwControlKeyState,
         ) {
             EnableDisableSubmenuAction::Enable => {
+                let selected = self.submenu_selected_index;
                 self.update_client_states(clients, |clients_guard| {
-                    return clients_guard
-                        .iter()
-                        .next()
-                        .map(|client| {
-                            return vec![(client.process_id, ClientState::Active)];
-                        })
+                    return selected
+                        .and_then(|idx| return clients_guard.get(idx))
+                        .map(|client| return vec![(client.process_id, ClientState::Active)])
                         .unwrap_or_default();
                 });
             }
             EnableDisableSubmenuAction::Disable => {
+                let selected = self.submenu_selected_index;
                 self.update_client_states(clients, |clients_guard| {
-                    return clients_guard
-                        .iter()
-                        .next()
-                        .map(|client| {
-                            return vec![(client.process_id, ClientState::Disabled)];
-                        })
+                    return selected
+                        .and_then(|idx| return clients_guard.get(idx))
+                        .map(|client| return vec![(client.process_id, ClientState::Disabled)])
                         .unwrap_or_default();
                 });
             }
             EnableDisableSubmenuAction::Toggle => {
-                // Snapshot before flipping so the first client toggles
-                // relative to its own pre-action state.
+                let selected = self.submenu_selected_index;
                 self.update_client_states(clients, |clients_guard| {
-                    return clients_guard
-                        .iter()
-                        .next()
+                    return selected
+                        .and_then(|idx| return clients_guard.get(idx))
                         .map(|client| {
                             let flipped = match *client.state_tx.borrow() {
                                 ClientState::Active => ClientState::Disabled,
@@ -962,8 +977,67 @@ impl<'a> Daemon<'a> {
                         .unwrap_or_default();
                 });
             }
+            EnableDisableSubmenuAction::Navigate(direction) => {
+                let clients_guard = clients.lock().unwrap();
+                self.move_submenu_selection(direction, clients_guard.len());
+                self.render_enable_disable_submenu(windows_api, &clients_guard);
+            }
             EnableDisableSubmenuAction::NoOp => {}
         }
+    }
+
+    /// Redraws the enable/disable submenu prompt, showing the
+    /// currently selected client as `[idx/total] hostname`.
+    ///
+    /// # Arguments
+    ///
+    /// * `windows_api`   - Windows API used to clear the console.
+    /// * `clients_guard` - Locked client collection, used to look up
+    ///                     the selected client's hostname and the
+    ///                     total count for the `[idx/total]` display.
+    fn render_enable_disable_submenu<W: WindowsApi>(
+        &self,
+        windows_api: &W,
+        clients_guard: &Clients,
+    ) {
+        clear_screen(windows_api);
+        println!("Enable/Disable input (Esc to exit)");
+        match self.submenu_selected_index {
+            Some(idx) if idx < clients_guard.len() => {
+                let client = &clients_guard[idx];
+                println!(
+                    "Selected: [{}/{}] {}",
+                    idx + 1,
+                    clients_guard.len(),
+                    client.hostname,
+                );
+            }
+            _ => println!("Selected: (no clients)"),
+        }
+        println!("[e]nable, [d]isable, [t]oggle, arrows/hjkl to move");
+    }
+
+    /// Moves [`Daemon::submenu_selected_index`] one step back
+    /// (Up/Left) or forward (Down/Right), clamped to `[0, len - 1]`.
+    /// Clears the selection when `len` is `0`.
+    ///
+    /// # Arguments
+    ///
+    /// * `direction` - Direction the navigation keystroke encoded.
+    /// * `len`       - Current number of tracked clients.
+    fn move_submenu_selection(&mut self, direction: NavigationDirection, len: usize) {
+        if len == 0 {
+            self.submenu_selected_index = None;
+            return;
+        }
+        let Some(current) = self.submenu_selected_index else {
+            return;
+        };
+        let next = match direction {
+            NavigationDirection::Up | NavigationDirection::Left => current.saturating_sub(1),
+            NavigationDirection::Down | NavigationDirection::Right => (current + 1).min(len - 1),
+        };
+        self.submenu_selected_index = Some(next);
     }
 
     /// Apply a batch of [`ClientState`] updates while holding the
@@ -1813,6 +1887,7 @@ pub async fn main<W: WindowsApi + Clone + 'static>(
         config,
         clusters,
         control_mode_state: ControlModeState::Inactive,
+        submenu_selected_index: None,
         debug,
     };
     daemon.launch(windows_api).await;
