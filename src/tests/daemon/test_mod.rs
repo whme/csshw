@@ -16,14 +16,15 @@ mod daemon_test {
         SHIFT_PRESSED,
     };
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        VIRTUAL_KEY, VK_C, VK_D, VK_E, VK_H, VK_N, VK_R, VK_T, VK_X,
+        VIRTUAL_KEY, VK_C, VK_D, VK_DOWN, VK_E, VK_H, VK_J, VK_K, VK_L, VK_LEFT, VK_N, VK_R,
+        VK_RIGHT, VK_T, VK_UP, VK_X,
     };
 
     use crate::{
         daemon::{
             classify_control_mode_key, classify_enable_disable_submenu_key, expand_hosts,
             named_pipe_server_routine, resolve_cluster_tags, Client, Clients, ControlModeAction,
-            ControlModeState, Daemon, EnableDisableSubmenuAction, HWNDWrapper,
+            ControlModeState, Daemon, EnableDisableSubmenuAction, HWNDWrapper, NavigationDirection,
         },
         protocol::{
             serialization::serialize_pid, ClientState, FRAMED_INPUT_RECORD_LENGTH,
@@ -1035,12 +1036,46 @@ mod daemon_test {
         };
     }
 
+    /// Builds a fresh [`MockWindowsApi`] with no expectations set.
+    ///
+    /// Suitable for submenu dispatch tests that exercise only the
+    /// `[e]`/`[d]`/`[t]` arms (which never touch the Windows API).
+    /// Tests that drive the `Navigate` arm must additionally stub the
+    /// console calls performed by [`crate::utils::windows::clear_screen`]
+    /// (see `mock_with_clear_screen`).
+    fn mock_no_calls() -> crate::utils::windows::MockWindowsApi {
+        return crate::utils::windows::MockWindowsApi::new();
+    }
+
+    /// Builds a [`MockWindowsApi`] that satisfies the console calls
+    /// [`crate::utils::windows::clear_screen`] performs when the
+    /// submenu renderer redraws after a navigation keystroke.
+    ///
+    /// Mirrors the mock setup used by
+    /// `test_esc_in_active_state_is_consumed_and_resets_to_inactive`.
+    fn mock_with_clear_screen() -> crate::utils::windows::MockWindowsApi {
+        use windows::Win32::System::Console::{CONSOLE_SCREEN_BUFFER_INFO, COORD};
+        let mut mock = crate::utils::windows::MockWindowsApi::new();
+        mock.expect_get_console_screen_buffer_info().returning(|| {
+            return Ok(CONSOLE_SCREEN_BUFFER_INFO {
+                dwSize: COORD { X: 80, Y: 25 },
+                ..Default::default()
+            });
+        });
+        mock.expect_scroll_console_screen_buffer()
+            .returning(|_, _, _| return Ok(()));
+        mock.expect_set_console_cursor_position()
+            .returning(|_| return Ok(()));
+        return mock;
+    }
+
     /// Verifies that `VK_E` in the enable/disable submenu enables
-    /// only the first client and keeps the submenu open so the user
-    /// can chain further enable/disable/toggle actions across
-    /// clients without re-entering the submenu.
+    /// only the currently selected client (index 0 here) and keeps
+    /// the submenu open so the user can chain further
+    /// enable/disable/toggle actions across clients without
+    /// re-entering the submenu.
     #[test]
-    fn test_submenu_e_enables_only_first_client_and_stays_open() {
+    fn test_submenu_e_enables_only_selected_client_and_stays_open() {
         let mut clients = Clients::new();
         clients.push(make_client_with_state(1, ClientState::Disabled));
         clients.push(make_client_with_state(2, ClientState::Disabled));
@@ -1051,8 +1086,13 @@ mod daemon_test {
         let clusters: Vec<Cluster> = Vec::new();
         let mut daemon =
             Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        daemon.submenu_selected_index = Some(0);
 
-        daemon.handle_enable_disable_submenu_key(&clients, submenu_key_event(VK_E));
+        daemon.handle_enable_disable_submenu_key(
+            &mock_no_calls(),
+            &clients,
+            submenu_key_event(VK_E),
+        );
 
         assert_eq!(
             snapshot_states(&clients.lock().unwrap()),
@@ -1069,11 +1109,12 @@ mod daemon_test {
     }
 
     /// Verifies that `VK_D` in the enable/disable submenu disables
-    /// only the first client and keeps the submenu open so the user
-    /// can chain further enable/disable/toggle actions across
-    /// clients without re-entering the submenu.
+    /// only the currently selected client (index 0 here) and keeps
+    /// the submenu open so the user can chain further
+    /// enable/disable/toggle actions across clients without
+    /// re-entering the submenu.
     #[test]
-    fn test_submenu_d_disables_only_first_client_and_stays_open() {
+    fn test_submenu_d_disables_only_selected_client_and_stays_open() {
         let mut clients = Clients::new();
         clients.push(make_client_with_state(1, ClientState::Active));
         clients.push(make_client_with_state(2, ClientState::Active));
@@ -1084,8 +1125,13 @@ mod daemon_test {
         let clusters: Vec<Cluster> = Vec::new();
         let mut daemon =
             Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        daemon.submenu_selected_index = Some(0);
 
-        daemon.handle_enable_disable_submenu_key(&clients, submenu_key_event(VK_D));
+        daemon.handle_enable_disable_submenu_key(
+            &mock_no_calls(),
+            &clients,
+            submenu_key_event(VK_D),
+        );
 
         assert_eq!(
             snapshot_states(&clients.lock().unwrap()),
@@ -1102,11 +1148,11 @@ mod daemon_test {
     }
 
     /// Verifies that `VK_T` in the enable/disable submenu flips only
-    /// the first client's state, keeps the submenu open after the
-    /// flip, and is its own inverse over two consecutive presses
-    /// without needing to re-enter the submenu in between.
+    /// the currently selected client's state, keeps the submenu open
+    /// after the flip, and is its own inverse over two consecutive
+    /// presses without needing to re-enter the submenu in between.
     #[test]
-    fn test_submenu_t_toggles_only_first_client_and_stays_open() {
+    fn test_submenu_t_toggles_only_selected_client_and_stays_open() {
         let mut clients = Clients::new();
         clients.push(make_client_with_state(1, ClientState::Active));
         clients.push(make_client_with_state(2, ClientState::Disabled));
@@ -1119,8 +1165,13 @@ mod daemon_test {
         let clusters: Vec<Cluster> = Vec::new();
         let mut daemon =
             Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        daemon.submenu_selected_index = Some(0);
 
-        daemon.handle_enable_disable_submenu_key(&clients, submenu_key_event(VK_T));
+        daemon.handle_enable_disable_submenu_key(
+            &mock_no_calls(),
+            &clients,
+            submenu_key_event(VK_T),
+        );
         assert_eq!(
             snapshot_states(&clients.lock().unwrap()),
             vec![
@@ -1137,7 +1188,11 @@ mod daemon_test {
         // Second press without re-entering the submenu: the submenu
         // must still be open from the first press, and the toggle is
         // its own inverse.
-        daemon.handle_enable_disable_submenu_key(&clients, submenu_key_event(VK_T));
+        daemon.handle_enable_disable_submenu_key(
+            &mock_no_calls(),
+            &clients,
+            submenu_key_event(VK_T),
+        );
         assert_eq!(snapshot_states(&clients.lock().unwrap()), initial);
         assert_eq!(
             daemon.control_mode_state,
@@ -1161,8 +1216,13 @@ mod daemon_test {
         let clusters: Vec<Cluster> = Vec::new();
         let mut daemon =
             Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        daemon.submenu_selected_index = Some(0);
 
-        daemon.handle_enable_disable_submenu_key(&clients, submenu_key_event(VK_X));
+        daemon.handle_enable_disable_submenu_key(
+            &mock_no_calls(),
+            &clients,
+            submenu_key_event(VK_X),
+        );
 
         assert_eq!(snapshot_states(&clients.lock().unwrap()), initial);
         assert_eq!(
@@ -1182,8 +1242,15 @@ mod daemon_test {
         let clusters: Vec<Cluster> = Vec::new();
         let mut daemon =
             Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        // Submenu entry on an empty cluster leaves the selection at
+        // `None`; the dispatch must not panic.
+        daemon.submenu_selected_index = None;
 
-        daemon.handle_enable_disable_submenu_key(&clients, submenu_key_event(VK_E));
+        daemon.handle_enable_disable_submenu_key(
+            &mock_no_calls(),
+            &clients,
+            submenu_key_event(VK_E),
+        );
 
         assert!(clients.lock().unwrap().iter().next().is_none());
         assert_eq!(
@@ -1224,6 +1291,38 @@ mod daemon_test {
             (VK_E, EnableDisableSubmenuAction::Enable),
             (VK_D, EnableDisableSubmenuAction::Disable),
             (VK_T, EnableDisableSubmenuAction::Toggle),
+            (
+                VK_UP,
+                EnableDisableSubmenuAction::Navigate(NavigationDirection::Up),
+            ),
+            (
+                VK_K,
+                EnableDisableSubmenuAction::Navigate(NavigationDirection::Up),
+            ),
+            (
+                VK_DOWN,
+                EnableDisableSubmenuAction::Navigate(NavigationDirection::Down),
+            ),
+            (
+                VK_J,
+                EnableDisableSubmenuAction::Navigate(NavigationDirection::Down),
+            ),
+            (
+                VK_LEFT,
+                EnableDisableSubmenuAction::Navigate(NavigationDirection::Left),
+            ),
+            (
+                VK_H,
+                EnableDisableSubmenuAction::Navigate(NavigationDirection::Left),
+            ),
+            (
+                VK_RIGHT,
+                EnableDisableSubmenuAction::Navigate(NavigationDirection::Right),
+            ),
+            (
+                VK_L,
+                EnableDisableSubmenuAction::Navigate(NavigationDirection::Right),
+            ),
         ];
 
         for state in benign_states {
@@ -1289,8 +1388,10 @@ mod daemon_test {
         let clusters: Vec<Cluster> = Vec::new();
         let mut daemon =
             Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        daemon.submenu_selected_index = Some(0);
 
         daemon.handle_enable_disable_submenu_key(
+            &mock_no_calls(),
             &clients,
             submenu_key_event_with_state(VK_E, CAPSLOCK_ON | NUMLOCK_ON | ENHANCED_KEY),
         );
@@ -1298,7 +1399,7 @@ mod daemon_test {
         assert_eq!(
             snapshot_states(&clients.lock().unwrap()),
             vec![ClientState::Active, ClientState::Disabled],
-            "VK_E with lock-state bits set must still enable the first client",
+            "VK_E with lock-state bits set must still enable the selected client",
         );
         assert_eq!(
             daemon.control_mode_state,
@@ -1356,5 +1457,164 @@ mod daemon_test {
         // to `Inactive`.
         assert!(consumed);
         assert_eq!(daemon.control_mode_state, ControlModeState::Inactive);
+    }
+
+    /// Verifies that `quit_control_mode` clears
+    /// `submenu_selected_index` so the selection cursor never
+    /// outlives a control-mode session.
+    #[test]
+    fn test_quit_control_mode_clears_submenu_selection() {
+        use crate::utils::windows::MockWindowsApi;
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        daemon.submenu_selected_index = Some(2);
+
+        let mut mock = MockWindowsApi::new();
+        mock.expect_get_console_screen_buffer_info().returning(|| {
+            use windows::Win32::System::Console::{CONSOLE_SCREEN_BUFFER_INFO, COORD};
+            return Ok(CONSOLE_SCREEN_BUFFER_INFO {
+                dwSize: COORD { X: 80, Y: 25 },
+                ..Default::default()
+            });
+        });
+        mock.expect_scroll_console_screen_buffer()
+            .returning(|_, _, _| return Ok(()));
+        mock.expect_set_console_cursor_position()
+            .returning(|_| return Ok(()));
+
+        daemon.quit_control_mode(&mock);
+
+        assert_eq!(daemon.control_mode_state, ControlModeState::Inactive);
+        assert_eq!(daemon.submenu_selected_index, None);
+    }
+
+    /// Verifies that `move_submenu_selection` advances the cursor by
+    /// one position on `Down`/`Right` and clamps at `len - 1`.
+    #[test]
+    fn test_move_submenu_selection_down_right_clamp_at_last() {
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        daemon.submenu_selected_index = Some(0);
+
+        daemon.move_submenu_selection(NavigationDirection::Down, 3);
+        assert_eq!(daemon.submenu_selected_index, Some(1));
+        daemon.move_submenu_selection(NavigationDirection::Right, 3);
+        assert_eq!(daemon.submenu_selected_index, Some(2));
+        // Clamp at the last client - no wrap.
+        daemon.move_submenu_selection(NavigationDirection::Down, 3);
+        assert_eq!(daemon.submenu_selected_index, Some(2));
+        daemon.move_submenu_selection(NavigationDirection::Right, 3);
+        assert_eq!(daemon.submenu_selected_index, Some(2));
+    }
+
+    /// Verifies that `move_submenu_selection` steps back by one on
+    /// `Up`/`Left` and clamps at `0` rather than wrapping.
+    #[test]
+    fn test_move_submenu_selection_up_left_clamp_at_zero() {
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        daemon.submenu_selected_index = Some(2);
+
+        daemon.move_submenu_selection(NavigationDirection::Up, 3);
+        assert_eq!(daemon.submenu_selected_index, Some(1));
+        daemon.move_submenu_selection(NavigationDirection::Left, 3);
+        assert_eq!(daemon.submenu_selected_index, Some(0));
+        // Clamp at zero - no wrap.
+        daemon.move_submenu_selection(NavigationDirection::Up, 3);
+        assert_eq!(daemon.submenu_selected_index, Some(0));
+        daemon.move_submenu_selection(NavigationDirection::Left, 3);
+        assert_eq!(daemon.submenu_selected_index, Some(0));
+    }
+
+    /// Verifies that `move_submenu_selection` is a no-op when the
+    /// cluster is empty: the selection is cleared and stays `None`
+    /// across every direction.
+    #[test]
+    fn test_move_submenu_selection_empty_clients_stays_none() {
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        daemon.submenu_selected_index = None;
+
+        for direction in [
+            NavigationDirection::Up,
+            NavigationDirection::Down,
+            NavigationDirection::Left,
+            NavigationDirection::Right,
+        ] {
+            daemon.move_submenu_selection(direction, 0);
+            assert_eq!(daemon.submenu_selected_index, None);
+        }
+    }
+
+    /// Verifies that the dispatch arm for `Navigate(Down)` calls
+    /// through `move_submenu_selection` and triggers a re-render
+    /// (which performs the console calls stubbed on the mock).
+    #[test]
+    fn test_submenu_navigate_down_advances_selection_via_dispatch() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.push(make_client_with_state(3, ClientState::Active));
+        let clients = Mutex::new(clients);
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        daemon.submenu_selected_index = Some(0);
+
+        daemon.handle_enable_disable_submenu_key(
+            &mock_with_clear_screen(),
+            &clients,
+            submenu_key_event(VK_DOWN),
+        );
+
+        assert_eq!(daemon.submenu_selected_index, Some(1));
+        assert_eq!(
+            daemon.control_mode_state,
+            ControlModeState::EnableDisableSubmenu
+        );
+    }
+
+    /// Verifies that `VK_E` targets the *selected* client rather
+    /// than always the first one - the regression the navigation
+    /// feature is designed to enable.
+    #[test]
+    fn test_submenu_e_targets_non_zero_selected_index() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Disabled));
+        clients.push(make_client_with_state(2, ClientState::Disabled));
+        clients.push(make_client_with_state(3, ClientState::Disabled));
+        let clients = Mutex::new(clients);
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        daemon.submenu_selected_index = Some(1);
+
+        daemon.handle_enable_disable_submenu_key(
+            &mock_no_calls(),
+            &clients,
+            submenu_key_event(VK_E),
+        );
+
+        assert_eq!(
+            snapshot_states(&clients.lock().unwrap()),
+            vec![
+                ClientState::Disabled,
+                ClientState::Active,
+                ClientState::Disabled,
+            ],
+            "VK_E with selection at index 1 must enable only client 1",
+        );
     }
 }
