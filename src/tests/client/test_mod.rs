@@ -12,7 +12,6 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 use crate::client::{
     apply_state_visuals, build_ssh_arguments, is_alt_shift_c_combination, read_write_loop,
     resolve_username, send_pid_handshake, write_console_input, ReadWriteResult,
-    DISABLED_CONSOLE_ATTRIBUTES,
 };
 use crate::protocol::serialization::{serialize_client_state, serialize_input_record_0};
 use crate::protocol::{ClientState, TAG_INPUT_RECORD, TAG_STATE_CHANGE};
@@ -42,6 +41,7 @@ fn create_test_client_config(ssh_config_path: String) -> ClientConfig {
         program: TEST_SSH_PROGRAM.to_string(),
         arguments: vec!["-XY".to_string(), TEST_PLACEHOLDER.to_string()],
         username_host_placeholder: TEST_PLACEHOLDER.to_string(),
+        disabled_console_color: ClientConfig::default().disabled_console_color,
     };
 }
 
@@ -223,6 +223,7 @@ fn test_build_ssh_arguments() {
             "-X".to_string(),
         ],
         username_host_placeholder: TEST_PLACEHOLDER.to_string(),
+        disabled_console_color: ClientConfig::default().disabled_console_color,
     };
 
     let test_cases = [
@@ -655,12 +656,13 @@ fn buffer_info(rows: i16) -> CONSOLE_SCREEN_BUFFER_INFO {
 #[test]
 fn test_apply_state_visuals_active_to_disabled_repaints_with_disabled_palette() {
     let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
+    let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
     let rows: i16 = 25;
 
     let mut mock_api = MockWindowsApi::new();
     mock_api
         .expect_set_console_text_attribute()
-        .with(mockall::predicate::eq(DISABLED_CONSOLE_ATTRIBUTES))
+        .with(mockall::predicate::eq(disabled))
         .times(1)
         .returning(|_| return Ok(()));
     mock_api
@@ -681,6 +683,7 @@ fn test_apply_state_visuals_active_to_disabled_repaints_with_disabled_palette() 
         ClientState::Active,
         ClientState::Disabled,
         Some(original),
+        disabled,
     );
 }
 
@@ -712,12 +715,14 @@ fn test_apply_state_visuals_disabled_to_active_restores_original_attrs() {
         ClientState::Disabled,
         ClientState::Active,
         Some(original),
+        CONSOLE_CHARACTER_ATTRIBUTES(0x87),
     );
 }
 
 #[test]
 fn test_apply_state_visuals_no_op_when_state_unchanged() {
     let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
+    let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
 
     // No expectations set: any call to the API would cause the mockall
     // strict-mock to fail, proving the no-transition branch is silent.
@@ -728,12 +733,14 @@ fn test_apply_state_visuals_no_op_when_state_unchanged() {
         ClientState::Active,
         ClientState::Active,
         Some(original),
+        disabled,
     );
     apply_state_visuals(
         &mock_api,
         ClientState::Disabled,
         ClientState::Disabled,
         Some(original),
+        disabled,
     );
 }
 
@@ -743,9 +750,22 @@ fn test_apply_state_visuals_skipped_when_original_attrs_unavailable() {
     // gracefully and leave the console untouched even on a real
     // transition.
     let mock_api = MockWindowsApi::new();
+    let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
 
-    apply_state_visuals(&mock_api, ClientState::Active, ClientState::Disabled, None);
-    apply_state_visuals(&mock_api, ClientState::Disabled, ClientState::Active, None);
+    apply_state_visuals(
+        &mock_api,
+        ClientState::Active,
+        ClientState::Disabled,
+        None,
+        disabled,
+    );
+    apply_state_visuals(
+        &mock_api,
+        ClientState::Disabled,
+        ClientState::Active,
+        None,
+        disabled,
+    );
 }
 
 #[tokio::test]

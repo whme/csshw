@@ -35,6 +35,17 @@ mod client_config_test {
             client_config.username_host_placeholder,
             default_config.username_host_placeholder
         );
+        assert_eq!(
+            client_config.disabled_console_color,
+            default_config.disabled_console_color
+        );
+    }
+
+    #[test]
+    fn test_client_config_default_disabled_console_color() {
+        // 4 (FOREGROUND_RED) + 2 (FOREGROUND_GREEN) + 1 (FOREGROUND_BLUE)
+        // + 128 (BACKGROUND_INTENSITY) = 135
+        assert_eq!(ClientConfig::default().disabled_console_color, 135);
     }
 
     #[test]
@@ -44,6 +55,7 @@ mod client_config_test {
             program: "openssh".to_string(),
             arguments: vec!["-v".to_string(), "{{USER_HOST}}".to_string()],
             username_host_placeholder: "{{USER_HOST}}".to_string(),
+            disabled_console_color: 240,
         };
 
         let config_opt: ClientConfigOpt = ClientConfigOpt {
@@ -51,6 +63,7 @@ mod client_config_test {
             program: Some(client_config.program.clone()),
             arguments: Some(client_config.arguments.clone()),
             username_host_placeholder: Some(client_config.username_host_placeholder.clone()),
+            disabled_console_color: Some(client_config.disabled_console_color),
         };
         let converted_back: ClientConfig = config_opt.into();
 
@@ -64,6 +77,10 @@ mod client_config_test {
             converted_back.username_host_placeholder,
             client_config.username_host_placeholder
         );
+        assert_eq!(
+            converted_back.disabled_console_color,
+            client_config.disabled_console_color
+        );
     }
 
     #[test]
@@ -73,6 +90,7 @@ mod client_config_test {
             program: None,
             arguments: Some(vec!["-X".to_string(), "{{HOST}}".to_string()]),
             username_host_placeholder: None,
+            disabled_console_color: Some(112),
         };
 
         let client_config: ClientConfig = config_opt.into();
@@ -85,6 +103,26 @@ mod client_config_test {
             client_config.username_host_placeholder,
             default_config.username_host_placeholder
         ); // Should use default
+        assert_eq!(client_config.disabled_console_color, 112);
+    }
+
+    #[test]
+    fn test_client_config_opt_disabled_console_color_default_applied() {
+        let config_opt = ClientConfigOpt {
+            ssh_config_path: None,
+            program: None,
+            arguments: None,
+            username_host_placeholder: None,
+            disabled_console_color: None,
+        };
+
+        let client_config: ClientConfig = config_opt.into();
+        let default_config = ClientConfig::default();
+
+        assert_eq!(
+            client_config.disabled_console_color,
+            default_config.disabled_console_color
+        );
     }
 
     #[test]
@@ -94,12 +132,14 @@ mod client_config_test {
             program: "putty".to_string(),
             arguments: vec!["-ssh".to_string(), "{{TARGET}}".to_string()],
             username_host_placeholder: "{{TARGET}}".to_string(),
+            disabled_console_color: 15,
         };
 
         assert_eq!(config.ssh_config_path, "D:\\ssh\\config");
         assert_eq!(config.program, "putty");
         assert_eq!(config.arguments, vec!["-ssh", "{{TARGET}}"]);
         assert_eq!(config.username_host_placeholder, "{{TARGET}}");
+        assert_eq!(config.disabled_console_color, 15);
     }
 }
 
@@ -280,6 +320,7 @@ mod config_test {
                 program: "custom-ssh".to_string(),
                 arguments: vec!["-custom".to_string()],
                 username_host_placeholder: "{{CUSTOM}}".to_string(),
+                disabled_console_color: 240,
             },
             daemon: DaemonConfig {
                 height: 250,
@@ -297,6 +338,7 @@ mod config_test {
                 username_host_placeholder: Some(
                     original_config.client.username_host_placeholder.clone(),
                 ),
+                disabled_console_color: Some(original_config.client.disabled_console_color),
             }),
             daemon: Some(DaemonConfigOpt {
                 height: Some(original_config.daemon.height),
@@ -415,6 +457,7 @@ mod config_integration_test {
                     "{{USER_HOST}}".to_string(),
                 ],
                 username_host_placeholder: "{{USER_HOST}}".to_string(),
+                disabled_console_color: 23,
             },
             daemon: DaemonConfig {
                 height: 180,
@@ -431,6 +474,7 @@ mod config_integration_test {
                 program: Some(original.client.program.clone()),
                 arguments: Some(original.client.arguments.clone()),
                 username_host_placeholder: Some(original.client.username_host_placeholder.clone()),
+                disabled_console_color: Some(original.client.disabled_console_color),
             }),
             daemon: Some(DaemonConfigOpt {
                 height: Some(original.daemon.height),
@@ -456,6 +500,10 @@ mod config_integration_test {
         assert_eq!(
             roundtrip.client.username_host_placeholder,
             original.client.username_host_placeholder
+        );
+        assert_eq!(
+            roundtrip.client.disabled_console_color,
+            original.client.disabled_console_color
         );
 
         assert_eq!(roundtrip.daemon.height, original.daemon.height);
@@ -489,6 +537,7 @@ mod config_integration_test {
                     "{{TARGET}}".to_string(),
                 ],
                 username_host_placeholder: "{{TARGET}}".to_string(),
+                disabled_console_color: ClientConfig::default().disabled_console_color,
             },
             daemon: DaemonConfig::default(),
         };

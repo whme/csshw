@@ -19,9 +19,8 @@ use tokio::process::{Child, Command};
 use tokio::sync::watch;
 use tokio::{io::Interest, net::windows::named_pipe::ClientOptions};
 use windows::Win32::System::Console::{
-    BACKGROUND_INTENSITY, CONSOLE_CHARACTER_ATTRIBUTES, FOREGROUND_BLUE, FOREGROUND_GREEN,
-    FOREGROUND_RED, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT, KEY_EVENT_RECORD, LEFT_ALT_PRESSED,
-    RIGHT_ALT_PRESSED, SHIFT_PRESSED,
+    CONSOLE_CHARACTER_ATTRIBUTES, INPUT_RECORD, INPUT_RECORD_0, KEY_EVENT, KEY_EVENT_RECORD,
+    LEFT_ALT_PRESSED, RIGHT_ALT_PRESSED, SHIFT_PRESSED,
 };
 
 use crate::{
@@ -61,18 +60,6 @@ enum ReadWriteResult {
     Disconnect,
 }
 
-/// Console attributes applied while the client is in
-/// [`ClientState::Disabled`].
-///
-/// The default-grey foreground (red+green+blue, no intensity) on a
-/// `BACKGROUND_INTENSITY`-only background paints the window as light text on
-/// a muted dark-grey background - a clear "this client is greyed out" cue
-/// that mirrors the daemon's existing reuse of `set_console_color` while
-/// staying visually distinct from the daemon's bright-red palette.
-const DISABLED_CONSOLE_ATTRIBUTES: CONSOLE_CHARACTER_ATTRIBUTES = CONSOLE_CHARACTER_ATTRIBUTES(
-    FOREGROUND_RED.0 | FOREGROUND_GREEN.0 | FOREGROUND_BLUE.0 | BACKGROUND_INTENSITY.0,
-);
-
 /// Repaint the console to reflect a [`ClientState`] transition.
 ///
 /// Called from the visuals task whenever the watch channel observes a new
@@ -90,11 +77,15 @@ const DISABLED_CONSOLE_ATTRIBUTES: CONSOLE_CHARACTER_ATTRIBUTES = CONSOLE_CHARAC
 /// * `original_attrs`  - Console attributes captured at startup. Used to
 ///                       restore the pristine appearance when transitioning
 ///                       back to [`ClientState::Active`].
+/// * `disabled_attrs`  - Console attributes applied while the client is in
+///                       [`ClientState::Disabled`]. Sourced from
+///                       [`ClientConfig::disabled_console_color`].
 fn apply_state_visuals(
     api: &dyn WindowsApi,
     prev: ClientState,
     next: ClientState,
     original_attrs: Option<CONSOLE_CHARACTER_ATTRIBUTES>,
+    disabled_attrs: CONSOLE_CHARACTER_ATTRIBUTES,
 ) {
     if prev == next {
         return;
@@ -104,7 +95,7 @@ fn apply_state_visuals(
     };
     let attrs = match next {
         ClientState::Active => original,
-        ClientState::Disabled => DISABLED_CONSOLE_ATTRIBUTES,
+        ClientState::Disabled => disabled_attrs,
     };
     set_console_color(api, attrs);
 }
@@ -575,13 +566,14 @@ pub async fn main(
     // Disabled. Decoupling the redraw from `read_write_loop` keeps named-pipe
     // I/O off the critical path of the (potentially slow) per-row
     // `fill_console_output_attribute` calls inside `set_console_color`.
+    let disabled_attrs = CONSOLE_CHARACTER_ATTRIBUTES(config.disabled_console_color);
     let visuals_task = {
         let mut state_rx = state_rx;
         async move {
             let mut prev = *state_rx.borrow_and_update();
             while state_rx.changed().await.is_ok() {
                 let next = *state_rx.borrow_and_update();
-                apply_state_visuals(api, prev, next, original_attrs);
+                apply_state_visuals(api, prev, next, original_attrs, disabled_attrs);
                 prev = next;
             }
         }
