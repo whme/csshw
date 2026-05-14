@@ -114,7 +114,7 @@ pub struct ClientConfig {
     /// when the client is in the `Disabled` state.
     ///
     /// Uses the same encoding as [`DaemonConfig::console_color`].
-    /// All [standard windows color combinations][1] are available:
+    /// All [standard Windows color combinations][1] are available:
     ///
     /// FOREGROUND_BLUE:        1   \
     /// FOREGROUND_GREEN:       2   \
@@ -143,7 +143,7 @@ impl Default for ClientConfig {
     /// * `ssh_config_path`             - `%USERPROFILE%\.ssh\config`
     /// * `program`                     - `ssh`
     /// * `arguments`                   - `-XY {{USERNAME_AT_HOST}}`
-    /// * `usernamt_host_placeholder`   - `{{USERNAME_AT_HOST}}`
+    /// * `username_host_placeholder`   - `{{USERNAME_AT_HOST}}`
     /// * `disabled_console_color`      - `135`
     ///
     /// Note: %USERPROFILE% actually is resolved by us, so the actual value
@@ -238,7 +238,7 @@ pub struct DaemonConfig {
     pub aspect_ratio_adjustement: f64,
     /// Controls back- and foreground colors of the daemon console window.
     ///
-    /// All [standard windows color combinations][1] are available:
+    /// All [standard Windows color combinations][1] are available:
     ///
     /// FOREGROUND_BLUE:        1   \
     /// FOREGROUND_GREEN:       2   \
