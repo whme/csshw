@@ -65,39 +65,39 @@ enum ReadWriteResult {
 /// Called from the visuals task whenever the watch channel observes a new
 /// state. Does nothing when `prev == next` (the watch channel notifies on
 /// every send, including no-op replays) and also does nothing when
-/// `original_attrs` is `None` - that signals the initial buffer-info read
-/// at startup failed, in which case we degrade gracefully and leave the
-/// console untouched.
+/// `original_console_color` is `None` - that signals the initial
+/// buffer-info read at startup failed, in which case we degrade
+/// gracefully and leave the console untouched.
 ///
 /// # Arguments
 ///
-/// * `api`             - The Windows API implementation to use.
-/// * `prev`            - State applied on the previous invocation.
-/// * `next`            - State just observed on the watch channel.
-/// * `original_attrs`  - Console attributes captured at startup. Used to
-///                       restore the pristine appearance when transitioning
-///                       back to [`ClientState::Active`].
-/// * `disabled_attrs`  - Console attributes applied while the client is in
-///                       [`ClientState::Disabled`]. Sourced from
-///                       [`ClientConfig::disabled_console_color`].
+/// * `api`                     - The Windows API implementation to use.
+/// * `prev`                    - State applied on the previous invocation.
+/// * `next`                    - State just observed on the watch channel.
+/// * `original_console_color`  - Console color captured at startup. Used to
+///                               restore the pristine appearance when
+///                               transitioning back to [`ClientState::Active`].
+/// * `disabled_console_color`  - Console color applied while the client is in
+///                               [`ClientState::Disabled`]. Sourced from
+///                               [`ClientConfig::disabled_console_color`].
 fn apply_state_visuals(
     api: &dyn WindowsApi,
     prev: ClientState,
     next: ClientState,
-    original_attrs: Option<CONSOLE_CHARACTER_ATTRIBUTES>,
-    disabled_attrs: CONSOLE_CHARACTER_ATTRIBUTES,
+    original_console_color: Option<CONSOLE_CHARACTER_ATTRIBUTES>,
+    disabled_console_color: CONSOLE_CHARACTER_ATTRIBUTES,
 ) {
     if prev == next {
         return;
     }
-    let Some(original) = original_attrs else {
+    let Some(original) = original_console_color else {
         return;
     };
-    let attrs = match next {
+    let color = match next {
         ClientState::Active => original,
-        ClientState::Disabled => disabled_attrs,
+        ClientState::Disabled => disabled_console_color,
     };
-    set_console_color(api, attrs);
+    set_console_color(api, color);
 }
 
 /// Write the given [INPUT_RECORD_0] to the console input buffer using the provided API.
@@ -495,16 +495,16 @@ pub async fn main(
     cli_port: Option<u16>,
     config: &ClientConfig,
 ) {
-    // Capture the console's original attributes before anything (title task,
+    // Capture the console's original color before anything (title task,
     // SSH child) gets a chance to write output. This snapshot is what the
     // visuals task reverts to on a `Disabled -> Active` transition.
-    let original_attrs: Option<CONSOLE_CHARACTER_ATTRIBUTES> = match api
+    let original_console_color: Option<CONSOLE_CHARACTER_ATTRIBUTES> = match api
         .get_console_screen_buffer_info()
     {
         Ok(info) => Some(info.wAttributes),
         Err(err) => {
             warn!(
-                "Failed to capture original console attributes; disabled-state visuals will be skipped: {}",
+                "Failed to capture original console color; disabled-state visuals will be skipped: {}",
                 err
             );
             None
@@ -566,14 +566,20 @@ pub async fn main(
     // Disabled. Decoupling the redraw from `read_write_loop` keeps named-pipe
     // I/O off the critical path of the (potentially slow) per-row
     // `fill_console_output_attribute` calls inside `set_console_color`.
-    let disabled_attrs = CONSOLE_CHARACTER_ATTRIBUTES(config.disabled_console_color);
+    let disabled_console_color = CONSOLE_CHARACTER_ATTRIBUTES(config.disabled_console_color);
     let visuals_task = {
         let mut state_rx = state_rx;
         async move {
             let mut prev = *state_rx.borrow_and_update();
             while state_rx.changed().await.is_ok() {
                 let next = *state_rx.borrow_and_update();
-                apply_state_visuals(api, prev, next, original_attrs, disabled_attrs);
+                apply_state_visuals(
+                    api,
+                    prev,
+                    next,
+                    original_console_color,
+                    disabled_console_color,
+                );
                 prev = next;
             }
         }

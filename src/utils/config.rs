@@ -7,7 +7,7 @@ use windows::Win32::System::Console::{
     FOREGROUND_RED,
 };
 
-/// Default console attribute bits applied when a client is in the
+/// Default console color applied when a client is in the
 /// `Disabled` state.
 ///
 /// Default-grey foreground (red+green+blue, no intensity) on a

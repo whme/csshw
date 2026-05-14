@@ -688,7 +688,7 @@ fn test_apply_state_visuals_active_to_disabled_repaints_with_disabled_palette() 
 }
 
 #[test]
-fn test_apply_state_visuals_disabled_to_active_restores_original_attrs() {
+fn test_apply_state_visuals_disabled_to_active_restores_original_console_color() {
     let original = CONSOLE_CHARACTER_ATTRIBUTES(0x5A);
     let rows: i16 = 30;
 
@@ -745,8 +745,8 @@ fn test_apply_state_visuals_no_op_when_state_unchanged() {
 }
 
 #[test]
-fn test_apply_state_visuals_skipped_when_original_attrs_unavailable() {
-    // When startup failed to capture the original attributes we degrade
+fn test_apply_state_visuals_skipped_when_original_console_color_unavailable() {
+    // When startup failed to capture the original console color we degrade
     // gracefully and leave the console untouched even on a real
     // transition.
     let mock_api = MockWindowsApi::new();
