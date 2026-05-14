@@ -60,44 +60,85 @@ enum ReadWriteResult {
     Disconnect,
 }
 
-/// Repaint the console to reflect a [`ClientState`] transition.
+/// Duration of the action-feedback flash painted on a highlighted client
+/// when its [`ClientState`] changes (the user pressed `[d]`/`[e]`/`[t]` on
+/// the selected window in the daemon's enable/disable submenu).
 ///
-/// Called from the visuals task whenever the watch channel observes a new
-/// state. Does nothing when `prev == next` (the watch channel notifies on
-/// every send, including no-op replays) and also does nothing when
-/// `original_console_color` is `None` - that signals the initial
-/// buffer-info read at startup failed, in which case we degrade
-/// gracefully and leave the console untouched.
+/// Long enough to register visually, short enough to feel snappy. The
+/// highlight color is restored when this duration elapses, unless another
+/// state change resets the timer first.
+const HIGHLIGHT_FLASH_DURATION: Duration = Duration::from_millis(250);
+
+/// Resolve the console color that should be painted for a given
+/// `(state, highlighted)` combination.
+///
+/// The highlight overlay wins over the disabled-state color, so a
+/// highlighted client always shows its highlight color in the steady
+/// state - even when also `Disabled`. When `original_console_color` is
+/// `None`, the initial buffer-info read at startup failed and there is
+/// no pristine value to revert to; the helper returns `None` and the
+/// caller degrades gracefully by leaving the console untouched.
 ///
 /// # Arguments
 ///
-/// * `api`                     - The Windows API implementation to use.
-/// * `prev`                    - State applied on the previous invocation.
-/// * `next`                    - State just observed on the watch channel.
-/// * `original_console_color`  - Console color captured at startup. Used to
-///                               restore the pristine appearance when
-///                               transitioning back to [`ClientState::Active`].
-/// * `disabled_console_color`  - Console color applied while the client is in
-///                               [`ClientState::Disabled`]. Sourced from
-///                               [`ClientConfig::disabled_console_color`].
-fn apply_state_visuals(
-    api: &dyn WindowsApi,
-    prev: ClientState,
-    next: ClientState,
+/// * `state`                    - The client's current [`ClientState`].
+/// * `highlighted`              - `true` while the client is the selected
+///                                window in the daemon's enable/disable
+///                                submenu.
+/// * `original_console_color`   - Console color captured at startup.
+/// * `disabled_console_color`   - Color applied while the client is
+///                                [`ClientState::Disabled`].
+/// * `highlighted_console_color`- Color applied while the client is
+///                                highlighted.
+///
+/// # Returns
+///
+/// The color to paint, or `None` if no repaint is possible because the
+/// original color was never captured.
+fn effective_color(
+    state: ClientState,
+    highlighted: bool,
     original_console_color: Option<CONSOLE_CHARACTER_ATTRIBUTES>,
     disabled_console_color: CONSOLE_CHARACTER_ATTRIBUTES,
-) {
-    if prev == next {
-        return;
+    highlighted_console_color: CONSOLE_CHARACTER_ATTRIBUTES,
+) -> Option<CONSOLE_CHARACTER_ATTRIBUTES> {
+    if highlighted {
+        return Some(highlighted_console_color);
     }
-    let Some(original) = original_console_color else {
-        return;
-    };
-    let color = match next {
-        ClientState::Active => original,
-        ClientState::Disabled => disabled_console_color,
-    };
-    set_console_color(api, color);
+    match state {
+        ClientState::Active => return original_console_color,
+        ClientState::Disabled => return Some(disabled_console_color),
+    }
+}
+
+/// Color the visuals task paints during the action-feedback flash on a
+/// highlighted client whose [`ClientState`] just transitioned.
+///
+/// Bypasses the highlight overlay so the user can actually see the
+/// underlying state color for the flash window before the highlight is
+/// restored. Returns `None` for the same degrade-gracefully reason as
+/// [`effective_color`].
+///
+/// # Arguments
+///
+/// * `state`                    - The just-applied [`ClientState`].
+/// * `original_console_color`   - Console color captured at startup.
+/// * `disabled_console_color`   - Color applied while the client is
+///                                [`ClientState::Disabled`].
+///
+/// # Returns
+///
+/// The color to paint for the flash, or `None` if no repaint is
+/// possible.
+fn flash_color(
+    state: ClientState,
+    original_console_color: Option<CONSOLE_CHARACTER_ATTRIBUTES>,
+    disabled_console_color: CONSOLE_CHARACTER_ATTRIBUTES,
+) -> Option<CONSOLE_CHARACTER_ATTRIBUTES> {
+    match state {
+        ClientState::Active => return original_console_color,
+        ClientState::Disabled => return Some(disabled_console_color),
+    }
 }
 
 /// Write the given [INPUT_RECORD_0] to the console input buffer using the provided API.
@@ -250,6 +291,9 @@ async fn launch_ssh_process(
 /// * `state_tx`            - Watch sender used to broadcast every
 ///                           [`DaemonToClientMessage::StateChange`] payload as
 ///                           the client's authoritative [`ClientState`].
+/// * `highlight_tx`        - Watch sender used to broadcast every
+///                           [`DaemonToClientMessage::Highlight`] payload as
+///                           the client's current highlight flag.
 /// # Returns
 ///
 /// A `ReadWriteResult` indicating whether we were able to read from the named pipe and write the available INPUT_RECORDs
@@ -261,6 +305,7 @@ async fn read_write_loop(
     named_pipe_client: &NamedPipeClient,
     internal_buffer: &mut Vec<u8>,
     state_tx: &watch::Sender<ClientState>,
+    highlight_tx: &watch::Sender<bool>,
 ) -> ReadWriteResult {
     let mut buf: [u8; SERIALIZED_INPUT_RECORD_0_LENGTH * 10] =
         [0; SERIALIZED_INPUT_RECORD_0_LENGTH * 10];
@@ -283,6 +328,9 @@ async fn read_write_loop(
                     }
                     DaemonToClientMessage::StateChange(state) => {
                         state_tx.send_replace(state);
+                    }
+                    DaemonToClientMessage::Highlight(highlighted) => {
+                        highlight_tx.send_replace(highlighted);
                     }
                     DaemonToClientMessage::KeepAlive => {}
                 }
@@ -393,7 +441,14 @@ async fn send_pid_handshake(named_pipe_client: &NamedPipeClient) {
 /// * `state_tx`    - Watch sender used by [`read_write_loop`] to broadcast the
 ///                   client's authoritative [`ClientState`] to subscribers
 ///                   such as the visuals task in [`main`].
-async fn run(api: &dyn WindowsApi, child: &mut Child, state_tx: &watch::Sender<ClientState>) {
+/// * `highlight_tx`- Watch sender used by [`read_write_loop`] to broadcast the
+///                   client's current highlight flag.
+async fn run(
+    api: &dyn WindowsApi,
+    child: &mut Child,
+    state_tx: &watch::Sender<ClientState>,
+    highlight_tx: &watch::Sender<bool>,
+) {
     // Many clients trying to open the pipe at the same time can cause
     // a file not found error, so keep trying until we managed to open it
     let named_pipe_client: NamedPipeClient = loop {
@@ -421,7 +476,15 @@ async fn run(api: &dyn WindowsApi, child: &mut Child, state_tx: &watch::Sender<C
                 panic!("Named client pipe is not ready to be read",)
             });
 
-        match read_write_loop(api, &named_pipe_client, &mut internal_buffer, state_tx).await {
+        match read_write_loop(
+            api,
+            &named_pipe_client,
+            &mut internal_buffer,
+            state_tx,
+            highlight_tx,
+        )
+        .await
+        {
             ReadWriteResult::Success {
                 remainder,
                 key_event_records,
@@ -512,6 +575,7 @@ pub async fn main(
     };
 
     let (state_tx, state_rx) = watch::channel(ClientState::Active);
+    let (highlight_tx, highlight_rx) = watch::channel(false);
 
     let (host, inline_port) =
         host.rsplit_once(':')
@@ -557,30 +621,139 @@ pub async fn main(
     };
     let child_task = async {
         let mut child = launch_ssh_process(&resolved_username, host, port, config).await;
-        run(api, &mut child, &state_tx).await;
+        run(api, &mut child, &state_tx, &highlight_tx).await;
         return child;
     };
 
-    // Visuals task: subscribes to the state watch channel and repaints the
-    // console whenever the daemon flips this client between Active and
-    // Disabled. Decoupling the redraw from `read_write_loop` keeps named-pipe
-    // I/O off the critical path of the (potentially slow) per-row
-    // `fill_console_output_attribute` calls inside `set_console_color`.
+    // Visuals task: subscribes to both the state and the highlight watch
+    // channels and repaints the console whenever either changes. Decoupling
+    // the redraw from `read_write_loop` keeps named-pipe I/O off the critical
+    // path of the (potentially slow) per-row `fill_console_output_attribute`
+    // calls inside `set_console_color`.
+    //
+    // The highlight color is the steady-state overlay for a selected client
+    // (wins over `Disabled`). A `ClientState` transition observed while the
+    // client is highlighted briefly flashes the new state's color
+    // ([`HIGHLIGHT_FLASH_DURATION`]) before the highlight color is restored
+    // - this is the user's visual confirmation that `[d]`/`[e]`/`[t]`
+    // landed on the selected window.
     let disabled_console_color = CONSOLE_CHARACTER_ATTRIBUTES(config.disabled_console_color);
+    let highlighted_console_color = CONSOLE_CHARACTER_ATTRIBUTES(config.highlighted_console_color);
     let visuals_task = {
         let mut state_rx = state_rx;
+        let mut highlight_rx = highlight_rx;
         async move {
-            let mut prev = *state_rx.borrow_and_update();
-            while state_rx.changed().await.is_ok() {
-                let next = *state_rx.borrow_and_update();
-                apply_state_visuals(
-                    api,
-                    prev,
-                    next,
+            let mut prev_state = *state_rx.borrow_and_update();
+            let mut prev_highlight = *highlight_rx.borrow_and_update();
+            let mut last_painted: Option<CONSOLE_CHARACTER_ATTRIBUTES> = None;
+            let paint = |target: Option<CONSOLE_CHARACTER_ATTRIBUTES>,
+                         last: &mut Option<CONSOLE_CHARACTER_ATTRIBUTES>| {
+                let Some(color) = target else {
+                    return;
+                };
+                if last.map(|c| return c.0) == Some(color.0) {
+                    return;
+                }
+                set_console_color(api, color);
+                *last = Some(color);
+            };
+
+            // Apply the steady-state color derived from the initial
+            // `(state, highlighted)` pair so subscribers join in sync with
+            // the daemon's pre-subscribe pushes.
+            paint(
+                effective_color(
+                    prev_state,
+                    prev_highlight,
                     original_console_color,
                     disabled_console_color,
-                );
-                prev = next;
+                    highlighted_console_color,
+                ),
+                &mut last_painted,
+            );
+
+            let mut flash_until: Option<tokio::time::Instant> = None;
+            loop {
+                tokio::select! {
+                    state_changed = state_rx.changed() => {
+                        if state_changed.is_err() {
+                            return;
+                        }
+                        let next_state = *state_rx.borrow_and_update();
+                        if next_state == prev_state {
+                            continue;
+                        }
+                        prev_state = next_state;
+                        if prev_highlight {
+                            // Flash the underlying state color, then restore
+                            // the highlight color after the flash window.
+                            paint(
+                                flash_color(
+                                    next_state,
+                                    original_console_color,
+                                    disabled_console_color,
+                                ),
+                                &mut last_painted,
+                            );
+                            flash_until =
+                                Some(tokio::time::Instant::now() + HIGHLIGHT_FLASH_DURATION);
+                        } else {
+                            paint(
+                                effective_color(
+                                    next_state,
+                                    prev_highlight,
+                                    original_console_color,
+                                    disabled_console_color,
+                                    highlighted_console_color,
+                                ),
+                                &mut last_painted,
+                            );
+                            flash_until = None;
+                        }
+                    }
+                    highlight_changed = highlight_rx.changed() => {
+                        if highlight_changed.is_err() {
+                            return;
+                        }
+                        let next_highlight = *highlight_rx.borrow_and_update();
+                        if next_highlight == prev_highlight {
+                            continue;
+                        }
+                        prev_highlight = next_highlight;
+                        // Any highlight transition cancels a pending flash:
+                        // the steady-state color for the new combination is
+                        // what the user should see now.
+                        flash_until = None;
+                        paint(
+                            effective_color(
+                                prev_state,
+                                prev_highlight,
+                                original_console_color,
+                                disabled_console_color,
+                                highlighted_console_color,
+                            ),
+                            &mut last_painted,
+                        );
+                    }
+                    _ = async {
+                        match flash_until {
+                            Some(deadline) => tokio::time::sleep_until(deadline).await,
+                            None => std::future::pending::<()>().await,
+                        }
+                    } => {
+                        flash_until = None;
+                        paint(
+                            effective_color(
+                                prev_state,
+                                prev_highlight,
+                                original_console_color,
+                                disabled_console_color,
+                                highlighted_console_color,
+                            ),
+                            &mut last_painted,
+                        );
+                    }
+                }
             }
         }
     };

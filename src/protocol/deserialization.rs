@@ -5,7 +5,7 @@ use windows::Win32::{
 
 use crate::protocol::{
     ClientState, DaemonToClientMessage, SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
-    TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
+    TAG_HIGHLIGHT, TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
 };
 
 /// Deserialize a [KEY_EVENT_RECORD_0] from a u8 slice using custom binary format.
@@ -86,6 +86,31 @@ pub fn deserialize_client_state(byte: u8) -> ClientState {
     }
 }
 
+/// Deserialize a single byte into a highlight flag.
+///
+/// # Arguments
+///
+/// * `byte` - The single payload byte of a [`crate::protocol::TAG_HIGHLIGHT`]
+///            frame: `0` for not highlighted, `1` for highlighted.
+///
+/// # Returns
+///
+/// `true` if the byte signals a highlighted client, `false` otherwise.
+///
+/// # Panics
+///
+/// Panics if `byte` is anything other than `0` or `1`. An unknown value
+/// indicates either a protocol-version mismatch between the daemon and
+/// client or corruption on the pipe - both unrecoverable, matching the
+/// codebase's "broken bookkeeping -> panic" convention.
+pub fn deserialize_highlight(byte: u8) -> bool {
+    match byte {
+        0 => return false,
+        1 => return true,
+        other => panic!("Unknown highlight byte: 0x{other:02X}"),
+    }
+}
+
 /// Parse as many complete [`DaemonToClientMessage`]s as possible from `buffer`.
 ///
 /// The parser walks `buffer` from the start, decoding one tag-prefixed frame
@@ -136,6 +161,16 @@ pub fn parse_daemon_to_client_messages(buffer: &[u8]) -> (Vec<DaemonToClientMess
                 }
                 let state = deserialize_client_state(buffer[payload_index]);
                 messages.push(DaemonToClientMessage::StateChange(state));
+                pos = payload_index + 1;
+            }
+            TAG_HIGHLIGHT => {
+                let payload_index = pos + 1;
+                if buffer.len() <= payload_index {
+                    // Trailing partial frame; stop and return it as remainder.
+                    break;
+                }
+                let highlighted = deserialize_highlight(buffer[payload_index]);
+                messages.push(DaemonToClientMessage::Highlight(highlighted));
                 pos = payload_index + 1;
             }
             TAG_KEEP_ALIVE => {

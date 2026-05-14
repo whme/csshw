@@ -1,9 +1,9 @@
 use windows::Win32::System::Console::{INPUT_RECORD_0, KEY_EVENT_RECORD, KEY_EVENT_RECORD_0};
 
 use crate::protocol::{
-    ClientState, DaemonToClientMessage, FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH,
-    FRAMED_STATE_CHANGE_LENGTH, SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH,
-    TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
+    ClientState, DaemonToClientMessage, FRAMED_HIGHLIGHT_LENGTH, FRAMED_INPUT_RECORD_LENGTH,
+    FRAMED_KEEP_ALIVE_LENGTH, FRAMED_STATE_CHANGE_LENGTH, SERIALIZED_INPUT_RECORD_0_LENGTH,
+    SERIALIZED_PID_LENGTH, TAG_HIGHLIGHT, TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
 };
 
 /// Serialize a [KEY_EVENT_RECORD_0] into a `Vec<u8>` using custom binary format.
@@ -68,6 +68,22 @@ pub fn serialize_client_state(state: ClientState) -> u8 {
     return state as u8;
 }
 
+/// Serialize a highlight flag into its single-byte wire representation.
+///
+/// # Arguments
+///
+/// * `highlighted` - `true` if the client is the currently selected window
+///                   in the daemon's enable/disable submenu, `false`
+///                   otherwise.
+///
+/// # Returns
+///
+/// `1` for `true` and `0` for `false`, used as the payload of a tagged
+/// [`crate::protocol::TAG_HIGHLIGHT`] frame.
+pub fn serialize_highlight(highlighted: bool) -> u8 {
+    return if highlighted { 1 } else { 0 };
+}
+
 /// Serialize a [`DaemonToClientMessage`] into its tagged-envelope wire
 /// representation.
 ///
@@ -94,6 +110,12 @@ pub fn serialize_daemon_to_client_message(msg: &DaemonToClientMessage) -> Vec<u8
             let mut buf = Vec::with_capacity(FRAMED_STATE_CHANGE_LENGTH);
             buf.push(TAG_STATE_CHANGE);
             buf.push(serialize_client_state(*state));
+            return buf;
+        }
+        DaemonToClientMessage::Highlight(highlighted) => {
+            let mut buf = Vec::with_capacity(FRAMED_HIGHLIGHT_LENGTH);
+            buf.push(TAG_HIGHLIGHT);
+            buf.push(serialize_highlight(*highlighted));
             return buf;
         }
         DaemonToClientMessage::KeepAlive => {

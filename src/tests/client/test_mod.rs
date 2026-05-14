@@ -10,15 +10,17 @@ use windows::Win32::System::Console::{
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::client::{
-    apply_state_visuals, build_ssh_arguments, is_alt_shift_c_combination, read_write_loop,
+    build_ssh_arguments, effective_color, flash_color, is_alt_shift_c_combination, read_write_loop,
     resolve_username, send_pid_handshake, write_console_input, ReadWriteResult,
 };
-use crate::protocol::serialization::{serialize_client_state, serialize_input_record_0};
-use crate::protocol::{ClientState, TAG_INPUT_RECORD, TAG_STATE_CHANGE};
+use crate::protocol::serialization::{
+    serialize_client_state, serialize_highlight, serialize_input_record_0,
+};
+use crate::protocol::{ClientState, TAG_HIGHLIGHT, TAG_INPUT_RECORD, TAG_STATE_CHANGE};
 use crate::utils::config::ClientConfig;
 use crate::utils::windows::MockWindowsApi;
 use tokio::sync::watch;
-use windows::Win32::System::Console::{CONSOLE_CHARACTER_ATTRIBUTES, CONSOLE_SCREEN_BUFFER_INFO};
+use windows::Win32::System::Console::CONSOLE_CHARACTER_ATTRIBUTES;
 
 // Test constants - consistent dummy values used throughout tests
 const TEST_USERNAME: &str = "testuser";
@@ -42,6 +44,7 @@ fn create_test_client_config(ssh_config_path: String) -> ClientConfig {
         arguments: vec!["-XY".to_string(), TEST_PLACEHOLDER.to_string()],
         username_host_placeholder: TEST_PLACEHOLDER.to_string(),
         disabled_console_color: ClientConfig::default().disabled_console_color,
+        highlighted_console_color: ClientConfig::default().highlighted_console_color,
     };
 }
 
@@ -224,6 +227,7 @@ fn test_build_ssh_arguments() {
         ],
         username_host_placeholder: TEST_PLACEHOLDER.to_string(),
         disabled_console_color: ClientConfig::default().disabled_console_color,
+        highlighted_console_color: ClientConfig::default().highlighted_console_color,
     };
 
     let test_cases = [
@@ -566,9 +570,17 @@ async fn test_read_write_loop_dispatches_state_change_and_input_record(
     // successful dispatch is visible as a value change, not a same-value
     // replay.
     let (state_tx, state_rx) = watch::channel(ClientState::Disabled);
+    let (highlight_tx, _highlight_rx) = watch::channel(false);
     // Wait until the client side has bytes available.
     client.readable().await?;
-    let result = read_write_loop(&mock_api, &client, &mut internal_buffer, &state_tx).await;
+    let result = read_write_loop(
+        &mock_api,
+        &client,
+        &mut internal_buffer,
+        &state_tx,
+        &highlight_tx,
+    )
+    .await;
 
     match result {
         ReadWriteResult::Success {
@@ -626,9 +638,17 @@ async fn test_read_write_loop_dispatches_disabled_state_change(
     let mock_api = MockWindowsApi::new();
     let mut internal_buffer: Vec<u8> = Vec::new();
     let (state_tx, state_rx) = watch::channel(ClientState::Active);
+    let (highlight_tx, _highlight_rx) = watch::channel(false);
 
     client.readable().await?;
-    let result = read_write_loop(&mock_api, &client, &mut internal_buffer, &state_tx).await;
+    let result = read_write_loop(
+        &mock_api,
+        &client,
+        &mut internal_buffer,
+        &state_tx,
+        &highlight_tx,
+    )
+    .await;
 
     match result {
         ReadWriteResult::Success {
@@ -644,128 +664,156 @@ async fn test_read_write_loop_dispatches_disabled_state_change(
     return Ok(());
 }
 
-/// Helper: build a `CONSOLE_SCREEN_BUFFER_INFO` with the buffer size used
-/// for the `apply_state_visuals` tests below.
-fn buffer_info(rows: i16) -> CONSOLE_SCREEN_BUFFER_INFO {
-    let mut info = CONSOLE_SCREEN_BUFFER_INFO::default();
-    info.dwSize.X = 80;
-    info.dwSize.Y = rows;
-    return info;
+#[tokio::test]
+async fn test_read_write_loop_dispatches_highlight() -> Result<(), Box<dyn std::error::Error>> {
+    use std::io;
+    use tokio::net::windows::named_pipe::{ClientOptions, PipeMode, ServerOptions};
+
+    let pipe_name = format!(
+        r"\\.\pipe\csshw-test-read-write-loop-highlight-{}",
+        std::process::id()
+    );
+    let server = ServerOptions::new()
+        .access_inbound(true)
+        .access_outbound(true)
+        .pipe_mode(PipeMode::Message)
+        .create(&pipe_name)?;
+    let client = ClientOptions::new().open(&pipe_name)?;
+    server.connect().await?;
+
+    let payload: Vec<u8> = vec![TAG_HIGHLIGHT, serialize_highlight(true)];
+
+    let mut written = 0usize;
+    while written < payload.len() {
+        server.writable().await?;
+        match server.try_write(&payload[written..]) {
+            Ok(0) => return Err("pipe closed before write completed".into()),
+            Ok(n) => written += n,
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    let mock_api = MockWindowsApi::new();
+    let mut internal_buffer: Vec<u8> = Vec::new();
+    let (state_tx, _state_rx) = watch::channel(ClientState::Active);
+    let (highlight_tx, highlight_rx) = watch::channel(false);
+
+    client.readable().await?;
+    let result = read_write_loop(
+        &mock_api,
+        &client,
+        &mut internal_buffer,
+        &state_tx,
+        &highlight_tx,
+    )
+    .await;
+
+    match result {
+        ReadWriteResult::Success {
+            remainder,
+            key_event_records,
+        } => {
+            assert!(remainder.is_empty());
+            assert!(key_event_records.is_empty());
+        }
+        _ => panic!("expected ReadWriteResult::Success"),
+    }
+    assert!(*highlight_rx.borrow());
+    return Ok(());
 }
 
 #[test]
-fn test_apply_state_visuals_active_to_disabled_repaints_with_disabled_palette() {
+fn test_effective_color_active_unhighlighted_returns_original() {
     let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
     let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
-    let rows: i16 = 25;
-
-    let mut mock_api = MockWindowsApi::new();
-    mock_api
-        .expect_set_console_text_attribute()
-        .with(mockall::predicate::eq(disabled))
-        .times(1)
-        .returning(|_| return Ok(()));
-    mock_api
-        .expect_get_console_screen_buffer_info()
-        .times(1)
-        .return_const(Ok(buffer_info(rows)));
-    mock_api
-        .expect_fill_console_output_attribute()
-        .times(rows as usize)
-        .returning(|_, _, _| return Ok(80));
-    // Win11 reports build >= 22000, so the post-fill invalidate is gated off.
-    mock_api
-        .expect_get_os_version()
-        .returning(|| return "10.0.22000".to_string());
-
-    apply_state_visuals(
-        &mock_api,
+    let highlighted = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
+    let result = effective_color(
         ClientState::Active,
-        ClientState::Disabled,
+        false,
         Some(original),
         disabled,
+        highlighted,
     );
+    assert_eq!(result.map(|c| return c.0), Some(original.0));
 }
 
 #[test]
-fn test_apply_state_visuals_disabled_to_active_restores_original_console_color() {
-    let original = CONSOLE_CHARACTER_ATTRIBUTES(0x5A);
-    let rows: i16 = 30;
-
-    let mut mock_api = MockWindowsApi::new();
-    mock_api
-        .expect_set_console_text_attribute()
-        .with(mockall::predicate::eq(original))
-        .times(1)
-        .returning(|_| return Ok(()));
-    mock_api
-        .expect_get_console_screen_buffer_info()
-        .times(1)
-        .return_const(Ok(buffer_info(rows)));
-    mock_api
-        .expect_fill_console_output_attribute()
-        .times(rows as usize)
-        .returning(|_, _, _| return Ok(80));
-    mock_api
-        .expect_get_os_version()
-        .returning(|| return "10.0.22000".to_string());
-
-    apply_state_visuals(
-        &mock_api,
-        ClientState::Disabled,
-        ClientState::Active,
-        Some(original),
-        CONSOLE_CHARACTER_ATTRIBUTES(0x87),
-    );
-}
-
-#[test]
-fn test_apply_state_visuals_no_op_when_state_unchanged() {
+fn test_effective_color_disabled_unhighlighted_returns_disabled() {
     let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
     let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
-
-    // No expectations set: any call to the API would cause the mockall
-    // strict-mock to fail, proving the no-transition branch is silent.
-    let mock_api = MockWindowsApi::new();
-
-    apply_state_visuals(
-        &mock_api,
-        ClientState::Active,
-        ClientState::Active,
+    let highlighted = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
+    let result = effective_color(
+        ClientState::Disabled,
+        false,
         Some(original),
         disabled,
+        highlighted,
     );
-    apply_state_visuals(
-        &mock_api,
-        ClientState::Disabled,
-        ClientState::Disabled,
-        Some(original),
-        disabled,
-    );
+    assert_eq!(result.map(|c| return c.0), Some(disabled.0));
 }
 
 #[test]
-fn test_apply_state_visuals_skipped_when_original_console_color_unavailable() {
-    // When startup failed to capture the original console color we degrade
-    // gracefully and leave the console untouched even on a real
-    // transition.
-    let mock_api = MockWindowsApi::new();
+fn test_effective_color_highlighted_active_returns_highlighted() {
+    let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
     let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
+    let highlighted = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
+    let result = effective_color(
+        ClientState::Active,
+        true,
+        Some(original),
+        disabled,
+        highlighted,
+    );
+    assert_eq!(result.map(|c| return c.0), Some(highlighted.0));
+}
 
-    apply_state_visuals(
-        &mock_api,
-        ClientState::Active,
+#[test]
+fn test_effective_color_highlighted_disabled_returns_highlighted() {
+    let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
+    let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
+    let highlighted = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
+    // Highlight wins over disabled in the steady state.
+    let result = effective_color(
         ClientState::Disabled,
-        None,
+        true,
+        Some(original),
         disabled,
+        highlighted,
     );
-    apply_state_visuals(
-        &mock_api,
-        ClientState::Disabled,
-        ClientState::Active,
-        None,
-        disabled,
-    );
+    assert_eq!(result.map(|c| return c.0), Some(highlighted.0));
+}
+
+#[test]
+fn test_effective_color_active_unhighlighted_no_original_returns_none() {
+    let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
+    let highlighted = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
+    // Missing original color = startup capture failed = degrade gracefully.
+    let result = effective_color(ClientState::Active, false, None, disabled, highlighted);
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_flash_color_active_returns_original() {
+    let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
+    let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
+    let result = flash_color(ClientState::Active, Some(original), disabled);
+    assert_eq!(result.map(|c| return c.0), Some(original.0));
+}
+
+#[test]
+fn test_flash_color_disabled_returns_disabled() {
+    let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
+    let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
+    let result = flash_color(ClientState::Disabled, Some(original), disabled);
+    assert_eq!(result.map(|c| return c.0), Some(disabled.0));
+}
+
+#[test]
+fn test_flash_color_active_no_original_returns_none() {
+    let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
+    let result = flash_color(ClientState::Active, None, disabled);
+    assert!(result.is_none());
 }
 
 #[tokio::test]

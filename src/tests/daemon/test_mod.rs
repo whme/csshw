@@ -27,9 +27,10 @@ mod daemon_test {
             ControlModeState, Daemon, EnableDisableSubmenuAction, HWNDWrapper, NavigationDirection,
         },
         protocol::{
-            serialization::serialize_pid, ClientState, FRAMED_INPUT_RECORD_LENGTH,
-            FRAMED_KEEP_ALIVE_LENGTH, FRAMED_STATE_CHANGE_LENGTH, SERIALIZED_INPUT_RECORD_0_LENGTH,
-            SERIALIZED_PID_LENGTH, TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
+            serialization::serialize_pid, ClientState, FRAMED_HIGHLIGHT_LENGTH,
+            FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH, FRAMED_STATE_CHANGE_LENGTH,
+            SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH, TAG_HIGHLIGHT,
+            TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
         },
         utils::{
             config::{Cluster, DaemonConfig},
@@ -66,6 +67,7 @@ mod daemon_test {
             process_handle: HANDLE::default(),
             process_id: pid,
             state_tx: watch::channel(ClientState::Active).0,
+            highlight_tx: watch::channel(false).0,
         });
         return Arc::new(Mutex::new(clients));
     }
@@ -236,6 +238,12 @@ mod daemon_test {
                         assert_eq!(FRAMED_STATE_CHANGE_LENGTH, n);
                         assert_eq!(buf[1], ClientState::Active as u8);
                     }
+                    TAG_HIGHLIGHT => {
+                        // Initial highlight push emitted right after the
+                        // state push; the default highlight is `false`.
+                        assert_eq!(FRAMED_HIGHLIGHT_LENGTH, n);
+                        assert_eq!(buf[1], 0u8);
+                    }
                     other => panic!("Unexpected tag byte 0x{other:02X}"),
                 },
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -330,6 +338,13 @@ mod daemon_test {
                     TAG_KEEP_ALIVE => {
                         assert_eq!(FRAMED_KEEP_ALIVE_LENGTH, n);
                         // Keep-alives may interleave with the state change; keep waiting.
+                    }
+                    TAG_HIGHLIGHT => {
+                        // Initial highlight push following the initial state
+                        // push; drain it and keep waiting for the state
+                        // transition.
+                        assert_eq!(FRAMED_HIGHLIGHT_LENGTH, n);
+                        assert_eq!(buf[1], 0u8);
                     }
                     other => panic!("Unexpected tag byte 0x{other:02X}"),
                 },
@@ -498,6 +513,12 @@ mod daemon_test {
                         assert_eq!(FRAMED_STATE_CHANGE_LENGTH, n);
                         assert_eq!(buf[1], ClientState::Active as u8);
                     }
+                    TAG_HIGHLIGHT => {
+                        // Initial highlight push following the initial
+                        // state push. Drain and keep reading.
+                        assert_eq!(FRAMED_HIGHLIGHT_LENGTH, n);
+                        assert_eq!(buf[1], 0u8);
+                    }
                     other => panic!("Unexpected tag byte 0x{other:02X}"),
                 },
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -589,6 +610,7 @@ mod daemon_test {
             process_handle: HANDLE::default(),
             process_id: pid,
             state_tx: state_tx.clone(),
+            highlight_tx: watch::channel(false).0,
         });
         return (Arc::new(Mutex::new(clients)), state_tx);
     }
@@ -648,6 +670,12 @@ mod daemon_test {
                         // input-record frame.
                         assert_eq!(FRAMED_STATE_CHANGE_LENGTH, n);
                         assert_eq!(buf[1], ClientState::Active as u8);
+                    }
+                    TAG_HIGHLIGHT => {
+                        // Initial highlight push following the initial
+                        // state push. Drain and keep reading.
+                        assert_eq!(FRAMED_HIGHLIGHT_LENGTH, n);
+                        assert_eq!(buf[1], 0u8);
                     }
                     other => panic!("Unexpected tag byte 0x{other:02X}"),
                 },
@@ -710,6 +738,13 @@ mod daemon_test {
                                     "State-change announcement must carry Disabled"
                                 );
                                 saw_state_change = true;
+                            }
+                            TAG_HIGHLIGHT => {
+                                // Steady-state highlight is `false` while the
+                                // submenu is not driving navigation, so a
+                                // highlight frame may arrive once at startup.
+                                assert_eq!(FRAMED_HIGHLIGHT_LENGTH, n);
+                                assert_eq!(buf[1], 0u8);
                             }
                             TAG_INPUT_RECORD => panic!(
                                 "Received input-record frame after disabling - broadcast data leaked through"
@@ -823,6 +858,16 @@ mod daemon_test {
                                 );
                                 continue;
                             }
+                            TAG_HIGHLIGHT => {
+                                // Initial highlight push following the state
+                                // push; drain it and keep waiting for the
+                                // first keep-alive frame.
+                                assert_eq!(
+                                    FRAMED_HIGHLIGHT_LENGTH, n,
+                                    "Highlight frame must be exactly two bytes"
+                                );
+                                continue;
+                            }
                             TAG_INPUT_RECORD => panic!(
                                 "Received input-record frame while disabled - broadcast data leaked through after Lagged"
                             ),
@@ -864,6 +909,7 @@ mod daemon_test {
                 process_handle: HANDLE::default(),
                 process_id: pid,
                 state_tx: watch::channel(ClientState::Active).0,
+                highlight_tx: watch::channel(false).0,
             };
         };
         clients.push(make_client(1000));
@@ -882,6 +928,7 @@ mod daemon_test {
             process_handle: HANDLE::default(),
             process_id: 1000,
             state_tx: watch::channel(ClientState::Active).0,
+            highlight_tx: watch::channel(false).0,
         };
         let client_b = Client {
             hostname: "host-b".to_owned(),
@@ -889,6 +936,7 @@ mod daemon_test {
             process_handle: HANDLE::default(),
             process_id: 2000,
             state_tx: watch::channel(ClientState::Active).0,
+            highlight_tx: watch::channel(false).0,
         };
         let client_c = Client {
             hostname: "host-c".to_owned(),
@@ -896,6 +944,7 @@ mod daemon_test {
             process_handle: HANDLE::default(),
             process_id: 3000,
             state_tx: watch::channel(ClientState::Active).0,
+            highlight_tx: watch::channel(false).0,
         };
 
         clients.push(client_a);
@@ -932,6 +981,7 @@ mod daemon_test {
             process_handle: HANDLE::default(),
             process_id: pid,
             state_tx: watch::channel(state).0,
+            highlight_tx: watch::channel(false).0,
         };
     }
 
@@ -1450,7 +1500,8 @@ mod daemon_test {
         };
 
         // Act
-        let consumed = daemon.control_mode_is_active(&mock, esc_input);
+        let clients: Arc<Mutex<Clients>> = Arc::new(Mutex::new(Clients::new()));
+        let consumed = daemon.control_mode_is_active(&mock, &clients, esc_input);
 
         // Assert: the `Esc` is reported as owned by control mode (so the
         // caller will skip forwarding it) and the state machine is back
