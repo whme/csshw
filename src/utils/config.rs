@@ -7,6 +7,16 @@ use windows::Win32::System::Console::{
     FOREGROUND_RED,
 };
 
+/// Default console color applied when a client is in the
+/// `Disabled` state.
+///
+/// Default-grey foreground (red+green+blue, no intensity) on a
+/// `BACKGROUND_INTENSITY`-only background paints the window as light text on
+/// a muted dark-grey background - a clear "this client is greyed out" cue
+/// that stays visually distinct from the daemon's bright-red palette.
+const DEFAULT_DISABLED_CONSOLE_COLOR: u16 =
+    FOREGROUND_RED.0 | FOREGROUND_GREEN.0 | FOREGROUND_BLUE.0 | BACKGROUND_INTENSITY.0;
+
 /// Placeholder for the `<username>@<host>` argument to the chosen SSH program.
 const DEFAULT_USERNAME_HOST_PLACEHOLDER: &str = "{{USERNAME_AT_HOST}}";
 
@@ -100,6 +110,28 @@ pub struct ClientConfig {
     ///
     /// `'{{USERNAME_AT_HOST}}'`
     pub username_host_placeholder: String,
+    /// Controls back- and foreground colors of the client console window
+    /// when the client is in the `Disabled` state.
+    ///
+    /// Uses the same encoding as [`DaemonConfig::console_color`].
+    /// All [standard Windows color combinations][1] are available:
+    ///
+    /// FOREGROUND_BLUE:        1   \
+    /// FOREGROUND_GREEN:       2   \
+    /// FOREGROUND_RED:         4   \
+    /// FOREGROUND_INTENSITY:   8   \
+    /// BACKGROUND_BLUE:        16  \
+    /// BACKGROUND_GREEN:       32  \
+    /// BACKGROUND_RED:         64  \
+    /// BACKGROUND_INTENSITY:   128 \
+    ///
+    /// # Example
+    ///
+    /// Default-grey font on muted dark-grey background:
+    /// 4 + 2 + 1 + 128 = `135`
+    ///
+    /// [1]: https://learn.microsoft.com/en-us/windows/console/console-screen-buffers#character-attributes
+    pub disabled_console_color: u16,
 }
 
 impl Default for ClientConfig {
@@ -111,7 +143,8 @@ impl Default for ClientConfig {
     /// * `ssh_config_path`             - `%USERPROFILE%\.ssh\config`
     /// * `program`                     - `ssh`
     /// * `arguments`                   - `-XY {{USERNAME_AT_HOST}}`
-    /// * `usernamt_host_placeholder`   - `{{USERNAME_AT_HOST}}`
+    /// * `username_host_placeholder`   - `{{USERNAME_AT_HOST}}`
+    /// * `disabled_console_color`      - `135`
     ///
     /// Note: %USERPROFILE% actually is resolved by us, so the actual value
     ///       is whatever the environment variable at runtime points to.
@@ -124,6 +157,7 @@ impl Default for ClientConfig {
                 DEFAULT_USERNAME_HOST_PLACEHOLDER.to_string(),
             ],
             username_host_placeholder: DEFAULT_USERNAME_HOST_PLACEHOLDER.to_string(),
+            disabled_console_color: DEFAULT_DISABLED_CONSOLE_COLOR,
         };
     }
 }
@@ -140,6 +174,8 @@ pub struct ClientConfigOpt {
     pub arguments: Option<Vec<String>>,
     #[allow(missing_docs)]
     pub username_host_placeholder: Option<String>,
+    #[allow(missing_docs)]
+    pub disabled_console_color: Option<u16>,
 }
 
 impl Default for ClientConfigOpt {
@@ -159,6 +195,9 @@ impl From<ClientConfigOpt> for ClientConfig {
             username_host_placeholder: val
                 .username_host_placeholder
                 .unwrap_or(default.username_host_placeholder),
+            disabled_console_color: val
+                .disabled_console_color
+                .unwrap_or(default.disabled_console_color),
         };
     }
 }
@@ -171,6 +210,7 @@ impl From<ClientConfig> for ClientConfigOpt {
             program: Some(val.program),
             arguments: Some(val.arguments),
             username_host_placeholder: Some(val.username_host_placeholder),
+            disabled_console_color: Some(val.disabled_console_color),
         };
     }
 }
@@ -198,7 +238,7 @@ pub struct DaemonConfig {
     pub aspect_ratio_adjustement: f64,
     /// Controls back- and foreground colors of the daemon console window.
     ///
-    /// All [standard windows color combinations][1] are available:
+    /// All [standard Windows color combinations][1] are available:
     ///
     /// FOREGROUND_BLUE:        1   \
     /// FOREGROUND_GREEN:       2   \
