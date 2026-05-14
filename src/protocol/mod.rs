@@ -113,7 +113,7 @@ pub enum DaemonToClientMessage {
     /// Carries the new highlight flag for this client: `true` while it is
     /// the currently selected client in the daemon's enable/disable
     /// submenu, `false` otherwise. Purely visual - input gating is
-    /// driven by [`StateChange`].
+    /// driven by [`DaemonToClientMessage::StateChange`].
     Highlight(bool),
     /// Empty payload sent on idle by the daemon's pipe server to detect a
     /// closed client pipe.
