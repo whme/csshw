@@ -1668,4 +1668,137 @@ mod daemon_test {
             "VK_E with selection at index 1 must enable only client 1",
         );
     }
+
+    /// Collects every client's `highlight_tx` value in insertion order.
+    fn snapshot_highlights(clients: &Clients) -> Vec<bool> {
+        return clients
+            .iter()
+            .map(|client| return *client.highlight_tx.borrow())
+            .collect();
+    }
+
+    /// Verifies that opening the enable/disable submenu pushes
+    /// `highlight_tx = true` on the first client and leaves the
+    /// others cleared - the visual signal that drives the new
+    /// per-client highlight color.
+    #[test]
+    fn test_open_enable_disable_submenu_highlights_first_client() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.push(make_client_with_state(3, ClientState::Active));
+        let clients = Mutex::new(clients);
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let daemon = Daemon::for_test(&config, &clusters, ControlModeState::Active);
+
+        let clients_guard = clients.lock().unwrap();
+        daemon.apply_submenu_highlight(&clients_guard, None, Some(0));
+
+        assert_eq!(
+            snapshot_highlights(&clients_guard),
+            vec![true, false, false],
+            "opening the submenu must highlight only the first client",
+        );
+    }
+
+    /// Verifies that the `Navigate(Down)` dispatch arm moves the
+    /// per-client highlight from the previously selected index to
+    /// the new one.
+    #[test]
+    fn test_submenu_navigate_moves_highlight() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.push(make_client_with_state(3, ClientState::Active));
+        // Start with client 0 highlighted, matching the state just
+        // after `OpenEnableDisableSubmenu`.
+        clients.first().unwrap().highlight_tx.send_replace(true);
+        let clients = Mutex::new(clients);
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        daemon.submenu_selected_index = Some(0);
+
+        daemon.handle_enable_disable_submenu_key(
+            &mock_with_clear_screen(),
+            &clients,
+            submenu_key_event(VK_DOWN),
+        );
+
+        assert_eq!(daemon.submenu_selected_index, Some(1));
+        assert_eq!(
+            snapshot_highlights(&clients.lock().unwrap()),
+            vec![false, true, false],
+            "Navigate(Down) must clear the old highlight and set the new one",
+        );
+    }
+
+    /// Verifies that `apply_submenu_highlight(.., Some(idx), None)` -
+    /// the path the `Esc` arm in `control_mode_is_active` takes when
+    /// leaving the submenu - clears the highlight on every client.
+    #[test]
+    fn test_submenu_esc_clears_highlight() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.push(make_client_with_state(3, ClientState::Active));
+        clients.get(1).unwrap().highlight_tx.send_replace(true);
+        let clients = Mutex::new(clients);
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let daemon = Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+
+        let clients_guard = clients.lock().unwrap();
+        daemon.apply_submenu_highlight(&clients_guard, Some(1), None);
+
+        assert_eq!(
+            snapshot_highlights(&clients_guard),
+            vec![false, false, false],
+            "Esc must clear the highlight on the previously-selected client",
+        );
+    }
+
+    /// Regression test: when an exited client is retained-out
+    /// mid-submenu, the same numeric index now points at a
+    /// different client. The new occupant of the selected index
+    /// must still receive `highlight_tx = true` even though the
+    /// index value did not change.
+    #[test]
+    fn test_apply_submenu_highlight_handles_index_reuse_after_retain() {
+        let mut clients = Clients::new();
+        // Two clients, the first is highlighted (state right after
+        // `OpenEnableDisableSubmenu`).
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.first().unwrap().highlight_tx.send_replace(true);
+
+        // The background monitor would call `retain` to remove the
+        // exited client; do the same here.
+        clients.retain(|client| return client.process_id != 1);
+        assert_eq!(clients.len(), 1);
+        // The surviving client (PID 2) was never highlighted: its
+        // `highlight_tx` is still `false`.
+        assert!(!*clients.first().unwrap().highlight_tx.borrow());
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let daemon = Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+
+        // `move_submenu_selection(Down, 1)` clamps back to `Some(0)`,
+        // so `previous == next == Some(0)`. The old code's early
+        // return would skip the `send_replace`; the fix must
+        // re-assert `true` on the new occupant of index 0.
+        daemon.apply_submenu_highlight(&clients, Some(0), Some(0));
+
+        assert_eq!(
+            snapshot_highlights(&clients),
+            vec![true],
+            "after retain reuses an index the surviving client must be highlighted",
+        );
+    }
 }

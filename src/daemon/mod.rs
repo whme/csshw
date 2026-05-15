@@ -1068,14 +1068,21 @@ impl<'a> Daemon<'a> {
     /// Move the submenu's per-client highlight flag from `previous` to
     /// `next`.
     ///
-    /// Clears the highlight on the client at `previous` (if any) and
-    /// sets it on the client at `next` (if any) by pushing the new
-    /// value through each client's `highlight_tx`. The pipe-server task
-    /// subscribed to that channel forwards a
-    /// [`crate::protocol::TAG_HIGHLIGHT`] frame to the client over the
-    /// named pipe. Indices that fall outside `clients` are silently
-    /// ignored - they can occur when a client window has just been
-    /// closed while the submenu was open.
+    /// Clears the highlight on the client at `previous` (when it
+    /// differs from `next`) and sets it on the client at `next` (if
+    /// any) by pushing the new value through each client's
+    /// `highlight_tx`. The pipe-server task subscribed to that channel
+    /// forwards a [`crate::protocol::TAG_HIGHLIGHT`] frame to the
+    /// client over the named pipe. Indices that fall outside `clients`
+    /// are silently ignored - they can occur when a client window has
+    /// just been closed while the submenu was open.
+    ///
+    /// The `next` index is always re-asserted, even when it equals
+    /// `previous`. The background client monitor can `retain`-out an
+    /// exited client mid-submenu, after which the same numeric index
+    /// refers to a different client (e.g. clients `[A, B]`, A exits,
+    /// `B` slides to index 0); re-asserting ensures the new occupant
+    /// of `next` actually receives `highlight_tx = true`.
     ///
     /// # Arguments
     ///
@@ -1091,12 +1098,11 @@ impl<'a> Daemon<'a> {
         previous: Option<usize>,
         next: Option<usize>,
     ) {
-        if previous == next {
-            return;
-        }
         if let Some(idx) = previous {
-            if let Some(client) = clients.get(idx) {
-                client.highlight_tx.send_replace(false);
+            if Some(idx) != next {
+                if let Some(client) = clients.get(idx) {
+                    client.highlight_tx.send_replace(false);
+                }
             }
         }
         if let Some(idx) = next {
