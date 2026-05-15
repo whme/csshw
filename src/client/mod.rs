@@ -74,10 +74,15 @@ const HIGHLIGHT_FLASH_DURATION: Duration = Duration::from_millis(250);
 ///
 /// The highlight overlay wins over the disabled-state color, so a
 /// highlighted client always shows its highlight color in the steady
-/// state - even when also `Disabled`. When `original_console_color` is
-/// `None`, the initial buffer-info read at startup failed and there is
-/// no pristine value to revert to; the helper returns `None` and the
-/// caller degrades gracefully by leaving the console untouched.
+/// state - even when also `Disabled`.
+///
+/// When `original_console_color` is `None`, the initial buffer-info
+/// read at startup failed and there is no pristine value to revert to.
+/// In that case the helper returns `None` for *every* combination -
+/// not just `Active`/unhighlighted - so the caller leaves the console
+/// untouched. Painting only the special palettes without an `Active`
+/// restore path would strand the window in the disabled or highlight
+/// color forever.
 ///
 /// # Arguments
 ///
@@ -102,11 +107,12 @@ fn effective_color(
     disabled_console_color: CONSOLE_CHARACTER_ATTRIBUTES,
     highlighted_console_color: CONSOLE_CHARACTER_ATTRIBUTES,
 ) -> Option<CONSOLE_CHARACTER_ATTRIBUTES> {
+    let original = original_console_color?;
     if highlighted {
         return Some(highlighted_console_color);
     }
     match state {
-        ClientState::Active => return original_console_color,
+        ClientState::Active => return Some(original),
         ClientState::Disabled => return Some(disabled_console_color),
     }
 }
@@ -116,8 +122,10 @@ fn effective_color(
 ///
 /// Bypasses the highlight overlay so the user can actually see the
 /// underlying state color for the flash window before the highlight is
-/// restored. Returns `None` for the same degrade-gracefully reason as
-/// [`effective_color`].
+/// restored. Returns `None` whenever `original_console_color` is
+/// `None`, for the same degrade-gracefully reason as
+/// [`effective_color`]: without a pristine value to restore, painting
+/// the disabled flash color would strand the window in that color.
 ///
 /// # Arguments
 ///
@@ -135,10 +143,42 @@ fn flash_color(
     original_console_color: Option<CONSOLE_CHARACTER_ATTRIBUTES>,
     disabled_console_color: CONSOLE_CHARACTER_ATTRIBUTES,
 ) -> Option<CONSOLE_CHARACTER_ATTRIBUTES> {
+    let original = original_console_color?;
     match state {
-        ClientState::Active => return original_console_color,
+        ClientState::Active => return Some(original),
         ClientState::Disabled => return Some(disabled_console_color),
     }
+}
+
+/// Paint `target` if it differs from `last`, then update `last`.
+///
+/// Skipping the repaint when the color is unchanged keeps the slow
+/// per-row `fill_console_output_attribute` calls inside
+/// [`set_console_color`] off the hot path. A `None` target means
+/// "leave the console untouched" and is how the visuals task degrades
+/// gracefully when [`effective_color`] / [`flash_color`] could not
+/// resolve a color.
+///
+/// # Arguments
+///
+/// * `api`    - The Windows API implementation to use.
+/// * `target` - The color to paint, or `None` to skip.
+/// * `last`   - The most recently painted color. Updated in-place
+///              after a successful repaint so the next call can
+///              short-circuit on an unchanged target.
+fn paint_console_color(
+    api: &dyn WindowsApi,
+    target: Option<CONSOLE_CHARACTER_ATTRIBUTES>,
+    last: &mut Option<CONSOLE_CHARACTER_ATTRIBUTES>,
+) {
+    let Some(color) = target else {
+        return;
+    };
+    if last.map(|c| return c.0) == Some(color.0) {
+        return;
+    }
+    set_console_color(api, color);
+    *last = Some(color);
 }
 
 /// Write the given [INPUT_RECORD_0] to the console input buffer using the provided API.
@@ -646,22 +686,12 @@ pub async fn main(
             let mut prev_state = *state_rx.borrow_and_update();
             let mut prev_highlight = *highlight_rx.borrow_and_update();
             let mut last_painted: Option<CONSOLE_CHARACTER_ATTRIBUTES> = None;
-            let paint = |target: Option<CONSOLE_CHARACTER_ATTRIBUTES>,
-                         last: &mut Option<CONSOLE_CHARACTER_ATTRIBUTES>| {
-                let Some(color) = target else {
-                    return;
-                };
-                if last.map(|c| return c.0) == Some(color.0) {
-                    return;
-                }
-                set_console_color(api, color);
-                *last = Some(color);
-            };
 
             // Apply the steady-state color derived from the initial
             // `(state, highlighted)` pair so subscribers join in sync with
             // the daemon's pre-subscribe pushes.
-            paint(
+            paint_console_color(
+                api,
                 effective_color(
                     prev_state,
                     prev_highlight,
@@ -687,7 +717,8 @@ pub async fn main(
                         if prev_highlight {
                             // Flash the underlying state color, then restore
                             // the highlight color after the flash window.
-                            paint(
+                            paint_console_color(
+                                api,
                                 flash_color(
                                     next_state,
                                     original_console_color,
@@ -698,7 +729,8 @@ pub async fn main(
                             flash_until =
                                 Some(tokio::time::Instant::now() + HIGHLIGHT_FLASH_DURATION);
                         } else {
-                            paint(
+                            paint_console_color(
+                                api,
                                 effective_color(
                                     next_state,
                                     prev_highlight,
@@ -724,7 +756,8 @@ pub async fn main(
                         // the steady-state color for the new combination is
                         // what the user should see now.
                         flash_until = None;
-                        paint(
+                        paint_console_color(
+                            api,
                             effective_color(
                                 prev_state,
                                 prev_highlight,
@@ -742,7 +775,8 @@ pub async fn main(
                         }
                     } => {
                         flash_until = None;
-                        paint(
+                        paint_console_color(
+                            api,
                             effective_color(
                                 prev_state,
                                 prev_highlight,

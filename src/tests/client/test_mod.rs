@@ -10,8 +10,9 @@ use windows::Win32::System::Console::{
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::client::{
-    build_ssh_arguments, effective_color, flash_color, is_alt_shift_c_combination, read_write_loop,
-    resolve_username, send_pid_handshake, write_console_input, ReadWriteResult,
+    build_ssh_arguments, effective_color, flash_color, is_alt_shift_c_combination,
+    paint_console_color, read_write_loop, resolve_username, send_pid_handshake,
+    write_console_input, ReadWriteResult,
 };
 use crate::protocol::serialization::{
     serialize_client_state, serialize_highlight, serialize_input_record_0,
@@ -814,6 +815,111 @@ fn test_flash_color_active_no_original_returns_none() {
     let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
     let result = flash_color(ClientState::Active, None, disabled);
     assert!(result.is_none());
+}
+
+#[test]
+fn test_effective_color_highlighted_no_original_returns_none() {
+    let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
+    let highlighted = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
+    // Without a pristine original to revert to, even the highlight
+    // overlay must be suppressed - otherwise the window stays stuck
+    // in the highlight color when the user leaves the submenu.
+    let result = effective_color(ClientState::Active, true, None, disabled, highlighted);
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_effective_color_disabled_no_original_returns_none() {
+    let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
+    let highlighted = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
+    // Same degrade-gracefully rule for the disabled palette.
+    let result = effective_color(ClientState::Disabled, false, None, disabled, highlighted);
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_flash_color_disabled_no_original_returns_none() {
+    let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
+    let result = flash_color(ClientState::Disabled, None, disabled);
+    assert!(result.is_none());
+}
+
+/// Builds a [`MockWindowsApi`] that satisfies one full
+/// [`crate::utils::windows::set_console_color`] call.
+///
+/// Returns a Win11 OS version so the post-fill invalidate is gated
+/// off (already covered by the dedicated `set_console_color` tests
+/// in `src/tests/utils/test_windows.rs`).
+fn mock_for_one_set_console_color() -> MockWindowsApi {
+    use windows::Win32::System::Console::{CONSOLE_SCREEN_BUFFER_INFO, COORD};
+    let mut mock = MockWindowsApi::new();
+    let buffer_info = CONSOLE_SCREEN_BUFFER_INFO {
+        dwSize: COORD { X: 80, Y: 25 },
+        ..Default::default()
+    };
+    mock.expect_set_console_text_attribute()
+        .times(1)
+        .returning(|_| return Ok(()));
+    mock.expect_get_console_screen_buffer_info()
+        .times(1)
+        .return_const(Ok(buffer_info));
+    mock.expect_fill_console_output_attribute()
+        .times(25)
+        .returning(|_, _, _| return Ok(80));
+    mock.expect_get_os_version()
+        .returning(|| return "10.0.22631".to_string());
+    return mock;
+}
+
+#[test]
+fn test_paint_console_color_paints_when_target_changes() {
+    let mock_api = mock_for_one_set_console_color();
+    let target = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
+    let mut last: Option<CONSOLE_CHARACTER_ATTRIBUTES> = Some(CONSOLE_CHARACTER_ATTRIBUTES(0x07));
+
+    paint_console_color(&mock_api, Some(target), &mut last);
+
+    assert_eq!(last.map(|c| return c.0), Some(target.0));
+}
+
+#[test]
+fn test_paint_console_color_skips_when_target_matches_last() {
+    // No mock expectations: `set_console_color` must not be invoked
+    // when the target color is unchanged. `MockWindowsApi` would
+    // panic on any unexpected call.
+    let mock_api = MockWindowsApi::new();
+    let same = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
+    let mut last: Option<CONSOLE_CHARACTER_ATTRIBUTES> = Some(same);
+
+    paint_console_color(&mock_api, Some(same), &mut last);
+
+    assert_eq!(last.map(|c| return c.0), Some(same.0));
+}
+
+#[test]
+fn test_paint_console_color_skips_when_target_is_none() {
+    // `None` target means "leave the console untouched" - again, no
+    // mock calls expected.
+    let mock_api = MockWindowsApi::new();
+    let mut last: Option<CONSOLE_CHARACTER_ATTRIBUTES> = Some(CONSOLE_CHARACTER_ATTRIBUTES(0x07));
+    let before = last;
+
+    paint_console_color(&mock_api, None, &mut last);
+
+    assert_eq!(last.map(|c| return c.0), before.map(|c| return c.0));
+}
+
+#[test]
+fn test_paint_console_color_paints_when_last_is_none() {
+    // First paint of the visuals task: `last` starts at `None`, so
+    // any `Some` target must trigger a repaint.
+    let mock_api = mock_for_one_set_console_color();
+    let target = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
+    let mut last: Option<CONSOLE_CHARACTER_ATTRIBUTES> = None;
+
+    paint_console_color(&mock_api, Some(target), &mut last);
+
+    assert_eq!(last.map(|c| return c.0), Some(target.0));
 }
 
 #[tokio::test]
