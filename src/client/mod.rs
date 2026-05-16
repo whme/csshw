@@ -61,28 +61,16 @@ enum ReadWriteResult {
 }
 
 /// Duration of the action-feedback flash painted on a highlighted client
-/// when its [`ClientState`] changes (the user pressed `[d]`/`[e]`/`[t]` on
-/// the selected window in the daemon's enable/disable submenu).
-///
-/// Long enough to register visually, short enough to feel snappy. The
-/// highlight color is restored when this duration elapses, unless another
-/// state change resets the timer first.
+/// when the user presses `[e]`/`[d]`/`[t]` in the daemon's enable/disable
+/// submenu. Tuned to register visually without dragging.
 const HIGHLIGHT_FLASH_DURATION: Duration = Duration::from_millis(250);
 
-/// Resolve the console color that should be painted for a given
-/// `(state, highlighted)` combination.
-///
-/// The highlight overlay wins over the disabled-state color, so a
-/// highlighted client always shows its highlight color in the steady
-/// state - even when also `Disabled`.
-///
-/// When `original_console_color` is `None`, the initial buffer-info
-/// read at startup failed and there is no pristine value to revert to.
-/// In that case the helper returns `None` for *every* combination -
-/// not just `Active`/unhighlighted - so the caller leaves the console
-/// untouched. Painting only the special palettes without an `Active`
-/// restore path would strand the window in the disabled or highlight
-/// color forever.
+/// Resolve the console color to paint for a given
+/// `(state, highlighted)` combination. Highlight wins over the
+/// disabled color. Returns `None` for every combination when
+/// `original_console_color` is `None`, so a failed startup capture
+/// degrades to a no-op rather than stranding the window in the
+/// disabled/highlight color with no restore path.
 ///
 /// # Arguments
 ///
@@ -117,15 +105,11 @@ fn effective_color(
     }
 }
 
-/// Color the visuals task paints during the action-feedback flash on a
-/// highlighted client whose [`ClientState`] just transitioned.
-///
-/// Bypasses the highlight overlay so the user can actually see the
-/// underlying state color for the flash window before the highlight is
-/// restored. Returns `None` whenever `original_console_color` is
-/// `None`, for the same degrade-gracefully reason as
-/// [`effective_color`]: without a pristine value to restore, painting
-/// the disabled flash color would strand the window in that color.
+/// Color painted during the action-feedback flash: the underlying
+/// state color, with the highlight overlay bypassed so the user can
+/// see what they just did. Degrades to `None` when
+/// `original_console_color` is `None` for the same reason as
+/// [`effective_color`].
 ///
 /// # Arguments
 ///
@@ -151,13 +135,9 @@ fn flash_color(
 }
 
 /// Paint `target` if it differs from `last`, then update `last`.
-///
-/// Skipping the repaint when the color is unchanged keeps the slow
-/// per-row `fill_console_output_attribute` calls inside
-/// [`set_console_color`] off the hot path. A `None` target means
-/// "leave the console untouched" and is how the visuals task degrades
-/// gracefully when [`effective_color`] / [`flash_color`] could not
-/// resolve a color.
+/// Skipping unchanged repaints keeps the slow per-row
+/// `fill_console_output_attribute` calls off the hot path; a `None`
+/// target leaves the console untouched.
 ///
 /// # Arguments
 ///
@@ -575,6 +555,222 @@ async fn run(
     }
 }
 
+/// Snapshot of the console's pristine character attributes,
+/// captured before the title task or the SSH child writes any
+/// output. Returns `None` (with a warning) if the Windows API
+/// rejects the query; in that case the visuals task degrades to a
+/// no-op for every `(state, highlight)` combination.
+///
+/// # Arguments
+///
+/// * `api` - The Windows API implementation to use.
+///
+/// # Returns
+///
+/// `Some(original)` on success, `None` if the buffer info could
+/// not be read.
+fn capture_original_console_color(api: &dyn WindowsApi) -> Option<CONSOLE_CHARACTER_ATTRIBUTES> {
+    match api.get_console_screen_buffer_info() {
+        Ok(info) => return Some(info.wAttributes),
+        Err(err) => {
+            warn!(
+                "Failed to capture original console color; disabled-state visuals will be skipped: {}",
+                err
+            );
+            return None;
+        }
+    }
+}
+
+/// Splits `host` on its trailing `:port` suffix (if any) and parses
+/// the port. An invalid `:port` is logged and treated as absent so
+/// the CLI port can still apply.
+///
+/// # Arguments
+///
+/// * `host` - Raw host argument, optionally with `:port` suffix.
+///
+/// # Returns
+///
+/// `(host_without_port, inline_port)`.
+fn split_host_and_inline_port(host: &str) -> (&str, Option<u16>) {
+    let (bare_host, port_str) = host
+        .rsplit_once(':')
+        .map_or((host, None), |(h, p)| return (h, Some(p)));
+    let inline_port = port_str.and_then(|p| {
+        return p
+            .parse::<u16>()
+            .map_err(|e| {
+                warn!("Invalid port '{}': {}. Using default SSH port.", p, e);
+            })
+            .ok();
+    });
+    return (bare_host, inline_port);
+}
+
+/// Builds the console window title shown to the user.
+///
+/// # Arguments
+///
+/// * `resolved_username` - Username after SSH config resolution.
+/// * `host`              - Bare hostname.
+/// * `port`              - Effective port (inline or CLI), if any.
+///
+/// # Returns
+///
+/// The console title string in `csshw - user@host[:port]` form.
+fn build_console_title(resolved_username: &str, host: &str, port: Option<u16>) -> String {
+    let title_host = if let Some(port) = port {
+        format!("{host}:{port}")
+    } else {
+        host.to_string()
+    };
+    return format!("{PKG_NAME} - {resolved_username}@{title_host}");
+}
+
+/// Keeps the console window title pinned to `console_title`, since
+/// the SSH child can overwrite it on connect.
+///
+/// # Arguments
+///
+/// * `api`           - The Windows API implementation to use.
+/// * `console_title` - The title to (re)apply.
+async fn run_title_loop(api: &dyn WindowsApi, console_title: String) {
+    loop {
+        if console_title != get_console_title(api) {
+            api.set_console_title(console_title.as_str())
+                .unwrap_or_else(|err| {
+                    error!("Failed to set console title: {}", err);
+                });
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+/// Drives the per-client console color: tracks `state_rx` and
+/// `highlight_rx`, paints the steady-state combination, and flashes
+/// the underlying state color for [`HIGHLIGHT_FLASH_DURATION`] when
+/// the user presses `[e]`/`[d]`/`[t]` on a highlighted client.
+///
+/// # Arguments
+///
+/// * `api`                       - The Windows API implementation to use.
+/// * `state_rx`                  - Receiver for daemon-driven state changes.
+/// * `highlight_rx`              - Receiver for submenu highlight transitions.
+/// * `original_console_color`    - Pristine attributes; `None`
+///                                 degrades all painting to a no-op.
+/// * `disabled_console_color`    - Color for [`ClientState::Disabled`].
+/// * `highlighted_console_color` - Color while highlighted; overrides
+///                                 the disabled color.
+async fn run_visuals_loop(
+    api: &dyn WindowsApi,
+    mut state_rx: watch::Receiver<ClientState>,
+    mut highlight_rx: watch::Receiver<bool>,
+    original_console_color: Option<CONSOLE_CHARACTER_ATTRIBUTES>,
+    disabled_console_color: CONSOLE_CHARACTER_ATTRIBUTES,
+    highlighted_console_color: CONSOLE_CHARACTER_ATTRIBUTES,
+) {
+    let mut prev_state = *state_rx.borrow_and_update();
+    let mut prev_highlight = *highlight_rx.borrow_and_update();
+    let mut last_painted: Option<CONSOLE_CHARACTER_ATTRIBUTES> = None;
+
+    paint_console_color(
+        api,
+        effective_color(
+            prev_state,
+            prev_highlight,
+            original_console_color,
+            disabled_console_color,
+            highlighted_console_color,
+        ),
+        &mut last_painted,
+    );
+
+    let mut flash_until: Option<tokio::time::Instant> = None;
+    loop {
+        tokio::select! {
+            state_changed = state_rx.changed() => {
+                if state_changed.is_err() {
+                    return;
+                }
+                let next_state = *state_rx.borrow_and_update();
+                prev_state = next_state;
+                if prev_highlight {
+                    // Every state push from the daemon represents a user
+                    // keypress (`[e]`/`[d]`/`[t]`/`[n]`), so flash even when
+                    // the state value did not change - the README promises
+                    // visual confirmation on every press.
+                    paint_console_color(
+                        api,
+                        flash_color(
+                            next_state,
+                            original_console_color,
+                            disabled_console_color,
+                        ),
+                        &mut last_painted,
+                    );
+                    flash_until =
+                        Some(tokio::time::Instant::now() + HIGHLIGHT_FLASH_DURATION);
+                } else {
+                    paint_console_color(
+                        api,
+                        effective_color(
+                            next_state,
+                            prev_highlight,
+                            original_console_color,
+                            disabled_console_color,
+                            highlighted_console_color,
+                        ),
+                        &mut last_painted,
+                    );
+                    flash_until = None;
+                }
+            }
+            highlight_changed = highlight_rx.changed() => {
+                if highlight_changed.is_err() {
+                    return;
+                }
+                let next_highlight = *highlight_rx.borrow_and_update();
+                if next_highlight == prev_highlight {
+                    continue;
+                }
+                prev_highlight = next_highlight;
+                flash_until = None;
+                paint_console_color(
+                    api,
+                    effective_color(
+                        prev_state,
+                        prev_highlight,
+                        original_console_color,
+                        disabled_console_color,
+                        highlighted_console_color,
+                    ),
+                    &mut last_painted,
+                );
+            }
+            _ = async {
+                match flash_until {
+                    Some(deadline) => tokio::time::sleep_until(deadline).await,
+                    None => std::future::pending::<()>().await,
+                }
+            } => {
+                flash_until = None;
+                paint_console_color(
+                    api,
+                    effective_color(
+                        prev_state,
+                        prev_highlight,
+                        original_console_color,
+                        disabled_console_color,
+                        highlighted_console_color,
+                    ),
+                    &mut last_painted,
+                );
+            }
+        }
+    }
+}
+
 /// The entrypoint for the `client` subcommand with API dependency injection.
 ///
 /// Spawns a tokio background thread to ensure the console window title is not replaced
@@ -598,205 +794,35 @@ pub async fn main(
     cli_port: Option<u16>,
     config: &ClientConfig,
 ) {
-    // Capture the console's original color before anything (title task,
-    // SSH child) gets a chance to write output. This snapshot is what the
-    // visuals task reverts to on a `Disabled -> Active` transition.
-    let original_console_color: Option<CONSOLE_CHARACTER_ATTRIBUTES> = match api
-        .get_console_screen_buffer_info()
-    {
-        Ok(info) => Some(info.wAttributes),
-        Err(err) => {
-            warn!(
-                "Failed to capture original console color; disabled-state visuals will be skipped: {}",
-                err
-            );
-            None
-        }
-    };
+    let original_console_color = capture_original_console_color(api);
 
     let (state_tx, state_rx) = watch::channel(ClientState::Active);
     let (highlight_tx, highlight_rx) = watch::channel(false);
 
-    let (host, inline_port) =
-        host.rsplit_once(':')
-            .map_or((host.as_str(), None), |(host, port)| {
-                return (host, Some(port));
-            });
-    let inline_port = inline_port.and_then(|p| {
-        return p
-            .parse::<u16>()
-            .map_err(|e| {
-                warn!("Invalid port '{}': {}. Using default SSH port.", p, e);
-            })
-            .ok();
-    });
-    // Inline port takes precedence over CLI port
+    let (host, inline_port) = split_host_and_inline_port(&host);
+    // Inline port takes precedence over CLI port.
     let port = inline_port.or(cli_port);
 
-    // Resolve username using SSH config if needed
     let resolved_username = resolve_username(username, host, config);
+    let console_title = build_console_title(&resolved_username, host, port);
 
-    // Create title for console window
-    let title_host = if let Some(port) = port {
-        format!("{host}:{port}")
-    } else {
-        host.to_string()
-    };
-    let username_host_title = format!("{resolved_username}@{title_host}");
-    let console_title = format!("{PKG_NAME} - {username_host_title}");
-    let title_task = {
-        let console_title = console_title.clone();
-        async move {
-            loop {
-                // Set the console title (child might overwrite it, so we have to keep checking it)
-                if console_title != get_console_title(api) {
-                    api.set_console_title(console_title.as_str())
-                        .unwrap_or_else(|err| {
-                            error!("Failed to set console title: {}", err);
-                        });
-                }
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        }
-    };
+    let title_task = run_title_loop(api, console_title);
     let child_task = async {
         let mut child = launch_ssh_process(&resolved_username, host, port, config).await;
         run(api, &mut child, &state_tx, &highlight_tx).await;
         return child;
     };
+    let visuals_task = run_visuals_loop(
+        api,
+        state_rx,
+        highlight_rx,
+        original_console_color,
+        CONSOLE_CHARACTER_ATTRIBUTES(config.disabled_console_color),
+        CONSOLE_CHARACTER_ATTRIBUTES(config.highlighted_console_color),
+    );
 
-    // Visuals task: subscribes to both the state and the highlight watch
-    // channels and repaints the console whenever either changes. Decoupling
-    // the redraw from `read_write_loop` keeps named-pipe I/O off the critical
-    // path of the (potentially slow) per-row `fill_console_output_attribute`
-    // calls inside `set_console_color`.
-    //
-    // The highlight color is the steady-state overlay for a selected client
-    // (wins over `Disabled`). A `ClientState` transition observed while the
-    // client is highlighted briefly flashes the new state's color
-    // ([`HIGHLIGHT_FLASH_DURATION`]) before the highlight color is restored
-    // - this is the user's visual confirmation that `[d]`/`[e]`/`[t]`
-    // landed on the selected window.
-    let disabled_console_color = CONSOLE_CHARACTER_ATTRIBUTES(config.disabled_console_color);
-    let highlighted_console_color = CONSOLE_CHARACTER_ATTRIBUTES(config.highlighted_console_color);
-    let visuals_task = {
-        let mut state_rx = state_rx;
-        let mut highlight_rx = highlight_rx;
-        async move {
-            let mut prev_state = *state_rx.borrow_and_update();
-            let mut prev_highlight = *highlight_rx.borrow_and_update();
-            let mut last_painted: Option<CONSOLE_CHARACTER_ATTRIBUTES> = None;
-
-            // Apply the steady-state color derived from the initial
-            // `(state, highlighted)` pair so subscribers join in sync with
-            // the daemon's pre-subscribe pushes.
-            paint_console_color(
-                api,
-                effective_color(
-                    prev_state,
-                    prev_highlight,
-                    original_console_color,
-                    disabled_console_color,
-                    highlighted_console_color,
-                ),
-                &mut last_painted,
-            );
-
-            let mut flash_until: Option<tokio::time::Instant> = None;
-            loop {
-                tokio::select! {
-                    state_changed = state_rx.changed() => {
-                        if state_changed.is_err() {
-                            return;
-                        }
-                        let next_state = *state_rx.borrow_and_update();
-                        if next_state == prev_state {
-                            continue;
-                        }
-                        prev_state = next_state;
-                        if prev_highlight {
-                            // Flash the underlying state color, then restore
-                            // the highlight color after the flash window.
-                            paint_console_color(
-                                api,
-                                flash_color(
-                                    next_state,
-                                    original_console_color,
-                                    disabled_console_color,
-                                ),
-                                &mut last_painted,
-                            );
-                            flash_until =
-                                Some(tokio::time::Instant::now() + HIGHLIGHT_FLASH_DURATION);
-                        } else {
-                            paint_console_color(
-                                api,
-                                effective_color(
-                                    next_state,
-                                    prev_highlight,
-                                    original_console_color,
-                                    disabled_console_color,
-                                    highlighted_console_color,
-                                ),
-                                &mut last_painted,
-                            );
-                            flash_until = None;
-                        }
-                    }
-                    highlight_changed = highlight_rx.changed() => {
-                        if highlight_changed.is_err() {
-                            return;
-                        }
-                        let next_highlight = *highlight_rx.borrow_and_update();
-                        if next_highlight == prev_highlight {
-                            continue;
-                        }
-                        prev_highlight = next_highlight;
-                        // Any highlight transition cancels a pending flash:
-                        // the steady-state color for the new combination is
-                        // what the user should see now.
-                        flash_until = None;
-                        paint_console_color(
-                            api,
-                            effective_color(
-                                prev_state,
-                                prev_highlight,
-                                original_console_color,
-                                disabled_console_color,
-                                highlighted_console_color,
-                            ),
-                            &mut last_painted,
-                        );
-                    }
-                    _ = async {
-                        match flash_until {
-                            Some(deadline) => tokio::time::sleep_until(deadline).await,
-                            None => std::future::pending::<()>().await,
-                        }
-                    } => {
-                        flash_until = None;
-                        paint_console_color(
-                            api,
-                            effective_color(
-                                prev_state,
-                                prev_highlight,
-                                original_console_color,
-                                disabled_console_color,
-                                highlighted_console_color,
-                            ),
-                            &mut last_painted,
-                        );
-                    }
-                }
-            }
-        }
-    };
-
-    // Use tokio::select to run all tasks concurrently. The title and visuals
-    // tasks are infinite by construction: as long as `state_tx` lives in this
-    // scope the watch channel stays open, so `visuals_task` cannot fall out
-    // of its loop. If either ever does complete, that is a logic bug, not a
-    // shutdown path.
+    // The title and visuals tasks are infinite by construction; if either
+    // ever completes, that is a logic bug, not a shutdown path.
     let child = tokio::select! {
         child = child_task => child,
         _ = title_task => {
@@ -807,8 +833,6 @@ pub async fn main(
         }
     };
 
-    // Make sure the client and all its subprocesses
-    // are aware they need to shutdown.
     api.generate_console_ctrl_event(0, 0).unwrap_or_else(|err| {
         error!("{}", err);
         panic!("Failed to send `ctrl + c` to remaining client windows",)

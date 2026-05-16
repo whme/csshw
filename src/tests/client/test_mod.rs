@@ -11,7 +11,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::client::{
     build_ssh_arguments, effective_color, flash_color, is_alt_shift_c_combination,
-    paint_console_color, read_write_loop, resolve_username, send_pid_handshake,
+    paint_console_color, read_write_loop, resolve_username, run_visuals_loop, send_pid_handshake,
     write_console_input, ReadWriteResult,
 };
 use crate::protocol::serialization::{
@@ -920,6 +920,75 @@ fn test_paint_console_color_paints_when_last_is_none() {
     paint_console_color(&mock_api, Some(target), &mut last);
 
     assert_eq!(last.map(|c| return c.0), Some(target.0));
+}
+
+/// Builds a [`MockWindowsApi`] that satisfies `n` full
+/// [`crate::utils::windows::set_console_color`] calls, accepting
+/// any color. Used by the visuals-loop tests below.
+fn mock_for_n_set_console_color_calls(n: usize) -> MockWindowsApi {
+    use windows::Win32::System::Console::{CONSOLE_SCREEN_BUFFER_INFO, COORD};
+    let mut mock = MockWindowsApi::new();
+    let buffer_info = CONSOLE_SCREEN_BUFFER_INFO {
+        dwSize: COORD { X: 80, Y: 25 },
+        ..Default::default()
+    };
+    mock.expect_set_console_text_attribute()
+        .times(n)
+        .returning(|_| return Ok(()));
+    mock.expect_get_console_screen_buffer_info()
+        .times(n)
+        .returning(move || return Ok(buffer_info));
+    mock.expect_fill_console_output_attribute()
+        .returning(|_, _, _| return Ok(80));
+    mock.expect_get_os_version()
+        .returning(|| return "10.0.22631".to_string());
+    return mock;
+}
+
+/// Regression test for the action-feedback flash on idempotent
+/// submenu actions: pressing `[e]` on an already-Active highlighted
+/// client (or `[d]` on already-Disabled) must still flash the
+/// underlying state color, even though `ClientState` did not
+/// actually change.
+#[tokio::test]
+async fn test_visuals_flash_on_same_value_state_push_while_highlighted() {
+    let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
+    let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x8F);
+    let highlighted = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
+
+    // 3 paints expected:
+    // 1) initial steady-state -> highlighted (Active + highlight=true)
+    // 2) flash after same-Active push -> original (flash_color(Active))
+    // 3) flash deadline elapses -> back to highlighted steady-state
+    let mock_api = mock_for_n_set_console_color_calls(3);
+
+    let (state_tx, state_rx) = watch::channel(ClientState::Active);
+    let (highlight_tx, highlight_rx) = watch::channel(true);
+
+    let visuals = run_visuals_loop(
+        &mock_api,
+        state_rx,
+        highlight_rx,
+        Some(original),
+        disabled,
+        highlighted,
+    );
+    let driver = async {
+        // Let the loop apply the initial paint.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        // Same value: would be a no-op under the old equality guard.
+        state_tx.send_replace(ClientState::Active);
+        // Wait past `HIGHLIGHT_FLASH_DURATION` (250 ms) so the flash
+        // deadline elapses and the steady-state highlight is restored.
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        // Drop both senders to terminate the visuals loop.
+        drop(state_tx);
+        drop(highlight_tx);
+    };
+
+    tokio::join!(visuals, driver);
+    // `mock_api` drops here; mockall's `Drop` impl panics if the
+    // `times(3)` expectations were not exactly satisfied.
 }
 
 #[tokio::test]
