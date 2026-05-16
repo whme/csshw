@@ -90,7 +90,7 @@ pub fn deserialize_client_state(byte: u8) -> ClientState {
 ///
 /// # Arguments
 ///
-/// * `byte` - The single payload byte of a [`crate::protocol::TAG_HIGHLIGHT`]
+/// * `byte` - Payload byte of a [`crate::protocol::TAG_HIGHLIGHT`]
 ///            frame: `0` for not highlighted, `1` for highlighted.
 ///
 /// # Returns
@@ -99,10 +99,8 @@ pub fn deserialize_client_state(byte: u8) -> ClientState {
 ///
 /// # Panics
 ///
-/// Panics if `byte` is anything other than `0` or `1`. An unknown value
-/// indicates either a protocol-version mismatch between the daemon and
-/// client or corruption on the pipe - both unrecoverable, matching the
-/// codebase's "broken bookkeeping -> panic" convention.
+/// Panics on any byte other than `0` or `1` (protocol mismatch or
+/// pipe corruption).
 pub fn deserialize_highlight(byte: u8) -> bool {
     match byte {
         0 => return false,

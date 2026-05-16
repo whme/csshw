@@ -17,14 +17,9 @@ use windows::Win32::System::Console::{
 const DEFAULT_DISABLED_CONSOLE_COLOR: u16 =
     FOREGROUND_RED.0 | FOREGROUND_GREEN.0 | FOREGROUND_BLUE.0 | BACKGROUND_INTENSITY.0;
 
-/// Default console color applied when a client is the currently selected
-/// window in the daemon's enable/disable submenu.
-///
-/// Bright-white foreground (red+green+blue+intensity) on a plain blue
-/// background paints the window in a bold, distinctly different palette
-/// from the muted-grey [`DEFAULT_DISABLED_CONSOLE_COLOR`] and the
-/// bright-red daemon palette - so the user can pick out the highlighted
-/// client at a glance even with many tiled windows.
+/// Default console color for the daemon's currently selected submenu
+/// client: bright-white on blue, distinct from the daemon's bright-red
+/// and the muted disabled palettes so it stands out at a glance.
 const DEFAULT_HIGHLIGHTED_CONSOLE_COLOR: u16 = FOREGROUND_RED.0
     | FOREGROUND_GREEN.0
     | FOREGROUND_BLUE.0

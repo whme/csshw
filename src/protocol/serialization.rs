@@ -72,13 +72,12 @@ pub fn serialize_client_state(state: ClientState) -> u8 {
 ///
 /// # Arguments
 ///
-/// * `highlighted` - `true` if the client is the currently selected window
-///                   in the daemon's enable/disable submenu, `false`
-///                   otherwise.
+/// * `highlighted` - `true` if the client is the daemon's currently
+///                   selected submenu client, `false` otherwise.
 ///
 /// # Returns
 ///
-/// `1` for `true` and `0` for `false`, used as the payload of a tagged
+/// `1` for `true`, `0` for `false`. Used as the payload of a tagged
 /// [`crate::protocol::TAG_HIGHLIGHT`] frame.
 pub fn serialize_highlight(highlighted: bool) -> u8 {
     return if highlighted { 1 } else { 0 };

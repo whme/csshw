@@ -44,13 +44,9 @@ pub const TAG_INPUT_RECORD: u8 = 0x00;
 pub const TAG_STATE_CHANGE: u8 = 0x01;
 
 /// Tag byte identifying a highlight-toggle message on the daemon-to-client
-/// pipe.
-///
-/// The tag byte is followed by the single-byte payload produced by
-/// [`crate::protocol::serialization::serialize_highlight`]. Highlight is a
-/// purely visual cue driven by the daemon's enable/disable submenu
-/// selection; it is orthogonal to [`ClientState`] and does not affect
-/// input gating.
+/// pipe. Payload is the byte produced by
+/// [`crate::protocol::serialization::serialize_highlight`]. Purely visual,
+/// orthogonal to [`ClientState`].
 pub const TAG_HIGHLIGHT: u8 = 0x02;
 
 /// Tag byte identifying a zero-payload keep-alive message on the
@@ -110,10 +106,9 @@ pub enum DaemonToClientMessage {
     InputRecord(INPUT_RECORD_0),
     /// Carries the new [`ClientState`] the daemon assigned to this client.
     StateChange(ClientState),
-    /// Carries the new highlight flag for this client: `true` while it is
-    /// the currently selected client in the daemon's enable/disable
-    /// submenu, `false` otherwise. Purely visual - input gating is
-    /// driven by [`DaemonToClientMessage::StateChange`].
+    /// Carries the new highlight flag: `true` while this client is the
+    /// daemon's currently selected submenu client. Visual only; input
+    /// gating uses [`DaemonToClientMessage::StateChange`].
     Highlight(bool),
     /// Empty payload sent on idle by the daemon's pipe server to detect a
     /// closed client pipe.
