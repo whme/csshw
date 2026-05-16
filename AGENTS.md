@@ -67,12 +67,90 @@ characters - do NOT add to the allowlist.
 
 ## Code Standards
 
-- **Document everything**: modules, functions, structs, constants - no exceptions
-- **Minimize inline comments**: comments explain *why*, never *what*
-- **Module-level docs**: use `//!` with `#![doc(html_no_source)]`
-- **Function docs**: include purpose, `# Arguments`, `# Returns`, and `# Examples` sections
-- **Document panics and error scenarios explicitly**
 - **ASCII-only punctuation**: see the section above; this is enforced in CI
+- **Documentation and comments**: see the section below
+
+## Documentation and Comments
+
+The goal is csshW's observed style, not "document everything." Match the
+density of the surrounding code; do not pad.
+
+**Docstring scope.**
+
+- **Public items** (`pub fn`, `pub struct`, public consts) and trait methods:
+  one-sentence imperative summary (`Return the ...`, not `This function
+  returns ...`), plus `# Arguments` and `# Returns`. The `# Arguments` block
+  is load-bearing - keep it even when trimming other parts of a docstring.
+- **`# Examples`**: only for reusable utilities a caller invokes in isolation
+  (see `src/utils/windows.rs`). Do NOT add `# Examples` to trait methods, CLI
+  entrypoints, protocol handlers, or any function whose behaviour is only
+  meaningful inside its module.
+- **`# Panics` / `# Errors`**: only when they actually apply. Omit otherwise.
+- **Private helpers**: one-line doc if the purpose is non-obvious; skip
+  entirely for trivial helpers, simple getters, single-expression wrappers.
+- **Test functions, closures, trivial trait impls**: no docs.
+- **Module docs** (`//!`): one line for typical modules. Multi-paragraph only
+  when the module defines a protocol or wire format (see
+  `src/serde/protocol/mod.rs`). All library modules use
+  `#![doc(html_no_source)]`.
+
+**Docstring style.**
+
+````rust
+// GOOD
+/// Return the console window handle for the current process.
+///
+/// # Arguments
+/// * `pid` - Process ID whose console is being queried.
+///
+/// # Returns
+/// `HWND` to the attached console, or `null` if none is attached.
+pub fn get_console_window_handle(pid: u32) -> HWND { ... }
+
+// BAD - narrates, restates the signature, invents an `# Examples` block for
+// a function nobody calls in isolation.
+/// This is a function that gets the console window handle. It takes a
+/// process ID (a u32) and returns an HWND, which is a Windows handle to
+/// the console window.
+///
+/// # Arguments
+/// * `pid` - The process ID. This is a u32 representing the process.
+///
+/// # Returns
+/// Returns the HWND.
+///
+/// # Examples
+/// ```ignore
+/// let hwnd = get_console_window_handle(std::process::id());
+/// ```
+pub fn get_console_window_handle(pid: u32) -> HWND { ... }
+````
+
+**Inline comments.** Default to zero - ~85-90% of function bodies in this
+repo have no inline comments. Add a `//` comment only for:
+
+- Windows / platform quirks - cite the MS Learn URL or equivalent.
+- Non-obvious async ordering, race conditions, or shared-state invariants.
+- Magic numbers, protocol byte layout, named-pipe contracts.
+- `// SAFETY:` justifications for `unsafe` blocks.
+
+Never paraphrase the next line, narrate steps (`// Step 1: ...`,
+`// First, ... // Then, ...`), add banner dividers (`// ----- Helpers -----`),
+or commit commented-out code. Canonical examples to study:
+`src/utils/windows.rs:934-937` (Win10/11 divergence),
+`src/daemon/mod.rs:706-708` (async ordering invariant),
+`src/client/mod.rs:409-411` (protocol contract).
+
+```rust
+// GOOD - cites a platform quirk and explains the workaround.
+// Win10 conhost leaves the bottom row stale after a bulk attribute fill
+// until something forces a redraw; Win11+ Terminal repaints on its own.
+nudge_cursor(handle)?;
+
+// BAD - paraphrases the call.
+// Set the console title.
+set_console_title(handle, &title)?;
+```
 
 ## Development Patterns
 
