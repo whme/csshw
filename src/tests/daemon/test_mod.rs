@@ -1691,16 +1691,17 @@ mod daemon_test {
 
         let config = DaemonConfig::default();
         let clusters: Vec<Cluster> = Vec::new();
-        let daemon = Daemon::for_test(&config, &clusters, ControlModeState::Active);
+        let mut daemon = Daemon::for_test(&config, &clusters, ControlModeState::Active);
 
         let clients_guard = clients.lock().unwrap();
-        daemon.apply_submenu_highlight(&clients_guard, None, Some(0));
+        daemon.apply_submenu_highlight(&clients_guard, Some(0));
 
         assert_eq!(
             snapshot_highlights(&clients_guard),
             vec![true, false, false],
             "opening the submenu must highlight only the first client",
         );
+        assert_eq!(daemon.submenu_highlighted_pid, Some(1));
     }
 
     /// Verifies that the `Navigate(Down)` dispatch arm moves the
@@ -1722,6 +1723,7 @@ mod daemon_test {
         let mut daemon =
             Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
         daemon.submenu_selected_index = Some(0);
+        daemon.submenu_highlighted_pid = Some(1);
 
         daemon.handle_enable_disable_submenu_key(
             &mock_with_clear_screen(),
@@ -1730,6 +1732,7 @@ mod daemon_test {
         );
 
         assert_eq!(daemon.submenu_selected_index, Some(1));
+        assert_eq!(daemon.submenu_highlighted_pid, Some(2));
         assert_eq!(
             snapshot_highlights(&clients.lock().unwrap()),
             vec![false, true, false],
@@ -1737,7 +1740,7 @@ mod daemon_test {
         );
     }
 
-    /// Verifies that `apply_submenu_highlight(.., Some(idx), None)` -
+    /// Verifies that `apply_submenu_highlight(.., None)` -
     /// the path the `Esc` arm in `control_mode_is_active` takes when
     /// leaving the submenu - clears the highlight on every client.
     #[test]
@@ -1751,16 +1754,19 @@ mod daemon_test {
 
         let config = DaemonConfig::default();
         let clusters: Vec<Cluster> = Vec::new();
-        let daemon = Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        daemon.submenu_highlighted_pid = Some(2);
 
         let clients_guard = clients.lock().unwrap();
-        daemon.apply_submenu_highlight(&clients_guard, Some(1), None);
+        daemon.apply_submenu_highlight(&clients_guard, None);
 
         assert_eq!(
             snapshot_highlights(&clients_guard),
             vec![false, false, false],
             "Esc must clear the highlight on the previously-selected client",
         );
+        assert_eq!(daemon.submenu_highlighted_pid, None);
     }
 
     /// Regression test: when an exited client is retained-out
@@ -1787,18 +1793,66 @@ mod daemon_test {
 
         let config = DaemonConfig::default();
         let clusters: Vec<Cluster> = Vec::new();
-        let daemon = Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        // The daemon thought PID 1 was highlighted before retain.
+        daemon.submenu_highlighted_pid = Some(1);
 
-        // `move_submenu_selection(Down, 1)` clamps back to `Some(0)`,
-        // so `previous == next == Some(0)`. The old code's early
-        // return would skip the `send_replace`; the fix must
-        // re-assert `true` on the new occupant of index 0.
-        daemon.apply_submenu_highlight(&clients, Some(0), Some(0));
+        // `move_submenu_selection(Down, 1)` clamps back to `Some(0)`.
+        // The new occupant of index 0 must receive `highlight_tx = true`
+        // even though the index value did not change.
+        daemon.apply_submenu_highlight(&clients, Some(0));
 
         assert_eq!(
             snapshot_highlights(&clients),
             vec![true],
             "after retain reuses an index the surviving client must be highlighted",
         );
+        assert_eq!(daemon.submenu_highlighted_pid, Some(2));
+    }
+
+    /// Regression test: when a client BEFORE the selected one exits
+    /// mid-submenu, surviving clients slide to lower indices but
+    /// the previously-highlighted client must still be cleared on
+    /// the next navigation. PID-based tracking handles this; the
+    /// previous index-based clear would have left the highlight
+    /// stale on the shifted client.
+    #[test]
+    fn test_apply_submenu_highlight_clears_shifted_client_after_retain() {
+        let mut clients = Clients::new();
+        // Three clients, the second is highlighted.
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.push(make_client_with_state(3, ClientState::Active));
+        clients.get(1).unwrap().highlight_tx.send_replace(true);
+
+        // Drop the FIRST client - PID 2 (still highlighted) shifts
+        // to index 0, PID 3 shifts to index 1.
+        clients.retain(|client| return client.process_id != 1);
+        assert_eq!(clients.len(), 2);
+        assert_eq!(
+            snapshot_highlights(&clients),
+            vec![true, false],
+            "precondition: PID 2 stayed highlighted after retain shifted it to index 0",
+        );
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        daemon.submenu_highlighted_pid = Some(2);
+
+        // User navigates `Down`: the daemon now wants index 1 (PID 3)
+        // highlighted. The clear half must find PID 2 by id and turn
+        // it off, even though it is no longer at the index the daemon
+        // last saw it at.
+        daemon.apply_submenu_highlight(&clients, Some(1));
+
+        assert_eq!(
+            snapshot_highlights(&clients),
+            vec![false, true],
+            "the previously highlighted client must be cleared even after a retain shift",
+        );
+        assert_eq!(daemon.submenu_highlighted_pid, Some(3));
     }
 }

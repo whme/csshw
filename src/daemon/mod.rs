@@ -222,11 +222,10 @@ struct Client {
     /// pipe. [`watch::Sender`] is itself [`Clone`], so cloning a [`Client`]
     /// produces another sender that drives the same channel.
     state_tx: watch::Sender<ClientState>,
-    /// Authoritative source for this client's highlight flag.
-    ///
-    /// Set to `true` while the client is the currently selected window in
-    /// the enable/disable submenu. Purely visual - input gating is driven
-    /// by [`Client::state_tx`]. The pipe-server task subscribes alongside
+    /// Authoritative source for this client's highlight flag. Set to
+    /// `true` while the client is the daemon's currently selected
+    /// submenu client. Visual only; input gating uses
+    /// [`Client::state_tx`]. The pipe-server task subscribes alongside
     /// `state_tx` and forwards every change as a
     /// [`crate::protocol::TAG_HIGHLIGHT`] frame.
     highlight_tx: watch::Sender<bool>,
@@ -420,6 +419,12 @@ struct Daemon<'a> {
     /// in the [`ControlModeState::EnableDisableSubmenu`] prompt.
     /// `None` outside the submenu and whenever the cluster is empty.
     submenu_selected_index: Option<usize>,
+    /// PID of the client whose `highlight_tx` is currently `true`,
+    /// or `None` if no client is highlighted. Tracked separately
+    /// from [`Daemon::submenu_selected_index`] so the clear half of
+    /// [`Daemon::apply_submenu_highlight`] survives a `retain` shift
+    /// of [`Clients::list`].
+    submenu_highlighted_pid: Option<u32>,
     /// If debug mode is enabled on the daemon it will also be enabled on all
     /// clients.
     debug: bool,
@@ -446,6 +451,7 @@ impl<'a> Daemon<'a> {
             clusters,
             control_mode_state,
             submenu_selected_index: None,
+            submenu_highlighted_pid: None,
             debug: false,
         };
     }
@@ -707,10 +713,10 @@ impl<'a> Daemon<'a> {
                     } else {
                         Some(0)
                     };
-                    self.apply_submenu_highlight(&clients_guard, None, next_selected);
+                    self.apply_submenu_highlight(&clients_guard, next_selected);
                     self.submenu_selected_index = next_selected;
                     self.control_mode_state = ControlModeState::EnableDisableSubmenu;
-                    self.render_enable_disable_submenu(windows_api, &clients_guard);
+                    self.render_enable_disable_submenu(windows_api);
                 }
                 ControlModeAction::ToggleEnabled => {
                     // Snapshot before flipping so each client toggles relative
@@ -861,7 +867,7 @@ impl<'a> Daemon<'a> {
             if key_event.wVirtualKeyCode == VK_ESCAPE.0 {
                 if self.control_mode_state == ControlModeState::EnableDisableSubmenu {
                     let clients_guard = clients.lock().unwrap();
-                    self.apply_submenu_highlight(&clients_guard, self.submenu_selected_index, None);
+                    self.apply_submenu_highlight(&clients_guard, None);
                 }
                 self.quit_control_mode(windows_api);
                 return true;
@@ -878,13 +884,18 @@ impl<'a> Daemon<'a> {
         return false;
     }
 
-    /// Prints the default daemon instructions to the daemon console,
-    /// sets `self.control_mode_state` to inactive, and clears the
-    /// submenu selection cursor.
+    /// Prints the default daemon instructions to the daemon console
+    /// and resets the submenu selection/highlight tracking.
+    ///
+    /// # Arguments
+    ///
+    /// * `windows_api` - Windows API used to clear and redraw the
+    ///                   daemon console.
     fn quit_control_mode<W: WindowsApi>(&mut self, windows_api: &W) {
         self.print_instructions(windows_api);
         self.control_mode_state = ControlModeState::Inactive;
         self.submenu_selected_index = None;
+        self.submenu_highlighted_pid = None;
     }
 
     /// Clears the console screen and prints the default daemon instructions.
@@ -998,47 +1009,24 @@ impl<'a> Daemon<'a> {
             }
             EnableDisableSubmenuAction::Navigate(direction) => {
                 let clients_guard = clients.lock().unwrap();
-                let previous_selected = self.submenu_selected_index;
                 self.move_submenu_selection(direction, clients_guard.len());
-                self.apply_submenu_highlight(
-                    &clients_guard,
-                    previous_selected,
-                    self.submenu_selected_index,
-                );
-                self.render_enable_disable_submenu(windows_api, &clients_guard);
+                self.apply_submenu_highlight(&clients_guard, self.submenu_selected_index);
+                self.render_enable_disable_submenu(windows_api);
             }
             EnableDisableSubmenuAction::NoOp => {}
         }
     }
 
-    /// Redraws the enable/disable submenu prompt, showing the
-    /// currently selected client as `[idx/total] hostname`.
+    /// Redraws the enable/disable submenu prompt. The currently
+    /// selected window is identified by its highlight color, so the
+    /// daemon console only needs to show the header and keymap.
     ///
     /// # Arguments
     ///
-    /// * `windows_api`   - Windows API used to clear the console.
-    /// * `clients_guard` - Locked client collection, used to look up
-    ///                     the selected client's hostname and the
-    ///                     total count for the `[idx/total]` display.
-    fn render_enable_disable_submenu<W: WindowsApi>(
-        &self,
-        windows_api: &W,
-        clients_guard: &Clients,
-    ) {
+    /// * `windows_api` - Windows API used to clear the console.
+    fn render_enable_disable_submenu<W: WindowsApi>(&self, windows_api: &W) {
         clear_screen(windows_api);
         println!("Enable/Disable input (Esc to exit)");
-        match self.submenu_selected_index {
-            Some(idx) if idx < clients_guard.len() => {
-                let client = &clients_guard[idx];
-                println!(
-                    "Selected: [{}/{}] {}",
-                    idx + 1,
-                    clients_guard.len(),
-                    client.hostname,
-                );
-            }
-            _ => println!("Selected: (no clients)"),
-        }
         println!("[e]nable, [d]isable, [t]oggle, arrows/hjkl to move");
     }
 
@@ -1065,51 +1053,34 @@ impl<'a> Daemon<'a> {
         self.submenu_selected_index = Some(next);
     }
 
-    /// Move the submenu's per-client highlight flag from `previous` to
-    /// `next`.
+    /// Move the per-client highlight to the client at `next`.
     ///
-    /// Clears the highlight on the client at `previous` (when it
-    /// differs from `next`) and sets it on the client at `next` (if
-    /// any) by pushing the new value through each client's
-    /// `highlight_tx`. The pipe-server task subscribed to that channel
-    /// forwards a [`crate::protocol::TAG_HIGHLIGHT`] frame to the
-    /// client over the named pipe. Indices that fall outside `clients`
-    /// are silently ignored - they can occur when a client window has
-    /// just been closed while the submenu was open.
-    ///
-    /// The `next` index is always re-asserted, even when it equals
-    /// `previous`. The background client monitor can `retain`-out an
-    /// exited client mid-submenu, after which the same numeric index
-    /// refers to a different client (e.g. clients `[A, B]`, A exits,
-    /// `B` slides to index 0); re-asserting ensures the new occupant
-    /// of `next` actually receives `highlight_tx = true`.
+    /// Clears the highlight on whichever client is currently tracked
+    /// via [`Daemon::submenu_highlighted_pid`] and sets it on the
+    /// client at `next` (if any). PID-based clearing tolerates the
+    /// background monitor's `retain` shifting indices while the
+    /// submenu is open.
     ///
     /// # Arguments
     ///
-    /// * `clients`  - Currently tracked clients, indexed in their
-    ///                submenu order.
-    /// * `previous` - Index of the client that was previously
-    ///                highlighted, or `None` if no client was.
-    /// * `next`     - Index of the client to highlight now, or `None`
-    ///                to clear the highlight entirely.
-    fn apply_submenu_highlight(
-        &self,
-        clients: &Clients,
-        previous: Option<usize>,
-        next: Option<usize>,
-    ) {
-        if let Some(idx) = previous {
-            if Some(idx) != next {
-                if let Some(client) = clients.get(idx) {
-                    client.highlight_tx.send_replace(false);
+    /// * `clients` - Currently tracked clients, indexed in their
+    ///               submenu order.
+    /// * `next`    - Index of the client to highlight now, or `None`
+    ///               to clear the highlight entirely.
+    fn apply_submenu_highlight(&mut self, clients: &Clients, next: Option<usize>) {
+        let next_client = next.and_then(|idx| return clients.get(idx));
+        let next_pid = next_client.map(|c| return c.process_id);
+        if let Some(prev_pid) = self.submenu_highlighted_pid {
+            if Some(prev_pid) != next_pid {
+                if let Some(prev_client) = clients.get_by_pid(prev_pid) {
+                    prev_client.highlight_tx.send_replace(false);
                 }
             }
         }
-        if let Some(idx) = next {
-            if let Some(client) = clients.get(idx) {
-                client.highlight_tx.send_replace(true);
-            }
+        if let Some(client) = next_client {
+            client.highlight_tx.send_replace(true);
         }
+        self.submenu_highlighted_pid = next_pid;
     }
 
     /// Apply a batch of [`ClientState`] updates while holding the
@@ -1987,6 +1958,7 @@ pub async fn main<W: WindowsApi + Clone + 'static>(
         clusters,
         control_mode_state: ControlModeState::Inactive,
         submenu_selected_index: None,
+        submenu_highlighted_pid: None,
         debug,
     };
     daemon.launch(windows_api).await;
