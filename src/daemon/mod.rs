@@ -1046,6 +1046,10 @@ impl<'a> Daemon<'a> {
         let Some(current) = self.submenu_selected_index else {
             return;
         };
+        // Clamp a stale index back into range so an Up/Left after the
+        // background monitor retain-ed exited clients still lands on a
+        // valid survivor instead of stepping from a phantom slot.
+        let current = current.min(len - 1);
         let next = match direction {
             NavigationDirection::Up | NavigationDirection::Left => current.saturating_sub(1),
             NavigationDirection::Down | NavigationDirection::Right => (current + 1).min(len - 1),

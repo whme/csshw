@@ -696,10 +696,9 @@ async fn run_visuals_loop(
                 let next_state = *state_rx.borrow_and_update();
                 prev_state = next_state;
                 if prev_highlight {
-                    // Every state push from the daemon represents a user
-                    // keypress (`[e]`/`[d]`/`[t]`/`[n]`), so flash even when
-                    // the state value did not change - the README promises
-                    // visual confirmation on every press.
+                    // State pushes come from `[e]`/`[d]`/`[t]` keypresses;
+                    // flash even on no-op updates so the user always gets
+                    // visual confirmation.
                     paint_console_color(
                         api,
                         flash_color(

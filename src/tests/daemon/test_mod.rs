@@ -1855,4 +1855,50 @@ mod daemon_test {
         );
         assert_eq!(daemon.submenu_highlighted_pid, Some(3));
     }
+
+    /// Regression test: when the selected client (and others past it)
+    /// are retained-out mid-submenu, `submenu_selected_index` can be
+    /// strictly greater than `len - 1`. An Up/Left navigation must
+    /// still land on a surviving client and propagate the highlight
+    /// to it instead of silently leaving the submenu untargeted.
+    #[test]
+    fn test_submenu_navigate_clamps_stale_index_after_retain() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.push(make_client_with_state(3, ClientState::Active));
+        // Submenu opened with the last client highlighted.
+        clients.get(2).unwrap().highlight_tx.send_replace(true);
+
+        // The background monitor retains-out the last two clients
+        // while the submenu is open, leaving the selected index stale.
+        clients.retain(|client| return client.process_id == 1);
+        assert_eq!(clients.len(), 1);
+        let clients = Mutex::new(clients);
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon =
+            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
+        daemon.submenu_selected_index = Some(2);
+        daemon.submenu_highlighted_pid = Some(3);
+
+        daemon.handle_enable_disable_submenu_key(
+            &mock_with_clear_screen(),
+            &clients,
+            submenu_key_event(VK_UP),
+        );
+
+        assert_eq!(
+            daemon.submenu_selected_index,
+            Some(0),
+            "Up navigation from a stale index must clamp to the last surviving client",
+        );
+        assert_eq!(daemon.submenu_highlighted_pid, Some(1));
+        assert_eq!(
+            snapshot_highlights(&clients.lock().unwrap()),
+            vec![true],
+            "the surviving client must receive the highlight after clamp",
+        );
+    }
 }
