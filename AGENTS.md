@@ -68,9 +68,8 @@ characters - do NOT add to the allowlist.
 ## Code Standards
 
 - **ASCII-only punctuation**: see the section above; this is enforced in CI
-- **Documentation and comments**: see the section below
 
-## Documentation and Comments
+### Documentation and Comments
 
 The goal is csshW's observed style, not "document everything." Match the
 density of the surrounding code; do not pad.
