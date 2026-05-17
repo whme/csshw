@@ -211,14 +211,46 @@ mod client_state_test {
     }
 }
 
+mod highlight_test {
+    use crate::protocol::deserialization::deserialize_highlight;
+    use crate::protocol::serialization::serialize_highlight;
+
+    #[test]
+    fn test_serialize_highlight_true_byte() {
+        assert_eq!(serialize_highlight(true), 1u8);
+    }
+
+    #[test]
+    fn test_serialize_highlight_false_byte() {
+        assert_eq!(serialize_highlight(false), 0u8);
+    }
+
+    #[test]
+    fn test_highlight_round_trip_true() {
+        assert!(deserialize_highlight(serialize_highlight(true)));
+    }
+
+    #[test]
+    fn test_highlight_round_trip_false() {
+        assert!(!deserialize_highlight(serialize_highlight(false)));
+    }
+
+    #[test]
+    #[should_panic(expected = "Unknown highlight byte")]
+    fn test_deserialize_highlight_unknown_panics() {
+        let _ = deserialize_highlight(0xAB);
+    }
+}
+
 mod framed_message_test {
     use super::deserialization_test::Equality;
     use super::*;
     use crate::protocol::{
         deserialization::parse_daemon_to_client_messages,
         serialization::serialize_daemon_to_client_message, ClientState, DaemonToClientMessage,
-        FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH, FRAMED_STATE_CHANGE_LENGTH,
-        TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
+        FRAMED_HIGHLIGHT_LENGTH, FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH,
+        FRAMED_STATE_CHANGE_LENGTH, TAG_HIGHLIGHT, TAG_INPUT_RECORD, TAG_KEEP_ALIVE,
+        TAG_STATE_CHANGE,
     };
 
     fn unwrap_input_record(msg: &DaemonToClientMessage) -> INPUT_RECORD_0 {
@@ -280,6 +312,29 @@ mod framed_message_test {
         match messages[0] {
             DaemonToClientMessage::StateChange(state) => assert_eq!(state, ClientState::Active),
             _ => panic!("expected StateChange variant"),
+        }
+    }
+
+    #[test]
+    fn test_serialize_highlight_envelope() {
+        let bytes = serialize_daemon_to_client_message(&DaemonToClientMessage::Highlight(true));
+        assert_eq!(bytes.len(), FRAMED_HIGHLIGHT_LENGTH);
+        assert_eq!(bytes[0], TAG_HIGHLIGHT);
+        assert_eq!(bytes[1], 1u8);
+    }
+
+    #[test]
+    fn test_parse_highlight_round_trip() {
+        for value in [true, false] {
+            let bytes =
+                serialize_daemon_to_client_message(&DaemonToClientMessage::Highlight(value));
+            let (messages, remainder) = parse_daemon_to_client_messages(&bytes);
+            assert!(remainder.is_empty());
+            assert_eq!(messages.len(), 1);
+            match messages[0] {
+                DaemonToClientMessage::Highlight(decoded) => assert_eq!(decoded, value),
+                _ => panic!("expected Highlight variant"),
+            }
         }
     }
 

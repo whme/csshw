@@ -16,10 +16,10 @@ use std::{thread, time};
 use crate::get_console_window_handle;
 use crate::protocol::{
     deserialization::deserialize_pid,
-    serialization::{serialize_client_state, serialize_input_record_0},
-    ClientState, FRAMED_INPUT_RECORD_LENGTH, FRAMED_STATE_CHANGE_LENGTH,
-    SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH, TAG_INPUT_RECORD, TAG_KEEP_ALIVE,
-    TAG_STATE_CHANGE,
+    serialization::{serialize_client_state, serialize_highlight, serialize_input_record_0},
+    ClientState, FRAMED_HIGHLIGHT_LENGTH, FRAMED_INPUT_RECORD_LENGTH, FRAMED_STATE_CHANGE_LENGTH,
+    SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH, TAG_HIGHLIGHT, TAG_INPUT_RECORD,
+    TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
 };
 use crate::utils::config::{Cluster, DaemonConfig};
 use crate::utils::debug::StringRepr;
@@ -221,7 +221,14 @@ struct Client {
     /// correlation and forwards every change to the client over the named
     /// pipe. [`watch::Sender`] is itself [`Clone`], so cloning a [`Client`]
     /// produces another sender that drives the same channel.
-    state_tx: watch::Sender<ClientState>,
+    state_sender: watch::Sender<ClientState>,
+    /// Authoritative source for this client's highlight flag. Set to
+    /// `true` while the client is the daemon's currently selected
+    /// submenu client. Visual only; input gating uses
+    /// [`Client::state_sender`]. The pipe-server task subscribes alongside
+    /// `state_sender` and forwards every change as a
+    /// [`crate::protocol::TAG_HIGHLIGHT`] frame.
+    highlight_sender: watch::Sender<bool>,
 }
 
 unsafe impl Send for Client {}
@@ -285,6 +292,19 @@ impl Clients {
             .pid_index
             .get(&pid)
             .map(|&index| return &self.list[index]);
+    }
+
+    /// Returns the index of the client with the given process id, if any.
+    ///
+    /// # Arguments
+    ///
+    /// * `pid` - The process id of the client to look up.
+    ///
+    /// # Returns
+    ///
+    /// `Some(index)` if a client with the given PID exists, `None` otherwise.
+    fn index_of_pid(&self, pid: u32) -> Option<usize> {
+        return self.pid_index.get(&pid).copied();
     }
 
     /// Retains only the clients for which the predicate returns `true`,
@@ -379,14 +399,15 @@ enum ControlModeState {
     /// Active control mode prevents any input records from being sent to clients.
     Active,
     /// The user opened the `[e]nable/disable input` submenu from
-    /// [`ControlModeState::Active`]. Each non-`Esc` key is
-    /// interpreted as a submenu action (`[e]`, `[d]`, `[t]`, or a
-    /// navigation key) applied to the currently selected client;
-    /// unrecognised keys are ignored. The submenu remains open after
-    /// every key press and is left only via `Esc`, which exits
-    /// control mode entirely. Like [`ControlModeState::Active`],
-    /// this state suppresses input forwarding to clients.
-    EnableDisableSubmenu,
+    /// [`ControlModeState::Active`]. `highlighted_pid` is the PID of
+    /// the currently selected client (or `None` when the cluster is
+    /// empty); tracking by PID rather than index keeps the selection
+    /// correct after the background monitor `retain`s out exited
+    /// clients while the submenu is open. The submenu is left only
+    /// via `Esc`, which exits control mode entirely; like
+    /// [`ControlModeState::Active`], this state suppresses input
+    /// forwarding to clients.
+    EnableDisableSubmenu { highlighted_pid: Option<u32> },
 }
 
 /// The daemon is responsible to launch a client for
@@ -406,15 +427,50 @@ struct Daemon<'a> {
     config: &'a DaemonConfig,
     /// List of available cluster tags
     clusters: &'a [Cluster],
-    /// The current control mode state.
+    /// The current control mode state. The submenu's selected client
+    /// is carried inline on
+    /// [`ControlModeState::EnableDisableSubmenu`] - tying its
+    /// lifetime to the variant guarantees no stale highlight survives
+    /// after `Esc`.
     control_mode_state: ControlModeState,
-    /// Index into [`Clients::list`] of the client currently selected
-    /// in the [`ControlModeState::EnableDisableSubmenu`] prompt.
-    /// `None` outside the submenu and whenever the cluster is empty.
-    submenu_selected_index: Option<usize>,
     /// If debug mode is enabled on the daemon it will also be enabled on all
     /// clients.
     debug: bool,
+}
+
+/// Compute the PID of the client one step from `current_pid` in
+/// `direction`, clamped to the bounds of `clients`.
+///
+/// Re-anchors on the first surviving client when `current_pid` is no
+/// longer present (the background monitor retain-ed it out while the
+/// submenu was open). Returns `None` only for an empty cluster.
+///
+/// # Arguments
+///
+/// * `clients`     - Currently tracked clients.
+/// * `current_pid` - PID currently highlighted, or `None`.
+/// * `direction`   - Direction the navigation keystroke encoded.
+///
+/// # Returns
+///
+/// The PID to highlight next, or `None` for an empty cluster.
+fn next_submenu_pid(
+    clients: &Clients,
+    current_pid: Option<u32>,
+    direction: NavigationDirection,
+) -> Option<u32> {
+    if clients.is_empty() {
+        return None;
+    }
+    let Some(current_index) = current_pid.and_then(|pid| return clients.index_of_pid(pid)) else {
+        return clients.first().map(|c| return c.process_id);
+    };
+    let last = clients.len() - 1;
+    let next_index = match direction {
+        NavigationDirection::Up | NavigationDirection::Left => current_index.saturating_sub(1),
+        NavigationDirection::Down | NavigationDirection::Right => (current_index + 1).min(last),
+    };
+    return clients.get(next_index).map(|c| return c.process_id);
 }
 
 impl<'a> Daemon<'a> {
@@ -437,7 +493,6 @@ impl<'a> Daemon<'a> {
             config,
             clusters,
             control_mode_state,
-            submenu_selected_index: None,
             debug: false,
         };
     }
@@ -662,7 +717,7 @@ impl<'a> Daemon<'a> {
         workspace_area: &workspace::WorkspaceArea,
         servers: &mut Arc<Mutex<Vec<JoinHandle<()>>>>,
     ) {
-        if self.control_mode_is_active(windows_api, input_record) {
+        if self.control_mode_is_active(windows_api, clients, input_record) {
             if self.control_mode_state == ControlModeState::Initiated {
                 clear_screen(windows_api);
                 println!("Control Mode (Esc to exit)");
@@ -676,7 +731,10 @@ impl<'a> Daemon<'a> {
             if !key_event.bKeyDown.as_bool() {
                 return;
             }
-            if self.control_mode_state == ControlModeState::EnableDisableSubmenu {
+            if matches!(
+                self.control_mode_state,
+                ControlModeState::EnableDisableSubmenu { .. }
+            ) {
                 self.handle_enable_disable_submenu_key(windows_api, clients, key_event);
                 return;
             }
@@ -694,13 +752,12 @@ impl<'a> Daemon<'a> {
                 }
                 ControlModeAction::OpenEnableDisableSubmenu => {
                     let clients_guard = clients.lock().unwrap();
-                    self.submenu_selected_index = if clients_guard.is_empty() {
-                        None
-                    } else {
-                        Some(0)
+                    let next_pid = clients_guard.first().map(|c| return c.process_id);
+                    self.apply_submenu_highlight(&clients_guard, None, next_pid);
+                    self.control_mode_state = ControlModeState::EnableDisableSubmenu {
+                        highlighted_pid: next_pid,
                     };
-                    self.control_mode_state = ControlModeState::EnableDisableSubmenu;
-                    self.render_enable_disable_submenu(windows_api, &clients_guard);
+                    self.render_enable_disable_submenu(windows_api);
                 }
                 ControlModeAction::ToggleEnabled => {
                     // Snapshot before flipping so each client toggles relative
@@ -710,7 +767,7 @@ impl<'a> Daemon<'a> {
                         return clients_guard
                             .iter()
                             .map(|client| {
-                                let flipped = match *client.state_tx.borrow() {
+                                let flipped = match *client.state_sender.borrow() {
                                     ClientState::Active => ClientState::Disabled,
                                     ClientState::Disabled => ClientState::Active,
                                 };
@@ -825,8 +882,12 @@ impl<'a> Daemon<'a> {
     ///
     /// # Arguments
     ///
-    /// * `windows_api` - The Windows API implementation to use
-    /// * `input_record` -  A KeyEvent input record.
+    /// * `windows_api`  - The Windows API implementation to use.
+    /// * `clients`      - Currently tracked clients. Used to clear the
+    ///                    submenu highlight on the previously-selected
+    ///                    client when `Esc` exits the enable/disable
+    ///                    submenu.
+    /// * `input_record` - A KeyEvent input record.
     ///
     /// # Returns
     ///
@@ -837,13 +898,23 @@ impl<'a> Daemon<'a> {
     fn control_mode_is_active<W: WindowsApi>(
         &mut self,
         windows_api: &W,
+        clients: &Mutex<Clients>,
         input_record: INPUT_RECORD_0,
     ) -> bool {
         let key_event = unsafe { input_record.KeyEvent };
         if self.control_mode_state == ControlModeState::Active
-            || self.control_mode_state == ControlModeState::EnableDisableSubmenu
+            || matches!(
+                self.control_mode_state,
+                ControlModeState::EnableDisableSubmenu { .. }
+            )
         {
             if key_event.wVirtualKeyCode == VK_ESCAPE.0 {
+                if let ControlModeState::EnableDisableSubmenu { highlighted_pid } =
+                    self.control_mode_state
+                {
+                    let clients_guard = clients.lock().unwrap();
+                    self.apply_submenu_highlight(&clients_guard, highlighted_pid, None);
+                }
                 self.quit_control_mode(windows_api);
                 return true;
             }
@@ -859,13 +930,15 @@ impl<'a> Daemon<'a> {
         return false;
     }
 
-    /// Prints the default daemon instructions to the daemon console,
-    /// sets `self.control_mode_state` to inactive, and clears the
-    /// submenu selection cursor.
+    /// Prints the default daemon instructions to the daemon console.
+    ///
+    /// # Arguments
+    ///
+    /// * `windows_api` - Windows API used to clear and redraw the
+    ///                   daemon console.
     fn quit_control_mode<W: WindowsApi>(&mut self, windows_api: &W) {
         self.print_instructions(windows_api);
         self.control_mode_state = ControlModeState::Inactive;
-        self.submenu_selected_index = None;
     }
 
     /// Clears the console screen and prints the default daemon instructions.
@@ -940,35 +1013,36 @@ impl<'a> Daemon<'a> {
         clients: &Mutex<Clients>,
         key_event: KEY_EVENT_RECORD,
     ) {
+        let ControlModeState::EnableDisableSubmenu { highlighted_pid } = self.control_mode_state
+        else {
+            return;
+        };
         match classify_enable_disable_submenu_key(
             VIRTUAL_KEY(key_event.wVirtualKeyCode),
             key_event.dwControlKeyState,
         ) {
             EnableDisableSubmenuAction::Enable => {
-                let selected = self.submenu_selected_index;
                 self.update_client_states(clients, |clients_guard| {
-                    return selected
-                        .and_then(|idx| return clients_guard.get(idx))
+                    return highlighted_pid
+                        .and_then(|pid| return clients_guard.get_by_pid(pid))
                         .map(|client| return vec![(client.process_id, ClientState::Active)])
                         .unwrap_or_default();
                 });
             }
             EnableDisableSubmenuAction::Disable => {
-                let selected = self.submenu_selected_index;
                 self.update_client_states(clients, |clients_guard| {
-                    return selected
-                        .and_then(|idx| return clients_guard.get(idx))
+                    return highlighted_pid
+                        .and_then(|pid| return clients_guard.get_by_pid(pid))
                         .map(|client| return vec![(client.process_id, ClientState::Disabled)])
                         .unwrap_or_default();
                 });
             }
             EnableDisableSubmenuAction::Toggle => {
-                let selected = self.submenu_selected_index;
                 self.update_client_states(clients, |clients_guard| {
-                    return selected
-                        .and_then(|idx| return clients_guard.get(idx))
+                    return highlighted_pid
+                        .and_then(|pid| return clients_guard.get_by_pid(pid))
                         .map(|client| {
-                            let flipped = match *client.state_tx.borrow() {
+                            let flipped = match *client.state_sender.borrow() {
                                 ClientState::Active => ClientState::Disabled,
                                 ClientState::Disabled => ClientState::Active,
                             };
@@ -979,65 +1053,60 @@ impl<'a> Daemon<'a> {
             }
             EnableDisableSubmenuAction::Navigate(direction) => {
                 let clients_guard = clients.lock().unwrap();
-                self.move_submenu_selection(direction, clients_guard.len());
-                self.render_enable_disable_submenu(windows_api, &clients_guard);
+                let next_pid = next_submenu_pid(&clients_guard, highlighted_pid, direction);
+                self.apply_submenu_highlight(&clients_guard, highlighted_pid, next_pid);
+                self.control_mode_state = ControlModeState::EnableDisableSubmenu {
+                    highlighted_pid: next_pid,
+                };
+                self.render_enable_disable_submenu(windows_api);
             }
             EnableDisableSubmenuAction::NoOp => {}
         }
     }
 
-    /// Redraws the enable/disable submenu prompt, showing the
-    /// currently selected client as `[idx/total] hostname`.
+    /// Redraws the enable/disable submenu prompt. The currently
+    /// selected window is identified by its highlight color, so the
+    /// daemon console only needs to show the header and keymap.
     ///
     /// # Arguments
     ///
-    /// * `windows_api`   - Windows API used to clear the console.
-    /// * `clients_guard` - Locked client collection, used to look up
-    ///                     the selected client's hostname and the
-    ///                     total count for the `[idx/total]` display.
-    fn render_enable_disable_submenu<W: WindowsApi>(
-        &self,
-        windows_api: &W,
-        clients_guard: &Clients,
-    ) {
+    /// * `windows_api` - Windows API used to clear the console.
+    fn render_enable_disable_submenu<W: WindowsApi>(&self, windows_api: &W) {
         clear_screen(windows_api);
         println!("Enable/Disable input (Esc to exit)");
-        match self.submenu_selected_index {
-            Some(idx) if idx < clients_guard.len() => {
-                let client = &clients_guard[idx];
-                println!(
-                    "Selected: [{}/{}] {}",
-                    idx + 1,
-                    clients_guard.len(),
-                    client.hostname,
-                );
-            }
-            _ => println!("Selected: (no clients)"),
-        }
         println!("[e]nable, [d]isable, [t]oggle, arrows/hjkl to move");
     }
 
-    /// Moves [`Daemon::submenu_selected_index`] one step back
-    /// (Up/Left) or forward (Down/Right), clamped to `[0, len - 1]`.
-    /// Clears the selection when `len` is `0`.
+    /// Move the per-client highlight from `prev_pid` to `next_pid`.
+    ///
+    /// PID-based clearing tolerates the background monitor's `retain`
+    /// shifting indices while the submenu is open.
     ///
     /// # Arguments
     ///
-    /// * `direction` - Direction the navigation keystroke encoded.
-    /// * `len`       - Current number of tracked clients.
-    fn move_submenu_selection(&mut self, direction: NavigationDirection, len: usize) {
-        if len == 0 {
-            self.submenu_selected_index = None;
-            return;
+    /// * `clients`  - Currently tracked clients.
+    /// * `prev_pid` - PID currently highlighted, or `None` if no
+    ///                client is highlighted.
+    /// * `next_pid` - PID to highlight now, or `None` to clear the
+    ///                highlight entirely.
+    fn apply_submenu_highlight(
+        &self,
+        clients: &Clients,
+        prev_pid: Option<u32>,
+        next_pid: Option<u32>,
+    ) {
+        if let Some(prev_pid) = prev_pid {
+            if Some(prev_pid) != next_pid {
+                if let Some(prev_client) = clients.get_by_pid(prev_pid) {
+                    prev_client.highlight_sender.send_replace(false);
+                }
+            }
         }
-        let Some(current) = self.submenu_selected_index else {
-            return;
-        };
-        let next = match direction {
-            NavigationDirection::Up | NavigationDirection::Left => current.saturating_sub(1),
-            NavigationDirection::Down | NavigationDirection::Right => (current + 1).min(len - 1),
-        };
-        self.submenu_selected_index = Some(next);
+        if let Some(next_pid) = next_pid {
+            if let Some(client) = clients.get_by_pid(next_pid) {
+                client.highlight_sender.send_replace(true);
+            }
+        }
     }
 
     /// Apply a batch of [`ClientState`] updates while holding the
@@ -1084,7 +1153,7 @@ impl<'a> Daemon<'a> {
             // between [`Client`] construction and the pipe-server task's
             // `subscribe()`: any state change pushed in that window must
             // still be visible to the next subscriber via `borrow`.
-            client.state_tx.send_replace(state);
+            client.state_sender.send_replace(state);
         }
     }
 
@@ -1251,11 +1320,12 @@ async fn launch_clients<W: WindowsApi + 'static + Clone>(
                 len_hosts + index_offset,
                 aspect_ratio_adjustment,
             );
-            // The receiver is dropped immediately; pipe-server tasks acquire
-            // their own receivers via `state_tx.subscribe()` after PID
-            // correlation. Holding the sender on the [`Client`] keeps the
-            // channel alive for the lifetime of the client.
-            let (state_tx, _state_rx) = watch::channel(ClientState::Active);
+            // The receivers are dropped immediately; pipe-server tasks
+            // acquire their own receivers via `subscribe()` after PID
+            // correlation. Holding the senders on the [`Client`] keeps both
+            // channels alive for the lifetime of the client.
+            let (state_sender, _state_receiver) = watch::channel(ClientState::Active);
+            let (highlight_sender, _highlight_receiver) = watch::channel(false);
             return (
                 index,
                 Client {
@@ -1263,7 +1333,8 @@ async fn launch_clients<W: WindowsApi + 'static + Clone>(
                     window_handle,
                     process_handle,
                     process_id,
-                    state_tx,
+                    state_sender,
+                    highlight_sender,
                 },
             );
         });
@@ -1377,7 +1448,7 @@ fn launch_client_console<W: WindowsApi>(
 /// Correlate the connecting client by PID, then multiplex input records,
 /// [`ClientState`] updates, and keep-alives onto the named pipe.
 ///
-/// The post-subscribe initial-state push is intentional: `state_rx.changed`
+/// The post-subscribe initial-state push is intentional: `state_receiver.changed`
 /// only fires on transitions observed *after* `subscribe`, so a state set
 /// in the brief window between [`Client`] construction and `subscribe`
 /// would otherwise leave the client on its default until the next
@@ -1407,8 +1478,12 @@ async fn named_pipe_server_routine(
 
     // Correlate the connecting client by reading its 4 byte PID.
     let pid = read_client_pid(&server).await;
-    let mut state_rx = match clients.lock().unwrap().get_by_pid(pid) {
-        Some(client) => client.state_tx.subscribe(),
+    let (mut state_receiver, mut highlight_receiver) = match clients.lock().unwrap().get_by_pid(pid)
+    {
+        Some(client) => (
+            client.state_sender.subscribe(),
+            client.highlight_sender.subscribe(),
+        ),
         None => {
             error!(
                 "Named pipe server received unknown PID {} - daemon bookkeeping broken",
@@ -1424,14 +1499,23 @@ async fn named_pipe_server_routine(
     };
 
     // Initial state push - see fn docs.
-    let initial_state = *state_rx.borrow_and_update();
-    let initial_frame: [u8; FRAMED_STATE_CHANGE_LENGTH] =
+    let initial_state = *state_receiver.borrow_and_update();
+    let initial_state_frame: [u8; FRAMED_STATE_CHANGE_LENGTH] =
         [TAG_STATE_CHANGE, serialize_client_state(initial_state)];
-    if !write_framed_message(&server, &initial_frame).await {
+    if !write_framed_message(&server, &initial_state_frame).await {
+        return;
+    }
+
+    // Initial highlight push - same rationale as the state push above.
+    let initial_highlight = *highlight_receiver.borrow_and_update();
+    let initial_highlight_frame: [u8; FRAMED_HIGHLIGHT_LENGTH] =
+        [TAG_HIGHLIGHT, serialize_highlight(initial_highlight)];
+    if !write_framed_message(&server, &initial_highlight_frame).await {
         return;
     }
 
     loop {
+        // Independent watch channels: `state_receiver` and `highlight_receiver` are forwarded over the pipe in whichever order this `select!` happens to pick them up, not the order the daemon-side senders fired.
         tokio::select! {
             biased;
             recv_result = receiver.recv() => {
@@ -1461,7 +1545,7 @@ async fn named_pipe_server_routine(
                     }
                 };
                 // Copy out before any `.await` - `watch::Ref` is not `Send`.
-                let current_state = *state_rx.borrow();
+                let current_state = *state_receiver.borrow();
                 match current_state {
                     ClientState::Active => {}
                     ClientState::Disabled => {
@@ -1482,7 +1566,7 @@ async fn named_pipe_server_routine(
                     return;
                 }
             }
-            changed_result = state_rx.changed() => {
+            changed_result = state_receiver.changed() => {
                 // Sender dropped - the daemon has removed this client from its
                 // bookkeeping, so there is nothing left to forward.
                 if changed_result.is_err() {
@@ -1492,9 +1576,25 @@ async fn named_pipe_server_routine(
                     );
                     return;
                 }
-                let state = *state_rx.borrow_and_update();
+                let state = *state_receiver.borrow_and_update();
                 let frame: [u8; FRAMED_STATE_CHANGE_LENGTH] =
                     [TAG_STATE_CHANGE, serialize_client_state(state)];
+                if !write_framed_message(&server, &frame).await {
+                    return;
+                }
+            }
+            changed_result = highlight_receiver.changed() => {
+                // Sender dropped - same rationale as the `state_receiver` arm.
+                if changed_result.is_err() {
+                    debug!(
+                        "Client highlight sender dropped, stopping named pipe server routine ({:?})",
+                        server
+                    );
+                    return;
+                }
+                let highlighted = *highlight_receiver.borrow_and_update();
+                let frame: [u8; FRAMED_HIGHLIGHT_LENGTH] =
+                    [TAG_HIGHLIGHT, serialize_highlight(highlighted)];
                 if !write_framed_message(&server, &frame).await {
                     return;
                 }
@@ -1833,7 +1933,8 @@ fn defer_windows<W: WindowsApi>(windows_api: &W, clients: &[Client], daemon_hand
         window_handle: *daemon_handle,
         process_handle: HANDLE::default(),
         process_id: 0,
-        state_tx: watch::channel(ClientState::Active).0,
+        state_sender: watch::channel(ClientState::Active).0,
+        highlight_sender: watch::channel(false).0,
     }]) {
         let placement = match windows_api.get_window_placement(client.window_handle) {
             Ok(placement) => placement,
@@ -1887,7 +1988,6 @@ pub async fn main<W: WindowsApi + Clone + 'static>(
         config,
         clusters,
         control_mode_state: ControlModeState::Inactive,
-        submenu_selected_index: None,
         debug,
     };
     daemon.launch(windows_api).await;

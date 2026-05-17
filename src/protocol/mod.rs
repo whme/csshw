@@ -43,6 +43,12 @@ pub const TAG_INPUT_RECORD: u8 = 0x00;
 /// [`crate::protocol::serialization::serialize_client_state`].
 pub const TAG_STATE_CHANGE: u8 = 0x01;
 
+/// Tag byte identifying a highlight-toggle message on the daemon-to-client
+/// pipe. Payload is the byte produced by
+/// [`crate::protocol::serialization::serialize_highlight`]. Purely visual,
+/// orthogonal to [`ClientState`].
+pub const TAG_HIGHLIGHT: u8 = 0x02;
+
 /// Tag byte identifying a zero-payload keep-alive message on the
 /// daemon-to-client pipe.
 ///
@@ -60,6 +66,10 @@ pub const FRAMED_KEEP_ALIVE_LENGTH: usize = 1;
 /// Length on the wire of a framed state-change message: the tag byte plus
 /// a single-byte [`ClientState`] payload.
 pub const FRAMED_STATE_CHANGE_LENGTH: usize = 2;
+
+/// Length on the wire of a framed highlight message: the tag byte plus a
+/// single-byte boolean payload (`0` = not highlighted, `1` = highlighted).
+pub const FRAMED_HIGHLIGHT_LENGTH: usize = 2;
 
 /// Runtime state of a single client.
 ///
@@ -87,8 +97,8 @@ pub enum ClientState {
 /// Daemon-to-client message variants exchanged over the named pipe.
 ///
 /// Each variant maps to a distinct tag byte at the start of the wire
-/// representation; see [`TAG_INPUT_RECORD`], [`TAG_STATE_CHANGE`] and
-/// [`TAG_KEEP_ALIVE`].
+/// representation; see [`TAG_INPUT_RECORD`], [`TAG_STATE_CHANGE`],
+/// [`TAG_HIGHLIGHT`] and [`TAG_KEEP_ALIVE`].
 #[derive(Clone, Copy)]
 pub enum DaemonToClientMessage {
     /// Carries an [`INPUT_RECORD_0`] (`KeyEvent`) to be replayed to the
@@ -96,6 +106,10 @@ pub enum DaemonToClientMessage {
     InputRecord(INPUT_RECORD_0),
     /// Carries the new [`ClientState`] the daemon assigned to this client.
     StateChange(ClientState),
+    /// Carries the new highlight flag: `true` while this client is the
+    /// daemon's currently selected submenu client. Visual only; input
+    /// gating uses [`DaemonToClientMessage::StateChange`].
+    Highlight(bool),
     /// Empty payload sent on idle by the daemon's pipe server to detect a
     /// closed client pipe.
     KeepAlive,

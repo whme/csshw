@@ -104,6 +104,7 @@ arguments = [
 ]
 username_host_placeholder = '{{USERNAME_AT_HOST}}'
 disabled_console_color = 135
+highlighted_console_color = 31
 ```
 
 ##### `ssh_config_path`
@@ -122,6 +123,12 @@ Placeholder string that indicates where the `username@host` string should be ins
 Configures the background and foreground colors used by a client console while the client is in the disabled state (input ignored).
 Uses the same encoding as the daemon [`console_color`](#console_color).
 The default `135` paints default-grey text on a muted dark-grey background: `FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | BACKGROUND_INTENSITY` = 4+2+1+128.
+
+##### `highlighted_console_color`
+Configures the background and foreground colors used by a client console while it is the currently selected window in the control-mode `[e]nable/disable input` submenu.
+The highlight overlay wins over [`disabled_console_color`](#disabled_console_color); pressing `[d]`/`[e]`/`[t]` on the selected window briefly flashes the underlying state color (~250ms) as action feedback before the highlight color is restored.
+Uses the same encoding as the daemon [`console_color`](#console_color).
+The default `31` paints bright-white text on a blue background: `FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY | BACKGROUND_BLUE` = 4+2+1+8+16.
 
 #### `daemon`
 A collection containing daemon relevant configuration
