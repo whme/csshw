@@ -61,8 +61,7 @@ enum ReadWriteResult {
 }
 
 /// Duration of the action-feedback flash painted on a highlighted client
-/// when the user presses `[e]`/`[d]`/`[t]` in the daemon's enable/disable
-/// submenu. Tuned to register visually without dragging.
+/// when the user toggles the state.
 const HIGHLIGHT_FLASH_DURATION: Duration = Duration::from_millis(250);
 
 /// Resolve the console color to paint for a given
@@ -88,7 +87,7 @@ const HIGHLIGHT_FLASH_DURATION: Duration = Duration::from_millis(250);
 ///
 /// The color to paint, or `None` if no repaint is possible because the
 /// original color was never captured.
-fn effective_color(
+fn get_effective_color(
     state: ClientState,
     highlighted: bool,
     original_console_color: Option<CONSOLE_CHARACTER_ATTRIBUTES>,
@@ -109,7 +108,7 @@ fn effective_color(
 /// state color, with the highlight overlay bypassed so the user can
 /// see what they just did. Degrades to `None` when
 /// `original_console_color` is `None` for the same reason as
-/// [`effective_color`].
+/// [`get_effective_color`].
 ///
 /// # Arguments
 ///
@@ -122,7 +121,7 @@ fn effective_color(
 ///
 /// The color to paint for the flash, or `None` if no repaint is
 /// possible.
-fn flash_color(
+fn get_flash_color(
     state: ClientState,
     original_console_color: Option<CONSOLE_CHARACTER_ATTRIBUTES>,
     disabled_console_color: CONSOLE_CHARACTER_ATTRIBUTES,
@@ -555,9 +554,8 @@ async fn run(
     }
 }
 
-/// Snapshot of the console's pristine character attributes,
-/// captured before the title task or the SSH child writes any
-/// output. Returns `None` (with a warning) if the Windows API
+/// Snapshot the current console color.
+/// Returns `None` (with a warning) if the Windows API
 /// rejects the query; in that case the visuals task degrades to a
 /// no-op for every `(state, highlight)` combination.
 ///
@@ -574,7 +572,7 @@ fn capture_original_console_color(api: &dyn WindowsApi) -> Option<CONSOLE_CHARAC
         Ok(info) => return Some(info.wAttributes),
         Err(err) => {
             warn!(
-                "Failed to capture original console color; disabled-state visuals will be skipped: {}",
+                "Failed to capture original console color; state visuals will be skipped: {}",
                 err
             );
             return None;
@@ -649,8 +647,7 @@ async fn run_title_loop(api: &dyn WindowsApi, console_title: String) {
 
 /// Drives the per-client console color: tracks `state_rx` and
 /// `highlight_rx`, paints the steady-state combination, and flashes
-/// the underlying state color for [`HIGHLIGHT_FLASH_DURATION`] when
-/// the user presses `[e]`/`[d]`/`[t]` on a highlighted client.
+/// the underlying state color for [`HIGHLIGHT_FLASH_DURATION`].
 ///
 /// # Arguments
 ///
@@ -676,7 +673,7 @@ async fn run_visuals_loop(
 
     paint_console_color(
         api,
-        effective_color(
+        get_effective_color(
             prev_state,
             prev_highlight,
             original_console_color,
@@ -701,7 +698,7 @@ async fn run_visuals_loop(
                     // visual confirmation.
                     paint_console_color(
                         api,
-                        flash_color(
+                        get_flash_color(
                             next_state,
                             original_console_color,
                             disabled_console_color,
@@ -713,7 +710,7 @@ async fn run_visuals_loop(
                 } else {
                     paint_console_color(
                         api,
-                        effective_color(
+                        get_effective_color(
                             next_state,
                             prev_highlight,
                             original_console_color,
@@ -737,7 +734,7 @@ async fn run_visuals_loop(
                 flash_until = None;
                 paint_console_color(
                     api,
-                    effective_color(
+                    get_effective_color(
                         prev_state,
                         prev_highlight,
                         original_console_color,
@@ -756,7 +753,7 @@ async fn run_visuals_loop(
                 flash_until = None;
                 paint_console_color(
                     api,
-                    effective_color(
+                    get_effective_color(
                         prev_state,
                         prev_highlight,
                         original_console_color,

@@ -10,7 +10,7 @@ use windows::Win32::System::Console::{
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
 
 use crate::client::{
-    build_ssh_arguments, effective_color, flash_color, is_alt_shift_c_combination,
+    build_ssh_arguments, get_effective_color, get_flash_color, is_alt_shift_c_combination,
     paint_console_color, read_write_loop, resolve_username, run_visuals_loop, send_pid_handshake,
     write_console_input, ReadWriteResult,
 };
@@ -725,11 +725,11 @@ async fn test_read_write_loop_dispatches_highlight() -> Result<(), Box<dyn std::
 }
 
 #[test]
-fn test_effective_color_active_unhighlighted_returns_original() {
+fn test_get_effective_color_active_unhighlighted_returns_original() {
     let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
     let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
     let highlighted = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
-    let result = effective_color(
+    let result = get_effective_color(
         ClientState::Active,
         false,
         Some(original),
@@ -740,11 +740,11 @@ fn test_effective_color_active_unhighlighted_returns_original() {
 }
 
 #[test]
-fn test_effective_color_disabled_unhighlighted_returns_disabled() {
+fn test_get_effective_color_disabled_unhighlighted_returns_disabled() {
     let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
     let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
     let highlighted = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
-    let result = effective_color(
+    let result = get_effective_color(
         ClientState::Disabled,
         false,
         Some(original),
@@ -755,11 +755,11 @@ fn test_effective_color_disabled_unhighlighted_returns_disabled() {
 }
 
 #[test]
-fn test_effective_color_highlighted_active_returns_highlighted() {
+fn test_get_effective_color_highlighted_active_returns_highlighted() {
     let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
     let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
     let highlighted = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
-    let result = effective_color(
+    let result = get_effective_color(
         ClientState::Active,
         true,
         Some(original),
@@ -770,12 +770,12 @@ fn test_effective_color_highlighted_active_returns_highlighted() {
 }
 
 #[test]
-fn test_effective_color_highlighted_disabled_returns_highlighted() {
+fn test_get_effective_color_highlighted_disabled_returns_highlighted() {
     let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
     let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
     let highlighted = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
     // Highlight wins over disabled in the steady state.
-    let result = effective_color(
+    let result = get_effective_color(
         ClientState::Disabled,
         true,
         Some(original),
@@ -786,61 +786,61 @@ fn test_effective_color_highlighted_disabled_returns_highlighted() {
 }
 
 #[test]
-fn test_effective_color_active_unhighlighted_no_original_returns_none() {
+fn test_get_effective_color_active_unhighlighted_no_original_returns_none() {
     let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
     let highlighted = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
     // Missing original color = startup capture failed = degrade gracefully.
-    let result = effective_color(ClientState::Active, false, None, disabled, highlighted);
+    let result = get_effective_color(ClientState::Active, false, None, disabled, highlighted);
     assert!(result.is_none());
 }
 
 #[test]
-fn test_flash_color_active_returns_original() {
+fn test_get_flash_color_active_returns_original() {
     let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
     let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
-    let result = flash_color(ClientState::Active, Some(original), disabled);
+    let result = get_flash_color(ClientState::Active, Some(original), disabled);
     assert_eq!(result.map(|c| return c.0), Some(original.0));
 }
 
 #[test]
-fn test_flash_color_disabled_returns_disabled() {
+fn test_get_flash_color_disabled_returns_disabled() {
     let original = CONSOLE_CHARACTER_ATTRIBUTES(0x07);
     let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
-    let result = flash_color(ClientState::Disabled, Some(original), disabled);
+    let result = get_flash_color(ClientState::Disabled, Some(original), disabled);
     assert_eq!(result.map(|c| return c.0), Some(disabled.0));
 }
 
 #[test]
-fn test_flash_color_active_no_original_returns_none() {
+fn test_get_flash_color_active_no_original_returns_none() {
     let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
-    let result = flash_color(ClientState::Active, None, disabled);
+    let result = get_flash_color(ClientState::Active, None, disabled);
     assert!(result.is_none());
 }
 
 #[test]
-fn test_effective_color_highlighted_no_original_returns_none() {
+fn test_get_effective_color_highlighted_no_original_returns_none() {
     let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
     let highlighted = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
     // Without a pristine original to revert to, even the highlight
     // overlay must be suppressed - otherwise the window stays stuck
     // in the highlight color when the user leaves the submenu.
-    let result = effective_color(ClientState::Active, true, None, disabled, highlighted);
+    let result = get_effective_color(ClientState::Active, true, None, disabled, highlighted);
     assert!(result.is_none());
 }
 
 #[test]
-fn test_effective_color_disabled_no_original_returns_none() {
+fn test_get_effective_color_disabled_no_original_returns_none() {
     let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
     let highlighted = CONSOLE_CHARACTER_ATTRIBUTES(0x1F);
     // Same degrade-gracefully rule for the disabled palette.
-    let result = effective_color(ClientState::Disabled, false, None, disabled, highlighted);
+    let result = get_effective_color(ClientState::Disabled, false, None, disabled, highlighted);
     assert!(result.is_none());
 }
 
 #[test]
-fn test_flash_color_disabled_no_original_returns_none() {
+fn test_get_flash_color_disabled_no_original_returns_none() {
     let disabled = CONSOLE_CHARACTER_ATTRIBUTES(0x87);
-    let result = flash_color(ClientState::Disabled, None, disabled);
+    let result = get_flash_color(ClientState::Disabled, None, disabled);
     assert!(result.is_none());
 }
 
@@ -958,7 +958,7 @@ async fn test_visuals_flash_on_same_value_state_push_while_highlighted() {
 
     // 3 paints expected:
     // 1) initial steady-state -> highlighted (Active + highlight=true)
-    // 2) flash after same-Active push -> original (flash_color(Active))
+    // 2) flash after same-Active push -> original (get_flash_color(Active))
     // 3) flash deadline elapses -> back to highlighted steady-state
     let mock_api = mock_for_n_set_console_color_calls(3);
 
