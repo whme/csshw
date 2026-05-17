@@ -570,16 +570,16 @@ async fn test_read_write_loop_dispatches_state_change_and_input_record(
     // Initialize the watch channel with the *opposite* state so that a
     // successful dispatch is visible as a value change, not a same-value
     // replay.
-    let (state_tx, state_rx) = watch::channel(ClientState::Disabled);
-    let (highlight_tx, _highlight_rx) = watch::channel(false);
+    let (state_sender, state_receiver) = watch::channel(ClientState::Disabled);
+    let (highlight_sender, _highlight_receiver) = watch::channel(false);
     // Wait until the client side has bytes available.
     client.readable().await?;
     let result = read_write_loop(
         &mock_api,
         &client,
         &mut internal_buffer,
-        &state_tx,
-        &highlight_tx,
+        &state_sender,
+        &highlight_sender,
     )
     .await;
 
@@ -596,7 +596,7 @@ async fn test_read_write_loop_dispatches_state_change_and_input_record(
     }
     // The state byte applied through the StateChange frame must be reflected
     // in the watch channel handed back to the caller.
-    assert_eq!(*state_rx.borrow(), ClientState::Active);
+    assert_eq!(*state_receiver.borrow(), ClientState::Active);
     return Ok(());
 }
 
@@ -638,16 +638,16 @@ async fn test_read_write_loop_dispatches_disabled_state_change(
 
     let mock_api = MockWindowsApi::new();
     let mut internal_buffer: Vec<u8> = Vec::new();
-    let (state_tx, state_rx) = watch::channel(ClientState::Active);
-    let (highlight_tx, _highlight_rx) = watch::channel(false);
+    let (state_sender, state_receiver) = watch::channel(ClientState::Active);
+    let (highlight_sender, _highlight_receiver) = watch::channel(false);
 
     client.readable().await?;
     let result = read_write_loop(
         &mock_api,
         &client,
         &mut internal_buffer,
-        &state_tx,
-        &highlight_tx,
+        &state_sender,
+        &highlight_sender,
     )
     .await;
 
@@ -661,7 +661,7 @@ async fn test_read_write_loop_dispatches_disabled_state_change(
         }
         _ => panic!("expected ReadWriteResult::Success"),
     }
-    assert_eq!(*state_rx.borrow(), ClientState::Disabled);
+    assert_eq!(*state_receiver.borrow(), ClientState::Disabled);
     return Ok(());
 }
 
@@ -697,16 +697,16 @@ async fn test_read_write_loop_dispatches_highlight() -> Result<(), Box<dyn std::
 
     let mock_api = MockWindowsApi::new();
     let mut internal_buffer: Vec<u8> = Vec::new();
-    let (state_tx, _state_rx) = watch::channel(ClientState::Active);
-    let (highlight_tx, highlight_rx) = watch::channel(false);
+    let (state_sender, _state_receiver) = watch::channel(ClientState::Active);
+    let (highlight_sender, highlight_receiver) = watch::channel(false);
 
     client.readable().await?;
     let result = read_write_loop(
         &mock_api,
         &client,
         &mut internal_buffer,
-        &state_tx,
-        &highlight_tx,
+        &state_sender,
+        &highlight_sender,
     )
     .await;
 
@@ -720,7 +720,7 @@ async fn test_read_write_loop_dispatches_highlight() -> Result<(), Box<dyn std::
         }
         _ => panic!("expected ReadWriteResult::Success"),
     }
-    assert!(*highlight_rx.borrow());
+    assert!(*highlight_receiver.borrow());
     return Ok(());
 }
 
@@ -962,13 +962,13 @@ async fn test_visuals_flash_on_same_value_state_push_while_highlighted() {
     // 3) flash deadline elapses -> back to highlighted steady-state
     let mock_api = mock_for_n_set_console_color_calls(3);
 
-    let (state_tx, state_rx) = watch::channel(ClientState::Active);
-    let (highlight_tx, highlight_rx) = watch::channel(true);
+    let (state_sender, state_receiver) = watch::channel(ClientState::Active);
+    let (highlight_sender, highlight_receiver) = watch::channel(true);
 
     let visuals = run_visuals_loop(
         &mock_api,
-        state_rx,
-        highlight_rx,
+        state_receiver,
+        highlight_receiver,
         Some(original),
         disabled,
         highlighted,
@@ -977,13 +977,13 @@ async fn test_visuals_flash_on_same_value_state_push_while_highlighted() {
         // Let the loop apply the initial paint.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         // Same value: would be a no-op under the old equality guard.
-        state_tx.send_replace(ClientState::Active);
+        state_sender.send_replace(ClientState::Active);
         // Wait past `HIGHLIGHT_FLASH_DURATION` (250 ms) so the flash
         // deadline elapses and the steady-state highlight is restored.
         tokio::time::sleep(std::time::Duration::from_millis(400)).await;
         // Drop both senders to terminate the visuals loop.
-        drop(state_tx);
-        drop(highlight_tx);
+        drop(state_sender);
+        drop(highlight_sender);
     };
 
     tokio::join!(visuals, driver);
