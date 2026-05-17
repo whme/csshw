@@ -45,7 +45,7 @@ cargo xtask check-typography # ASCII-punctuation lint
 
 Always run `cargo fmt`, `cargo lint`, and both test commands before considering any task complete.
 
-## ASCII-Only Punctuation
+## Code Standards
 
 Do NOT use decorative or "smart" Unicode punctuation anywhere in the
 repo - not in code, comments, docstrings, commit messages, PR
@@ -65,16 +65,7 @@ This is enforced by `cargo xtask check-typography`, which runs in the
 pre-commit hook and CI. If the check fails, fix the offending
 characters - do NOT add to the allowlist.
 
-## Code Standards
-
-- **ASCII-only punctuation**: see the section above; this is enforced in CI
-
-### Documentation and Comments
-
-The goal is csshW's observed style, not "document everything." Match the
-density of the surrounding code; do not pad.
-
-**Docstring scope.**
+### Docstrings
 
 - **Public items** (`pub fn`, `pub struct`, public consts) and trait methods:
   one-sentence imperative summary (`Return the ...`, not `This function
@@ -92,8 +83,6 @@ density of the surrounding code; do not pad.
   when the module defines a protocol or wire format (see
   `src/serde/protocol/mod.rs`). All library modules use
   `#![doc(html_no_source)]`.
-
-**Docstring style.**
 
 ````rust
 // GOOD
@@ -125,8 +114,10 @@ pub fn get_console_window_handle(pid: u32) -> HWND { ... }
 pub fn get_console_window_handle(pid: u32) -> HWND { ... }
 ````
 
-**Inline comments.** Default to zero - ~85-90% of function bodies in this
-repo have no inline comments. Add a `//` comment only for:
+### Inline comments
+
+Default to not writing inline commends.
+Add a `//` comment only for:
 
 - Windows / platform quirks - cite the MS Learn URL or equivalent.
 - Non-obvious async ordering, race conditions, or shared-state invariants.
