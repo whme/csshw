@@ -165,6 +165,39 @@ e.g. white font on red background: 8+4+2+1+64+128 = `207`
 csshW uses pre-commit githooks to enforce good code style.<br>
 Install them via ``git config --local core.hooksPath .githooks/``.
 
+## How to record the demo
+The README's demo GIF is reproducible: `cargo xtask record-demo`
+drives a typed Rust DSL against synthesised Windows input, captures
+the desktop with vendored ffmpeg + gifski, and emits
+`target/demo/csshw.gif`. The recorder ships with two `--env`
+providers:
+- `--env sandbox` (default) boots a fresh Windows Sandbox VM,
+  normalises the desktop (wallpaper, console font, DPI), optionally
+  launches [Carnac](https://github.com/Code52/carnac) for the
+  keystroke overlay, runs the demo, and copies the GIF back to the
+  host. Prerequisites (one-time):
+  1. Windows 10/11 **Pro**, **Enterprise**, or **Education**
+     (Home does not ship Windows Sandbox).
+  2. Hardware virtualisation enabled in BIOS/UEFI.
+  3. Enable the optional feature from an elevated PowerShell and
+     reboot:
+     ```powershell
+     Enable-WindowsOptionalFeature -Online `
+       -FeatureName Containers-DisposableClientVM -All
+     ```
+- `--env local` runs on the caller's interactive session - step
+  away while it records, foreground stealing is part of the demo.
+  Use this when Windows Sandbox is unavailable (e.g. on Windows
+  Home) and in CI: GitHub-hosted runners lack the nested
+  virtualisation Windows Sandbox needs.
+
+The vendored binaries (ffmpeg, gifski, Carnac) are SHA-pinned and
+downloaded once into `target/demo/bin/` on first use. Pass
+`--no-overlay` to skip Carnac, `--no-record` to dry-run the script.
+Carnac is used unchanged under the MS-PL; see
+[`xtask/demo-assets/carnac/`](xtask/demo-assets/carnac/) for the
+attribution and license text.
+
 ## Releases
 Step by step guide to create a new release:
 - `cargo make prepare-release` and follow the instructions

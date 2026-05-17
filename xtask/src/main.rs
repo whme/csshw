@@ -7,6 +7,7 @@
 
 mod changelog;
 mod coverage;
+mod demo;
 mod inject_agent_token;
 mod readme;
 mod release;
@@ -65,6 +66,40 @@ enum Command {
     /// Scan tracked text files for forbidden decorative Unicode
     /// punctuation and fail with a list of offending locations.
     CheckTypography,
+    /// Record an automated demo of csshw and produce `target/demo/csshw.gif`.
+    ///
+    /// Two providers are wired:
+    /// - `--env sandbox` (default) boots a fresh Windows Sandbox VM
+    ///   with a normalised desktop and an optional Carnac keystroke
+    ///   overlay. Requires the `Containers-DisposableClientVM`
+    ///   Windows feature.
+    /// - `--env local` runs on the caller's interactive desktop
+    ///   session; the only path that works in CI runners (no nested
+    ///   virtualisation) and a useful local-iteration shortcut while
+    ///   the sandbox warm-up overhead is paid.
+    ///
+    /// ffmpeg, gifski, and Carnac are SHA-pinned and downloaded into
+    /// `target/demo/bin/` on first use; subsequent runs hit the warm
+    /// cache.
+    RecordDemo {
+        /// Output GIF path. Defaults to
+        /// `<workspace>/target/demo/csshw.gif`.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Recording environment provider. Defaults to `sandbox` so
+        /// `cargo xtask record-demo` is hermetic on a developer
+        /// workstation; CI must pass `--env local` explicitly.
+        #[arg(long, value_enum, default_value_t = demo::DemoEnv::Sandbox)]
+        env: demo::DemoEnv,
+        /// Skip ffmpeg capture; useful for iterating on the demo
+        /// script without burning a recording cycle.
+        #[arg(long)]
+        no_record: bool,
+        /// Skip the Carnac keystroke overlay. Has no effect with
+        /// `--env local` (Carnac is sandbox-only).
+        #[arg(long)]
+        no_overlay: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -100,6 +135,14 @@ fn main() -> Result<()> {
         }
         Command::CheckTypography => {
             typography::check_typography(&typography::RealSystem)?;
+        }
+        Command::RecordDemo {
+            out,
+            env,
+            no_record,
+            no_overlay,
+        } => {
+            demo::record_demo(&demo::RealSystem::new(), out, env, no_record, no_overlay)?;
         }
     }
     Ok(())

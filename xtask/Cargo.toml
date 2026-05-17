@@ -14,6 +14,35 @@ anyhow    = "1"
 clap      = { version = "4", features = ["derive"] }
 toml_edit = "0.21"
 semver    = "1.0"
+# Demo subcommand (record-demo): regex-based window matching.
+regex     = "1"
+# Demo subcommand: SHA-256 verification of vendored ffmpeg / gifski /
+# Carnac binaries downloaded into `target/demo/bin/`.
+sha2      = "0.10"
+# Demo subcommand: pure-Rust archive extraction.
+# - lzma-rs + tar: gifski ships as tar.xz; Windows BSD tar.exe shells
+#   out to an external `xz` binary that isn't on Windows.
+# - zip: Carnac ships as a .zip wrapping a .nupkg. PowerShell's
+#   `Expand-Archive` rejects `.nupkg` by extension and the underlying
+#   `ZipFile::ExtractToDirectory` 3-arg overload differs between
+#   .NET Framework and .NET Core, so do this in-process too.
+#   `default-features = false` drops bzip2/zstd/deflate64; the
+#   stdlib deflate decoder handles everything our pinned archives use.
+lzma-rs   = "0.3"
+tar       = "0.4"
+zip       = { version = "2", default-features = false, features = ["deflate"] }
+
+# Demo subcommand: Windows input synthesis (SendInput) and window
+# enumeration. Pinned to the same major version csshw_lib uses
+# (Cargo.toml at the workspace root) so we share a compiled copy.
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.59.0"
+features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+]
 
 [dev-dependencies]
 mockall = "0.13"
