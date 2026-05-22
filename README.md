@@ -137,6 +137,7 @@ A collection containing daemon relevant configuration
 height = 200
 aspect_ratio_adjustement = -1.0
 console_color = 207
+submenu_edge_behavior = 'clamp'
 ```
 
 ##### `height`
@@ -167,6 +168,11 @@ BACKGROUND_RED:         64
 BACKGROUND_INTENSITY:   128
 ```
 e.g. white font on red background: 8+4+2+1+64+128 = `207`
+
+##### `submenu_edge_behavior`
+Selects what happens when an arrow / `hjkl` keystroke in the `[e]nable/disable input` submenu would move the highlight past the edge of the client grid.
+* `'clamp'` (default) - the highlight stays on the current cell.
+* `'wrap'` - the highlight wraps to the opposite edge of the same row (Left/Right) or column (Up/Down).
 
 ## Contributing
 csshW uses pre-commit githooks to enforce good code style.<br>
