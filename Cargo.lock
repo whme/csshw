@@ -330,6 +330,7 @@ dependencies = [
  "svg_to_ico",
  "time",
  "tokio",
+ "toml 0.8.23",
  "windows 0.59.0",
 ]
 

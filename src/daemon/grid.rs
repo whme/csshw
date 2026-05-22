@@ -63,7 +63,7 @@ pub(super) struct ClientGrid {
 /// * `n`           - Number of client windows.
 /// * `aspect`      - `workspace_width / workspace_height` (including
 ///                   frame padding) of the available area.
-/// * `aspect_adj`  - The `aspect_ratio_adjustement` daemon config.
+/// * `aspect_adj`  - The `aspect_ratio_adjustment` daemon config.
 ///
 /// # Returns
 ///
