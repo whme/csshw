@@ -1528,7 +1528,7 @@ mod daemon_test {
     #[test]
     fn test_esc_in_active_state_is_consumed_and_resets_to_inactive() {
         use crate::utils::windows::MockWindowsApi;
-        use windows::Win32::Foundation::BOOL;
+        use windows::core::BOOL;
         use windows::Win32::System::Console::{CONSOLE_SCREEN_BUFFER_INFO, COORD, INPUT_RECORD_0};
         use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
 

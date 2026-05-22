@@ -315,7 +315,7 @@ mod create_process_api_test {
         mock_api
             .expect_create_process_raw()
             .times(1)
-            .returning(|_, _, _, _| return Err(windows::core::Error::from_win32()));
+            .returning(|_, _, _, _| return Err(windows::core::Error::from_thread()));
 
         let result = create_process(&mock_api, application, &command_line);
 

@@ -15,8 +15,8 @@ use std::ffi::OsString;
 use std::os::windows::ffi::OsStrExt;
 use std::{mem, ptr};
 
-use windows::core::{HSTRING, PCWSTR};
-use windows::Win32::Foundation::{BOOL, COLORREF, FALSE, HANDLE, HWND, LPARAM, TRUE};
+use windows::core::{BOOL, HSTRING, PCWSTR};
+use windows::Win32::Foundation::{COLORREF, FALSE, HANDLE, HWND, LPARAM, TRUE};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
 use windows::Win32::Graphics::Gdi::InvalidateRect;
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
@@ -646,7 +646,7 @@ impl WindowsApi for DefaultWindowsApi {
         if succeeded.as_bool() {
             return Ok(());
         }
-        return Err(windows::core::Error::from_win32());
+        return Err(windows::core::Error::from_thread());
     }
 
     fn write_console_input(
@@ -768,7 +768,7 @@ impl WindowsApi for DefaultWindowsApi {
         if result.as_bool() {
             return Ok(());
         } else {
-            return Err(windows::core::Error::from_win32());
+            return Err(windows::core::Error::from_thread());
         }
     }
 
