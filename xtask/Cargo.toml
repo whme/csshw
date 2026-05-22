@@ -12,7 +12,7 @@ path = "src/main.rs"
 # Shared: CLI parsing, error handling, TOML editing, semver bumps.
 anyhow    = "1"
 clap      = { version = "4", features = ["derive"] }
-toml_edit = "0.21"
+toml_edit = "0.25"
 semver    = "1.0"
 
 [dev-dependencies]

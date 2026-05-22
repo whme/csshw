@@ -438,7 +438,7 @@ pub fn determine_release_type(current: &Version, next: &Version) -> ReleaseType 
 ///
 /// Returns an error if `cargo_toml_content` cannot be parsed as TOML.
 pub fn set_cargo_toml_version(cargo_toml_content: &str, new_version: &str) -> Result<String> {
-    let mut doc: toml_edit::Document = cargo_toml_content
+    let mut doc: toml_edit::DocumentMut = cargo_toml_content
         .parse()
         .context("failed to parse Cargo.toml")?;
     doc["package"]["version"] = toml_edit::value(new_version);

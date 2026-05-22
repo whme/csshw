@@ -118,7 +118,7 @@ fn test_set_cargo_toml_version_updates_version() {
     let result = set_cargo_toml_version(&content, "1.0.0").unwrap();
 
     // Assert
-    let doc: toml_edit::Document = result.parse().unwrap();
+    let doc: toml_edit::DocumentMut = result.parse().unwrap();
     assert_eq!(doc["package"]["version"].as_str().unwrap(), "1.0.0");
 }
 
@@ -131,7 +131,7 @@ fn test_set_cargo_toml_version_preserves_other_fields() {
     let result = set_cargo_toml_version(&content, "1.0.0").unwrap();
 
     // Assert
-    let doc: toml_edit::Document = result.parse().unwrap();
+    let doc: toml_edit::DocumentMut = result.parse().unwrap();
     assert_eq!(doc["package"]["name"].as_str().unwrap(), "csshw");
     assert_eq!(doc["package"]["edition"].as_str().unwrap(), "2021");
 }

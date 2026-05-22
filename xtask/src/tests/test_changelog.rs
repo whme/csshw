@@ -70,7 +70,7 @@ fn test_set_changelogging_version_updates_version() {
     let result = set_changelogging_version(CHANGELOGGING_TOML, "1.2.3").unwrap();
 
     // Assert
-    let doc: toml_edit::Document = result.parse().unwrap();
+    let doc: toml_edit::DocumentMut = result.parse().unwrap();
     assert_eq!(doc["context"]["version"].as_str().unwrap(), "1.2.3");
 }
 
@@ -80,7 +80,7 @@ fn test_set_changelogging_version_preserves_other_keys() {
     let result = set_changelogging_version(CHANGELOGGING_TOML, "1.2.3").unwrap();
 
     // Assert
-    let doc: toml_edit::Document = result.parse().unwrap();
+    let doc: toml_edit::DocumentMut = result.parse().unwrap();
     assert_eq!(doc["context"]["name"].as_str().unwrap(), "csshw");
     assert_eq!(
         doc["context"]["url"].as_str().unwrap(),
@@ -136,6 +136,6 @@ fn test_generate_changelog_writes_correct_version() {
 
     // Assert
     let content = written.lock().unwrap().clone();
-    let doc: toml_edit::Document = content.parse().unwrap();
+    let doc: toml_edit::DocumentMut = content.parse().unwrap();
     assert_eq!(doc["context"]["version"].as_str().unwrap(), "1.2.3");
 }
