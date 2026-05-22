@@ -448,7 +448,7 @@ fn test_write_console_input() {
             virtual_key_code: 0x20, // Space key
             unicode_char: b' ' as u16,
             control_key_state: LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED,
-            api_result: Err(windows::core::Error::from_win32()),
+            api_result: Err(windows::core::Error::from_thread()),
         },
     ];
 

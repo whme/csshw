@@ -231,7 +231,7 @@ mod console_color_test {
         mock_api
             .expect_invalidate_console_window()
             .times(1)
-            .returning(|| return Err(windows::core::Error::from_win32()));
+            .returning(|| return Err(windows::core::Error::from_thread()));
 
         set_console_color(&mock_api, test_color);
     }
@@ -247,7 +247,7 @@ mod console_color_test {
             .expect_set_console_text_attribute()
             .with(mockall::predicate::eq(test_color))
             .times(1)
-            .returning(|_| return Err(windows::core::Error::from_win32()));
+            .returning(|_| return Err(windows::core::Error::from_thread()));
 
         let result = std::panic::catch_unwind(|| {
             set_console_color(&mock_api, test_color);
@@ -303,7 +303,7 @@ mod clear_screen_test {
         mock_api
             .expect_get_console_screen_buffer_info()
             .times(1)
-            .returning(|| return Err(windows::core::Error::from_win32()));
+            .returning(|| return Err(windows::core::Error::from_thread()));
 
         let result = std::panic::catch_unwind(|| {
             clear_screen(&mock_api);
@@ -371,7 +371,7 @@ mod console_border_color_test {
         api.expect_set_console_border_color()
             .with(mockall::predicate::eq(test_color))
             .times(1)
-            .returning(|_| return Err(windows::core::Error::from_win32()));
+            .returning(|_| return Err(windows::core::Error::from_thread()));
 
         let result = std::panic::catch_unwind(|| {
             set_console_border_color(&api, test_color);
@@ -455,7 +455,7 @@ mod console_input_test {
             ..Default::default()
         };
         let mut key_event_record = KEY_EVENT_RECORD {
-            bKeyDown: windows::Win32::Foundation::BOOL(1),
+            bKeyDown: windows::core::BOOL(1),
             wRepeatCount: 1,
             wVirtualKeyCode: 0x41,
             wVirtualScanCode: 0x1E,
@@ -522,7 +522,7 @@ mod console_input_test {
             .expect_read_console_input()
             .with(mockall::predicate::always())
             .times(1)
-            .returning(|_| return Err(windows::core::Error::from_win32()));
+            .returning(|_| return Err(windows::core::Error::from_thread()));
 
         let result = std::panic::catch_unwind(|| {
             read_console_input(&mock_api);
