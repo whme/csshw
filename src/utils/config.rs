@@ -7,6 +7,24 @@ use windows::Win32::System::Console::{
     FOREGROUND_INTENSITY, FOREGROUND_RED,
 };
 
+/// Behavior when an arrow / `hjkl` keystroke would move the
+/// enable/disable submenu's selection past the edge of the client grid.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum EdgeBehavior {
+    /// Keep the current selection on edge keystrokes (default).
+    Clamp,
+    /// Wrap to the opposite edge of the same row (Left/Right) or column
+    /// (Up/Down).
+    Wrap,
+}
+
+impl Default for EdgeBehavior {
+    fn default() -> Self {
+        return EdgeBehavior::Clamp;
+    }
+}
+
 /// Default console color applied when a client is in the
 /// `Disabled` state.
 ///
@@ -295,6 +313,13 @@ pub struct DaemonConfig {
     ///
     /// [1]: https://learn.microsoft.com/en-us/windows/console/console-screen-buffers#character-attributes
     pub console_color: u16,
+    /// Behavior when an arrow / `hjkl` keystroke would move the
+    /// enable/disable submenu's selection past the edge of the client grid.
+    ///
+    /// * `clamp` (default) - keep the current selection.
+    /// * `wrap` - wrap to the opposite edge of the same row (Left/Right)
+    ///   or column (Up/Down).
+    pub submenu_edge_behavior: EdgeBehavior,
 }
 
 impl Default for DaemonConfig {
@@ -304,8 +329,9 @@ impl Default for DaemonConfig {
     ///
     /// `DaemonConfig` with the following values:
     /// * `height`                      - `200`
-    /// * `aspect_ratio_adjustment`    - `-1.0`
+    /// * `aspect_ratio_adjustement`   - `-1.0`
     /// * `console_color`               - `207`
+    /// * `submenu_edge_behavior`       - `clamp`
     fn default() -> Self {
         return DaemonConfig {
             height: 200,
@@ -317,6 +343,7 @@ impl Default for DaemonConfig {
                 | BACKGROUND_INTENSITY
                 | BACKGROUND_RED)
                 .0,
+            submenu_edge_behavior: EdgeBehavior::default(),
         };
     }
 }
@@ -331,6 +358,8 @@ pub struct DaemonConfigOpt {
     pub aspect_ratio_adjustement: Option<f64>,
     #[allow(missing_docs)]
     pub console_color: Option<u16>,
+    #[allow(missing_docs)]
+    pub submenu_edge_behavior: Option<EdgeBehavior>,
 }
 
 impl Default for DaemonConfigOpt {
@@ -349,6 +378,9 @@ impl From<DaemonConfigOpt> for DaemonConfig {
                 .aspect_ratio_adjustement
                 .unwrap_or(default.aspect_ratio_adjustement),
             console_color: val.console_color.unwrap_or(default.console_color),
+            submenu_edge_behavior: val
+                .submenu_edge_behavior
+                .unwrap_or(default.submenu_edge_behavior),
         };
     }
 }
@@ -360,6 +392,7 @@ impl From<DaemonConfig> for DaemonConfigOpt {
             height: Some(val.height),
             aspect_ratio_adjustement: Some(val.aspect_ratio_adjustement),
             console_color: Some(val.console_color),
+            submenu_edge_behavior: Some(val.submenu_edge_behavior),
         };
     }
 }

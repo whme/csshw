@@ -23,9 +23,11 @@ mod daemon_test {
     use crate::{
         daemon::{
             classify_control_mode_key, classify_enable_disable_submenu_key, expand_hosts,
-            named_pipe_server_routine, next_submenu_pid, resolve_cluster_tags, Client, Clients,
-            ControlModeAction, ControlModeState, Daemon, EnableDisableSubmenuAction, HWNDWrapper,
-            NavigationDirection,
+            grid::{grid_dimensions, ClientGrid},
+            named_pipe_server_routine, next_submenu_selection, resolve_cluster_tags,
+            workspace::WorkspaceArea,
+            Client, Clients, ControlModeAction, ControlModeState, Daemon,
+            EnableDisableSubmenuAction, HWNDWrapper, NavigationDirection,
         },
         protocol::{
             serialization::serialize_pid, ClientState, FRAMED_HIGHLIGHT_LENGTH,
@@ -34,10 +36,25 @@ mod daemon_test {
             TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
         },
         utils::{
-            config::{Cluster, DaemonConfig},
+            config::{Cluster, DaemonConfig, EdgeBehavior},
             constants::PIPE_NAME,
         },
     };
+
+    /// Stable 16:9 workspace fixture used by the submenu dispatch tests so
+    /// `grid_dimensions` is deterministic regardless of host monitor size.
+    fn test_workspace_area() -> WorkspaceArea {
+        return WorkspaceArea {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+            x_fixed_frame: 0,
+            y_fixed_frame: 0,
+            x_size_frame: 0,
+            y_size_frame: 0,
+        };
+    }
 
     /// Send `pid` as a 4 byte little-endian sequence to the pipe server.
     ///
@@ -69,6 +86,7 @@ mod daemon_test {
             process_id: pid,
             state_sender: watch::channel(ClientState::Active).0,
             highlight_sender: watch::channel(false).0,
+            tile_index: 0,
         });
         return Arc::new(Mutex::new(clients));
     }
@@ -612,6 +630,7 @@ mod daemon_test {
             process_id: pid,
             state_sender: state_sender.clone(),
             highlight_sender: watch::channel(false).0,
+            tile_index: 0,
         });
         return (Arc::new(Mutex::new(clients)), state_sender);
     }
@@ -911,6 +930,7 @@ mod daemon_test {
                 process_id: pid,
                 state_sender: watch::channel(ClientState::Active).0,
                 highlight_sender: watch::channel(false).0,
+                tile_index: 0,
             };
         };
         clients.push(make_client(1000));
@@ -930,6 +950,7 @@ mod daemon_test {
             process_id: 1000,
             state_sender: watch::channel(ClientState::Active).0,
             highlight_sender: watch::channel(false).0,
+            tile_index: 0,
         };
         let client_b = Client {
             hostname: "host-b".to_owned(),
@@ -938,6 +959,7 @@ mod daemon_test {
             process_id: 2000,
             state_sender: watch::channel(ClientState::Active).0,
             highlight_sender: watch::channel(false).0,
+            tile_index: 0,
         };
         let client_c = Client {
             hostname: "host-c".to_owned(),
@@ -946,6 +968,7 @@ mod daemon_test {
             process_id: 3000,
             state_sender: watch::channel(ClientState::Active).0,
             highlight_sender: watch::channel(false).0,
+            tile_index: 0,
         };
 
         clients.push(client_a);
@@ -983,6 +1006,8 @@ mod daemon_test {
             process_id: pid,
             state_sender: watch::channel(state).0,
             highlight_sender: watch::channel(false).0,
+            // Overwritten by `Clients::push` to its dense list-position.
+            tile_index: 0,
         };
     }
 
@@ -1140,12 +1165,14 @@ mod daemon_test {
             &clusters,
             ControlModeState::EnableDisableSubmenu {
                 highlighted_pid: Some(1),
+                anchor_col: Some(0),
             },
         );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_no_calls(),
             &clients,
+            &test_workspace_area(),
             submenu_key_event(VK_E),
         );
 
@@ -1183,12 +1210,14 @@ mod daemon_test {
             &clusters,
             ControlModeState::EnableDisableSubmenu {
                 highlighted_pid: Some(1),
+                anchor_col: Some(0),
             },
         );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_no_calls(),
             &clients,
+            &test_workspace_area(),
             submenu_key_event(VK_D),
         );
 
@@ -1227,12 +1256,14 @@ mod daemon_test {
             &clusters,
             ControlModeState::EnableDisableSubmenu {
                 highlighted_pid: Some(1),
+                anchor_col: Some(0),
             },
         );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_no_calls(),
             &clients,
+            &test_workspace_area(),
             submenu_key_event(VK_T),
         );
         assert_eq!(
@@ -1254,6 +1285,7 @@ mod daemon_test {
         daemon.handle_enable_disable_submenu_key(
             &mock_no_calls(),
             &clients,
+            &test_workspace_area(),
             submenu_key_event(VK_T),
         );
         assert_eq!(snapshot_states(&clients.lock().unwrap()), initial);
@@ -1282,12 +1314,14 @@ mod daemon_test {
             &clusters,
             ControlModeState::EnableDisableSubmenu {
                 highlighted_pid: Some(1),
+                anchor_col: Some(0),
             },
         );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_no_calls(),
             &clients,
+            &test_workspace_area(),
             submenu_key_event(VK_X),
         );
 
@@ -1314,12 +1348,14 @@ mod daemon_test {
             &clusters,
             ControlModeState::EnableDisableSubmenu {
                 highlighted_pid: None,
+                anchor_col: None,
             },
         );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_no_calls(),
             &clients,
+            &test_workspace_area(),
             submenu_key_event(VK_E),
         );
 
@@ -1462,12 +1498,14 @@ mod daemon_test {
             &clusters,
             ControlModeState::EnableDisableSubmenu {
                 highlighted_pid: Some(1),
+                anchor_col: Some(0),
             },
         );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_no_calls(),
             &clients,
+            &test_workspace_area(),
             submenu_key_event_with_state(VK_E, CAPSLOCK_ON | NUMLOCK_ON | ENHANCED_KEY),
         );
 
@@ -1548,6 +1586,7 @@ mod daemon_test {
             &clusters,
             ControlModeState::EnableDisableSubmenu {
                 highlighted_pid: Some(3),
+                anchor_col: Some(0),
             },
         );
 
@@ -1569,68 +1608,164 @@ mod daemon_test {
         assert_eq!(daemon.control_mode_state, ControlModeState::Inactive);
     }
 
-    /// Verifies that `next_submenu_pid` advances by one on
-    /// `Down`/`Right` and clamps at the last surviving client.
-    #[test]
-    fn test_next_submenu_pid_down_right_clamp_at_last() {
-        let mut clients = Clients::new();
-        clients.push(make_client_with_state(1, ClientState::Active));
-        clients.push(make_client_with_state(2, ClientState::Active));
-        clients.push(make_client_with_state(3, ClientState::Active));
-
-        assert_eq!(
-            next_submenu_pid(&clients, Some(1), NavigationDirection::Down),
-            Some(2)
-        );
-        assert_eq!(
-            next_submenu_pid(&clients, Some(2), NavigationDirection::Right),
-            Some(3)
-        );
-        // Clamp at the last client - no wrap.
-        assert_eq!(
-            next_submenu_pid(&clients, Some(3), NavigationDirection::Down),
-            Some(3)
-        );
-        assert_eq!(
-            next_submenu_pid(&clients, Some(3), NavigationDirection::Right),
-            Some(3)
+    /// Returns the dense 3x2 grid `[1,2,3 / 4,5,6]` used by the basic
+    /// horizontal/vertical step tests.
+    fn dense_3x2_grid() -> ClientGrid {
+        return ClientGrid::from_tiled_pids(
+            &[(1, 0), (2, 1), (3, 2), (4, 3), (5, 4), (6, 5)],
+            6,
+            3,
+            2,
         );
     }
 
-    /// Verifies that `next_submenu_pid` steps back by one on
-    /// `Up`/`Left` and clamps at the first surviving client rather
-    /// than wrapping.
+    /// Verifies horizontal stepping (Left/Right) clamps at the row edges
+    /// when `EdgeBehavior::Clamp` is set.
     #[test]
-    fn test_next_submenu_pid_up_left_clamp_at_first() {
-        let mut clients = Clients::new();
-        clients.push(make_client_with_state(1, ClientState::Active));
-        clients.push(make_client_with_state(2, ClientState::Active));
-        clients.push(make_client_with_state(3, ClientState::Active));
-
+    fn test_next_submenu_selection_horizontal_clamp() {
+        let grid = dense_3x2_grid();
         assert_eq!(
-            next_submenu_pid(&clients, Some(3), NavigationDirection::Up),
-            Some(2)
+            next_submenu_selection(
+                &grid,
+                Some(1),
+                Some(0),
+                NavigationDirection::Right,
+                EdgeBehavior::Clamp,
+            ),
+            (Some(2), Some(1)),
         );
         assert_eq!(
-            next_submenu_pid(&clients, Some(2), NavigationDirection::Left),
-            Some(1)
+            next_submenu_selection(
+                &grid,
+                Some(3),
+                Some(2),
+                NavigationDirection::Right,
+                EdgeBehavior::Clamp,
+            ),
+            (Some(3), Some(2)),
+            "Right at the right edge clamps in place",
         );
-        // Clamp at the first client - no wrap.
         assert_eq!(
-            next_submenu_pid(&clients, Some(1), NavigationDirection::Up),
-            Some(1)
-        );
-        assert_eq!(
-            next_submenu_pid(&clients, Some(1), NavigationDirection::Left),
-            Some(1)
+            next_submenu_selection(
+                &grid,
+                Some(1),
+                Some(0),
+                NavigationDirection::Left,
+                EdgeBehavior::Clamp,
+            ),
+            (Some(1), Some(0)),
+            "Left at the left edge clamps in place",
         );
     }
 
-    /// Verifies that `next_submenu_pid` returns `None` for an empty
-    /// cluster regardless of direction.
+    /// Regression: a clamped horizontal no-op must preserve the
+    /// in-flight anchor column. A prior vertical snap into a gap can
+    /// leave `anchor_col` pointing at a different column than the
+    /// current cell; re-aligning the anchor to the current cell on a
+    /// clamped Left/Right keypress would silently break the "anchor
+    /// carried across vertical moves" invariant the next Up/Down
+    /// relies on.
     #[test]
-    fn test_next_submenu_pid_empty_clients_returns_none() {
-        let clients = Clients::new();
+    fn test_next_submenu_selection_horizontal_clamp_preserves_anchor() {
+        let grid = dense_3x2_grid();
+        assert_eq!(
+            next_submenu_selection(
+                &grid,
+                Some(1),
+                Some(2),
+                NavigationDirection::Left,
+                EdgeBehavior::Clamp,
+            ),
+            (Some(1), Some(2)),
+            "Left clamp keeps the stale anchor, not the cell's own column",
+        );
+        assert_eq!(
+            next_submenu_selection(
+                &grid,
+                Some(3),
+                Some(0),
+                NavigationDirection::Right,
+                EdgeBehavior::Clamp,
+            ),
+            (Some(3), Some(0)),
+            "Right clamp keeps the stale anchor, not the cell's own column",
+        );
+    }
+
+    /// Verifies vertical stepping (Up/Down) clamps at the top/bottom row
+    /// when `EdgeBehavior::Clamp` is set.
+    #[test]
+    fn test_next_submenu_selection_vertical_clamp() {
+        let grid = dense_3x2_grid();
+        assert_eq!(
+            next_submenu_selection(
+                &grid,
+                Some(2),
+                Some(1),
+                NavigationDirection::Down,
+                EdgeBehavior::Clamp,
+            ),
+            (Some(5), Some(1)),
+            "Down preserves the anchor column",
+        );
+        assert_eq!(
+            next_submenu_selection(
+                &grid,
+                Some(5),
+                Some(1),
+                NavigationDirection::Down,
+                EdgeBehavior::Clamp,
+            ),
+            (Some(5), Some(1)),
+            "Down at the bottom row clamps in place",
+        );
+        assert_eq!(
+            next_submenu_selection(
+                &grid,
+                Some(1),
+                Some(0),
+                NavigationDirection::Up,
+                EdgeBehavior::Clamp,
+            ),
+            (Some(1), Some(0)),
+            "Up at the top row clamps in place",
+        );
+    }
+
+    /// Verifies wrap edge behavior wraps horizontally within a row and
+    /// vertically within a column.
+    #[test]
+    fn test_next_submenu_selection_wrap() {
+        let grid = dense_3x2_grid();
+        assert_eq!(
+            next_submenu_selection(
+                &grid,
+                Some(3),
+                Some(2),
+                NavigationDirection::Right,
+                EdgeBehavior::Wrap,
+            ),
+            (Some(1), Some(0)),
+            "Right at the right edge wraps to the leftmost of the same row",
+        );
+        assert_eq!(
+            next_submenu_selection(
+                &grid,
+                Some(1),
+                Some(0),
+                NavigationDirection::Up,
+                EdgeBehavior::Wrap,
+            ),
+            (Some(4), Some(0)),
+            "Up at the top row wraps to the bottom of the same column",
+        );
+    }
+
+    /// Verifies an empty grid returns `(None, None)` regardless of
+    /// direction.
+    #[test]
+    fn test_next_submenu_selection_empty_grid_returns_none() {
+        let grid = ClientGrid::from_tiled_pids(&[], 0, 1, 1);
 
         for direction in [
             NavigationDirection::Up,
@@ -1638,9 +1773,182 @@ mod daemon_test {
             NavigationDirection::Left,
             NavigationDirection::Right,
         ] {
-            assert_eq!(next_submenu_pid(&clients, None, direction), None);
-            assert_eq!(next_submenu_pid(&clients, Some(1), direction), None);
+            assert_eq!(
+                next_submenu_selection(&grid, None, None, direction, EdgeBehavior::Clamp,),
+                (None, None),
+            );
+            assert_eq!(
+                next_submenu_selection(&grid, Some(1), Some(0), direction, EdgeBehavior::Clamp,),
+                (None, None),
+            );
         }
+    }
+
+    /// Verifies that a Down+Up roundtrip across the partial-last-row
+    /// boundary returns to the starting cell from every upper-row
+    /// column. With 7 cells laid out as 4 cols x 2 rows (last row has 3
+    /// cells stretched to span the full width), Down lands on the
+    /// last-row cell whose x-extent contains the anchor column's
+    /// centerline, and Up returns to the original column because the
+    /// anchor is preserved across the vertical step.
+    #[test]
+    fn test_grid_down_up_roundtrip_partial_last_row() {
+        let grid = ClientGrid::from_tiled_pids(
+            &[
+                (10, 0),
+                (20, 1),
+                (30, 2),
+                (40, 3),
+                (50, 4),
+                (60, 5),
+                (70, 6),
+            ],
+            7,
+            4,
+            2,
+        );
+
+        for start in [10u32, 20, 30, 40] {
+            let start_col = grid.cell(start).unwrap().col;
+            let (mid_pid, mid_anchor) = next_submenu_selection(
+                &grid,
+                Some(start),
+                Some(start_col),
+                NavigationDirection::Down,
+                EdgeBehavior::Clamp,
+            );
+            let (round_pid, _) = next_submenu_selection(
+                &grid,
+                mid_pid,
+                mid_anchor,
+                NavigationDirection::Up,
+                EdgeBehavior::Clamp,
+            );
+            assert_eq!(
+                round_pid,
+                Some(start),
+                "Down+Up from upper-row col {start_col} must return to PID {start}",
+            );
+        }
+    }
+
+    /// Verifies that re-anchoring kicks in when `current_pid` is gone
+    /// from the grid (the case the background `retain` produces) and
+    /// returns the first surviving cell with a fresh anchor.
+    #[test]
+    fn test_next_submenu_selection_reanchors_on_missing_pid() {
+        let grid = ClientGrid::from_tiled_pids(&[(1, 0), (2, 1), (3, 2)], 3, 3, 1);
+
+        assert_eq!(
+            next_submenu_selection(
+                &grid,
+                Some(999),
+                Some(2),
+                NavigationDirection::Up,
+                EdgeBehavior::Clamp,
+            ),
+            (Some(1), Some(0)),
+            "missing PID must re-anchor on the first surviving cell with anchor reset to its col",
+        );
+    }
+
+    /// Verifies the grid-dimension formula stays in sync with the
+    /// tiler. The tiler is the spec.
+    #[test]
+    fn test_grid_dimensions_matches_tiler_formula() {
+        // aspect ratio 1.78 ~ 16:9, adjustment 0.0 (square-ish).
+        assert_eq!(grid_dimensions(7, 1.78, 0.0), (4, 2));
+        assert_eq!(grid_dimensions(9, 1.78, 0.0), (5, 2));
+        assert_eq!(grid_dimensions(1, 1.78, 0.0), (1, 1));
+    }
+
+    /// Regression: when a client window closes without a retile, the
+    /// surviving windows do not move on screen. The navigation grid
+    /// must therefore preserve their original tile indices and the
+    /// layout's original `n`, so that horizontal navigation across the
+    /// gap matches what the user sees.
+    #[test]
+    fn test_grid_preserves_layout_after_retain() {
+        // 6 cells laid out 3x2; client 1 closes without retile.
+        let grid = ClientGrid::from_tiled_pids(&[(2, 1), (3, 2), (4, 3), (5, 4), (6, 5)], 6, 3, 2);
+
+        // Client 2 keeps its original cell (row 0, col 1).
+        let cell_2 = grid.cell(2).unwrap();
+        assert_eq!((cell_2.row, cell_2.col), (0, 1));
+
+        // Right from client 2 lands on client 3 at (row 0, col 2), not
+        // on client 4 across the row boundary.
+        assert_eq!(
+            next_submenu_selection(
+                &grid,
+                Some(2),
+                Some(1),
+                NavigationDirection::Right,
+                EdgeBehavior::Clamp,
+            ),
+            (Some(3), Some(2)),
+        );
+        // And Right from client 3 clamps in place (row 0 still has no
+        // surviving cell at col 3).
+        assert_eq!(
+            next_submenu_selection(
+                &grid,
+                Some(3),
+                Some(2),
+                NavigationDirection::Right,
+                EdgeBehavior::Clamp,
+            ),
+            (Some(3), Some(2)),
+        );
+    }
+
+    /// Vertical step into a row whose anchor-column cell has been
+    /// closed lands on the nearest surviving cell in that row.
+    #[test]
+    fn test_grid_vertical_snap_into_gap() {
+        // 6 cells laid out 3x2; close client 5 (row 1, col 1).
+        let grid = ClientGrid::from_tiled_pids(&[(1, 0), (2, 1), (3, 2), (4, 3), (6, 5)], 6, 3, 2);
+
+        // Down from client 2 (anchor col=1) would target row 1 col 1,
+        // but that cell is gone. Snap to nearest surviving cell in row
+        // 1: client 4 (col 0, distance 1) wins the tiebreak against
+        // client 6 (col 2, distance 1) by having the smaller col.
+        assert_eq!(
+            next_submenu_selection(
+                &grid,
+                Some(2),
+                Some(1),
+                NavigationDirection::Down,
+                EdgeBehavior::Clamp,
+            ),
+            (Some(4), Some(1)),
+            "Down into a gap snaps to nearest by col, tiebreak left",
+        );
+    }
+
+    /// `Clients::reset_tile_layout` makes the grid match a freshly
+    /// retiled screen: dense `tile_index` values and an updated
+    /// `layout_n`.
+    #[test]
+    fn test_clients_reset_tile_layout_dense_renumber() {
+        let mut clients = Clients::new();
+        for pid in [10u32, 20, 30, 40, 50, 60] {
+            clients.push(make_client_with_state(pid, ClientState::Active));
+        }
+        // Drop two clients without retile.
+        clients.retain(|c| return c.process_id != 20 && c.process_id != 50);
+        // The surviving clients keep their original tile_index.
+        let pre_retile: Vec<usize> = clients.iter().map(|c| return c.tile_index).collect();
+        assert_eq!(pre_retile, vec![0, 2, 3, 5]);
+        assert_eq!(clients.layout_n, 6);
+
+        // Simulate a retile.
+        let surviving_pids: Vec<u32> = clients.iter().map(|c| return c.process_id).collect();
+        clients.reset_tile_layout(&surviving_pids);
+
+        let post_retile: Vec<usize> = clients.iter().map(|c| return c.tile_index).collect();
+        assert_eq!(post_retile, vec![0, 1, 2, 3]);
+        assert_eq!(clients.layout_n, 4);
     }
 
     /// Verifies that the dispatch arm for `Navigate(Down)` calls
@@ -1661,19 +1969,22 @@ mod daemon_test {
             &clusters,
             ControlModeState::EnableDisableSubmenu {
                 highlighted_pid: Some(1),
+                anchor_col: Some(0),
             },
         );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_with_clear_screen(),
             &clients,
+            &test_workspace_area(),
             submenu_key_event(VK_DOWN),
         );
 
         assert_eq!(
             daemon.control_mode_state,
             ControlModeState::EnableDisableSubmenu {
-                highlighted_pid: Some(2)
+                highlighted_pid: Some(2),
+                anchor_col: Some(0),
             }
         );
     }
@@ -1696,12 +2007,14 @@ mod daemon_test {
             &clusters,
             ControlModeState::EnableDisableSubmenu {
                 highlighted_pid: Some(2),
+                anchor_col: Some(0),
             },
         );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_no_calls(),
             &clients,
+            &test_workspace_area(),
             submenu_key_event(VK_E),
         );
 
@@ -1771,19 +2084,22 @@ mod daemon_test {
             &clusters,
             ControlModeState::EnableDisableSubmenu {
                 highlighted_pid: Some(1),
+                anchor_col: Some(0),
             },
         );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_with_clear_screen(),
             &clients,
+            &test_workspace_area(),
             submenu_key_event(VK_DOWN),
         );
 
         assert_eq!(
             daemon.control_mode_state,
             ControlModeState::EnableDisableSubmenu {
-                highlighted_pid: Some(2)
+                highlighted_pid: Some(2),
+                anchor_col: Some(0),
             }
         );
         assert_eq!(
@@ -1812,6 +2128,7 @@ mod daemon_test {
             &clusters,
             ControlModeState::EnableDisableSubmenu {
                 highlighted_pid: Some(2),
+                anchor_col: Some(0),
             },
         );
 
@@ -1856,6 +2173,7 @@ mod daemon_test {
             &clusters,
             ControlModeState::EnableDisableSubmenu {
                 highlighted_pid: Some(1),
+                anchor_col: Some(0),
             },
         );
 
@@ -1900,6 +2218,7 @@ mod daemon_test {
             &clusters,
             ControlModeState::EnableDisableSubmenu {
                 highlighted_pid: Some(2),
+                anchor_col: Some(0),
             },
         );
 
@@ -1944,19 +2263,22 @@ mod daemon_test {
             &clusters,
             ControlModeState::EnableDisableSubmenu {
                 highlighted_pid: Some(3),
+                anchor_col: Some(0),
             },
         );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_with_clear_screen(),
             &clients,
+            &test_workspace_area(),
             submenu_key_event(VK_UP),
         );
 
         assert_eq!(
             daemon.control_mode_state,
             ControlModeState::EnableDisableSubmenu {
-                highlighted_pid: Some(1)
+                highlighted_pid: Some(1),
+                anchor_col: Some(0),
             },
             "Up navigation from a stale PID must re-anchor on the surviving client",
         );

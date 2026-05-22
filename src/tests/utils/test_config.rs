@@ -5,6 +5,7 @@
 
 use crate::utils::config::{
     ClientConfig, ClientConfigOpt, Cluster, Config, ConfigOpt, DaemonConfig, DaemonConfigOpt,
+    EdgeBehavior,
 };
 
 /// Test module for ClientConfig functionality.
@@ -196,12 +197,14 @@ mod daemon_config_test {
             height: 300,
             aspect_ratio_adjustement: 0.5,
             console_color: 15, // White on black
+            submenu_edge_behavior: EdgeBehavior::Wrap,
         };
 
         let config_opt: DaemonConfigOpt = DaemonConfigOpt {
             height: Some(daemon_config.height),
             aspect_ratio_adjustement: Some(daemon_config.aspect_ratio_adjustement),
             console_color: Some(daemon_config.console_color),
+            submenu_edge_behavior: Some(daemon_config.submenu_edge_behavior),
         };
         let converted_back: DaemonConfig = config_opt.into();
 
@@ -211,6 +214,10 @@ mod daemon_config_test {
             daemon_config.aspect_ratio_adjustement
         );
         assert_eq!(converted_back.console_color, daemon_config.console_color);
+        assert_eq!(
+            converted_back.submenu_edge_behavior,
+            daemon_config.submenu_edge_behavior
+        );
     }
 
     #[test]
@@ -219,6 +226,7 @@ mod daemon_config_test {
             height: Some(150),
             aspect_ratio_adjustement: None,
             console_color: Some(112),
+            submenu_edge_behavior: None,
         };
 
         let daemon_config: DaemonConfig = config_opt.into();
@@ -230,6 +238,30 @@ mod daemon_config_test {
             default_config.aspect_ratio_adjustement
         ); // Should use default
         assert_eq!(daemon_config.console_color, 112);
+        assert_eq!(
+            daemon_config.submenu_edge_behavior,
+            default_config.submenu_edge_behavior
+        );
+    }
+
+    #[test]
+    fn test_daemon_config_default_submenu_edge_behavior_is_clamp() {
+        assert_eq!(
+            DaemonConfig::default().submenu_edge_behavior,
+            EdgeBehavior::Clamp
+        );
+    }
+
+    #[test]
+    fn test_daemon_config_opt_wrap_round_trip() {
+        let config_opt = DaemonConfigOpt {
+            height: None,
+            aspect_ratio_adjustement: None,
+            console_color: None,
+            submenu_edge_behavior: Some(EdgeBehavior::Wrap),
+        };
+        let daemon_config: DaemonConfig = config_opt.into();
+        assert_eq!(daemon_config.submenu_edge_behavior, EdgeBehavior::Wrap);
     }
 }
 
@@ -356,6 +388,7 @@ mod config_test {
                 height: 250,
                 aspect_ratio_adjustement: 0.5,
                 console_color: 15,
+                submenu_edge_behavior: EdgeBehavior::Clamp,
             },
         };
 
@@ -375,6 +408,7 @@ mod config_test {
                 height: Some(original_config.daemon.height),
                 aspect_ratio_adjustement: Some(original_config.daemon.aspect_ratio_adjustement),
                 console_color: Some(original_config.daemon.console_color),
+                submenu_edge_behavior: Some(original_config.daemon.submenu_edge_behavior),
             }),
         };
         let converted_back: Config = config_opt.into();
@@ -406,6 +440,7 @@ mod config_test {
                 height: Some(300),
                 aspect_ratio_adjustement: None, // Should use default
                 console_color: Some(112),
+                submenu_edge_behavior: None,
             }),
         };
 
@@ -495,6 +530,7 @@ mod config_integration_test {
                 height: 180,
                 aspect_ratio_adjustement: -0.8,
                 console_color: 240,
+                submenu_edge_behavior: EdgeBehavior::Wrap,
             },
         };
 
@@ -513,6 +549,7 @@ mod config_integration_test {
                 height: Some(original.daemon.height),
                 aspect_ratio_adjustement: Some(original.daemon.aspect_ratio_adjustement),
                 console_color: Some(original.daemon.console_color),
+                submenu_edge_behavior: Some(original.daemon.submenu_edge_behavior),
             }),
         };
         let roundtrip: Config = config_opt.into();
@@ -551,6 +588,10 @@ mod config_integration_test {
         assert_eq!(
             roundtrip.daemon.console_color,
             original.daemon.console_color
+        );
+        assert_eq!(
+            roundtrip.daemon.submenu_edge_behavior,
+            original.daemon.submenu_edge_behavior
         );
     }
 

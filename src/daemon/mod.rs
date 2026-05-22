@@ -4,7 +4,6 @@
 #![allow(clippy::needless_return, clippy::doc_overindented_list_items)]
 #![warn(missing_docs)]
 
-use std::cmp::max;
 use std::collections::HashMap;
 use std::{
     io,
@@ -21,7 +20,7 @@ use crate::protocol::{
     SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH, TAG_HIGHLIGHT, TAG_INPUT_RECORD,
     TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
 };
-use crate::utils::config::{Cluster, DaemonConfig};
+use crate::utils::config::{Cluster, DaemonConfig, EdgeBehavior};
 use crate::utils::debug::StringRepr;
 use crate::utils::windows::{clear_screen, set_console_color, WindowsApi};
 use crate::{
@@ -60,8 +59,10 @@ use windows::Win32::{
     System::{Console::ENABLE_PROCESSED_INPUT, Threading::PROCESS_QUERY_INFORMATION},
 };
 
+use self::grid::{grid_dimensions, ClientGrid};
 use self::workspace::WorkspaceArea;
 
+mod grid;
 mod workspace;
 
 /// The capacity of the broadcast channel used
@@ -226,6 +227,11 @@ struct Client {
     /// the client is the daemon's currently selected submenu client.
     /// Visual only; input gating uses [`Client::state_sender`].
     highlight_sender: watch::Sender<bool>,
+    /// Index passed to [`arrange_client_window`] when this client's
+    /// on-screen position was last computed. Survives
+    /// [`Clients::retain`] so the submenu navigation grid keeps
+    /// matching the visible layout until the next retile.
+    tile_index: usize,
 }
 
 unsafe impl Send for Client {}
@@ -242,6 +248,13 @@ struct Clients {
     list: Vec<Client>,
     /// Maps a client's process id to its index in [`list`](Clients::list).
     pid_index: HashMap<u32, usize>,
+    /// `number_of_consoles` value the current on-screen layout was
+    /// computed with. Drives [`grid_dimensions`] for the submenu nav.
+    /// Updated when the tiler positions windows
+    /// ([`Clients::reset_tile_layout`]); preserved across
+    /// [`Clients::retain`] so a closed-but-not-retiled window leaves
+    /// a visible gap in the grid too.
+    layout_n: usize,
 }
 
 impl Clients {
@@ -250,6 +263,7 @@ impl Clients {
         return Clients {
             list: Vec::new(),
             pid_index: HashMap::new(),
+            layout_n: 0,
         };
     }
 
@@ -264,15 +278,56 @@ impl Clients {
     ///
     /// Panics if a client with the same process id is already present, as
     /// duplicate PIDs indicate broken daemon bookkeeping.
-    fn push(&mut self, client: Client) {
+    fn push(&mut self, mut client: Client) {
         let index = self.list.len();
         assert!(
             !self.pid_index.contains_key(&client.process_id),
             "Duplicate client PID {} - daemon bookkeeping broken",
             client.process_id,
         );
+        // Push assumes the new client occupies the next cell in a dense
+        // layout - matching what the tiler does at initial launch and
+        // right after `[c]reate`. `retain` leaves these values alone so
+        // closed-but-not-retiled gaps stay visible to the navigation
+        // grid. The next retile renumbers everything dense again.
+        client.tile_index = index;
         self.pid_index.insert(client.process_id, index);
         self.list.push(client);
+        self.layout_n = self.list.len();
+    }
+
+    /// Reassigns dense [`Client::tile_index`] values to `valid_pids` in
+    /// the supplied order and snapshots the new [`Clients::layout_n`].
+    ///
+    /// Called by [`Daemon::rearrange_client_windows`] right before it
+    /// re-positions the actual windows on screen, so navigation reads
+    /// the same layout the tiler just applied.
+    ///
+    /// Invariant: `valid_pids` must cover every PID currently tracked
+    /// in `self.list`. Passing a strict subset (e.g. a liveness-filtered
+    /// list) would shrink `layout_n` while leaving stale `tile_index >=
+    /// layout_n` values on the excluded clients, breaking the
+    /// [`ClientGrid`] built from this collection. Drop dead clients
+    /// via [`Clients::retain`] before retiling.
+    ///
+    /// # Arguments
+    ///
+    /// * `valid_pids` - PIDs of the clients that will be tiled, in the
+    ///                  order they will be passed to
+    ///                  [`arrange_client_window`].
+    fn reset_tile_layout(&mut self, valid_pids: &[u32]) {
+        debug_assert_eq!(
+            valid_pids.len(),
+            self.list.len(),
+            "reset_tile_layout must receive every tracked client; \
+             call Clients::retain to drop dead entries first",
+        );
+        for (index, pid) in valid_pids.iter().enumerate() {
+            if let Some(&list_index) = self.pid_index.get(pid) {
+                self.list[list_index].tile_index = index;
+            }
+        }
+        self.layout_n = valid_pids.len();
     }
 
     /// Returns a reference to the client with the given process id, if any.
@@ -289,10 +344,6 @@ impl Clients {
             .pid_index
             .get(&pid)
             .map(|&index| return &self.list[index]);
-    }
-
-    fn index_of_pid(&self, pid: u32) -> Option<usize> {
-        return self.pid_index.get(&pid).copied();
     }
 
     /// Retains only the clients for which the predicate returns `true`,
@@ -391,7 +442,17 @@ enum ControlModeState {
     /// control mode entirely. `highlighted_pid` is the currently selected
     /// client (`None` when the cluster is empty); tracking by PID survives
     /// background-monitor `retain`s while the submenu is open.
-    EnableDisableSubmenu { highlighted_pid: Option<u32> },
+    ///
+    /// `anchor_col` is the upper-grid column carried across vertical
+    /// moves so a Down + Up roundtrip across the partial-last-row
+    /// boundary returns to the start cell. `None` while
+    /// `highlighted_pid` is `None`.
+    EnableDisableSubmenu {
+        /// PID of the highlighted client, or `None` for an empty cluster.
+        highlighted_pid: Option<u32>,
+        /// Anchor upper-grid column carried across vertical moves.
+        anchor_col: Option<i32>,
+    },
 }
 
 /// The daemon is responsible to launch a client for
@@ -422,37 +483,80 @@ struct Daemon<'a> {
     debug: bool,
 }
 
-/// Compute the PID of the client one step from `current_pid` in
-/// `direction`, clamped to `clients`. Re-anchors on the first surviving
-/// client when `current_pid` is no longer present (retained out while
-/// the submenu was open).
+/// Compute the next submenu selection given a grid step.
+///
+/// Re-anchors on the first surviving client when `current_pid` is no
+/// longer present (retained out while the submenu was open).
 ///
 /// # Arguments
 ///
-/// * `clients`     - Currently tracked clients.
+/// * `grid`        - Spatial grid view over the currently tracked clients.
 /// * `current_pid` - PID currently highlighted, or `None`.
+/// * `anchor_col`  - Anchor column carried from earlier moves.
 /// * `direction`   - Direction the navigation keystroke encoded.
+/// * `edge`        - Behavior when the move would leave the grid.
 ///
 /// # Returns
 ///
-/// The PID to highlight next, or `None` for an empty cluster.
-fn next_submenu_pid(
-    clients: &Clients,
+/// `(new_pid, new_anchor_col)` to apply, or `(None, None)` for an empty
+/// cluster.
+fn next_submenu_selection(
+    grid: &ClientGrid,
     current_pid: Option<u32>,
+    anchor_col: Option<i32>,
     direction: NavigationDirection,
-) -> Option<u32> {
-    if clients.is_empty() {
-        return None;
+    edge: EdgeBehavior,
+) -> (Option<u32>, Option<i32>) {
+    if grid.is_empty() {
+        return (None, None);
     }
-    let Some(current_index) = current_pid.and_then(|pid| return clients.index_of_pid(pid)) else {
-        return clients.first().map(|c| return c.process_id);
+    let current_pid = match current_pid.and_then(|pid| return grid.cell(pid)) {
+        Some(cell) => cell.pid,
+        None => {
+            let first = grid.top_left_pid();
+            let first_anchor = first
+                .and_then(|pid| return grid.cell(pid))
+                .map(|c| return grid.anchor_for(c));
+            return (first, first_anchor);
+        }
     };
-    let last = clients.len() - 1;
-    let next_index = match direction {
-        NavigationDirection::Up | NavigationDirection::Left => current_index.saturating_sub(1),
-        NavigationDirection::Down | NavigationDirection::Right => (current_index + 1).min(last),
+    let anchor = anchor_col.unwrap_or_else(|| {
+        return grid
+            .cell(current_pid)
+            .map(|c| return grid.anchor_for(c))
+            .unwrap_or(0);
+    });
+    return match grid.step(current_pid, anchor, direction, edge) {
+        Some((pid, new_anchor)) => (Some(pid), Some(new_anchor)),
+        None => (Some(current_pid), Some(anchor)),
     };
-    return clients.get(next_index).map(|c| return c.process_id);
+}
+
+/// Build a [`ClientGrid`] from `clients` and `workspace_area` using the
+/// same aspect-ratio expression the tiler uses.
+///
+/// # Arguments
+///
+/// * `clients`                   - Currently tracked clients in launch order.
+/// * `workspace_area`            - Available workspace minus the daemon console.
+/// * `aspect_ratio_adjustment`   - The `aspect_ratio_adjustement` daemon config.
+///
+/// # Returns
+///
+/// A populated [`ClientGrid`].
+fn build_client_grid(
+    clients: &Clients,
+    workspace_area: &workspace::WorkspaceArea,
+    aspect_ratio_adjustment: f64,
+) -> ClientGrid {
+    let aspect = workspace_aspect_ratio(workspace_area);
+    let layout_n = clients.layout_n as i32;
+    let (cols, rows) = grid_dimensions(layout_n, aspect, aspect_ratio_adjustment);
+    let cells: Vec<(u32, usize)> = clients
+        .iter()
+        .map(|c| return (c.process_id, c.tile_index))
+        .collect();
+    return ClientGrid::from_tiled_pids(&cells, layout_n, cols, rows);
 }
 
 impl<'a> Daemon<'a> {
@@ -717,7 +821,12 @@ impl<'a> Daemon<'a> {
                 self.control_mode_state,
                 ControlModeState::EnableDisableSubmenu { .. }
             ) {
-                self.handle_enable_disable_submenu_key(windows_api, clients, key_event);
+                self.handle_enable_disable_submenu_key(
+                    windows_api,
+                    clients,
+                    workspace_area,
+                    key_event,
+                );
                 return;
             }
             match classify_control_mode_key(
@@ -727,17 +836,26 @@ impl<'a> Daemon<'a> {
                 ControlModeAction::Retile => {
                     self.rearrange_client_windows(
                         windows_api,
-                        &clients.lock().unwrap(),
+                        &mut clients.lock().unwrap(),
                         workspace_area,
                     );
                     self.arrange_daemon_console(windows_api, workspace_area);
                 }
                 ControlModeAction::OpenEnableDisableSubmenu => {
                     let clients_guard = clients.lock().unwrap();
-                    let next_pid = clients_guard.first().map(|c| return c.process_id);
+                    let grid = build_client_grid(
+                        &clients_guard,
+                        workspace_area,
+                        self.config.aspect_ratio_adjustement,
+                    );
+                    let next_pid = grid.top_left_pid();
+                    let anchor_col = next_pid
+                        .and_then(|p| return grid.cell(p))
+                        .map(|c| return grid.anchor_for(c));
                     self.apply_submenu_highlight(&clients_guard, None, next_pid);
                     self.control_mode_state = ControlModeState::EnableDisableSubmenu {
                         highlighted_pid: next_pid,
+                        anchor_col,
                     };
                     self.render_enable_disable_submenu(windows_api);
                 }
@@ -810,7 +928,7 @@ impl<'a> Daemon<'a> {
                     toggle_processed_input_mode(windows_api); // Re-disable processed input mode.
                     self.rearrange_client_windows(
                         windows_api,
-                        &clients.lock().unwrap(),
+                        &mut clients.lock().unwrap(),
                         workspace_area,
                     );
                     self.arrange_daemon_console(windows_api, workspace_area);
@@ -891,8 +1009,9 @@ impl<'a> Daemon<'a> {
             )
         {
             if key_event.wVirtualKeyCode == VK_ESCAPE.0 {
-                if let ControlModeState::EnableDisableSubmenu { highlighted_pid } =
-                    self.control_mode_state
+                if let ControlModeState::EnableDisableSubmenu {
+                    highlighted_pid, ..
+                } = self.control_mode_state
                 {
                     let clients_guard = clients.lock().unwrap();
                     self.apply_submenu_highlight(&clients_guard, highlighted_pid, None);
@@ -950,26 +1069,30 @@ impl<'a> Daemon<'a> {
     fn rearrange_client_windows<W: WindowsApi>(
         &self,
         windows_api: &W,
-        clients: &[Client],
+        clients: &mut Clients,
         workspace_area: &workspace::WorkspaceArea,
     ) {
-        let mut valid_clients = Vec::new();
-        for client in clients.iter() {
+        clients.retain(|client| {
             let exit_code = match windows_api.get_exit_code(client.process_handle) {
                 Ok(code) => code,
-                Err(_) => continue, // Process handle is invalid, skip client
+                Err(_) => return false,
             };
-            if exit_code == STILL_ACTIVE.0 as u32 && windows_api.is_window(client.window_handle) {
-                valid_clients.push(client);
-            }
-        }
-        for (index, client) in valid_clients.iter().enumerate() {
+            return exit_code == STILL_ACTIVE.0 as u32
+                && windows_api.is_window(client.window_handle);
+        });
+        let valid_layout: Vec<(u32, HWND)> = clients
+            .iter()
+            .map(|c| return (c.process_id, c.window_handle))
+            .collect();
+        let valid_pids: Vec<u32> = valid_layout.iter().map(|(pid, _)| return *pid).collect();
+        clients.reset_tile_layout(&valid_pids);
+        for (index, (_, window_handle)) in valid_layout.iter().enumerate() {
             arrange_client_window(
                 windows_api,
-                &client.window_handle,
+                window_handle,
                 workspace_area,
                 index,
-                valid_clients.len(),
+                valid_layout.len(),
                 self.config.aspect_ratio_adjustement,
             )
         }
@@ -993,9 +1116,13 @@ impl<'a> Daemon<'a> {
         &mut self,
         windows_api: &W,
         clients: &Mutex<Clients>,
+        workspace_area: &workspace::WorkspaceArea,
         key_event: KEY_EVENT_RECORD,
     ) {
-        let ControlModeState::EnableDisableSubmenu { highlighted_pid } = self.control_mode_state
+        let ControlModeState::EnableDisableSubmenu {
+            highlighted_pid,
+            anchor_col,
+        } = self.control_mode_state
         else {
             return;
         };
@@ -1035,10 +1162,22 @@ impl<'a> Daemon<'a> {
             }
             EnableDisableSubmenuAction::Navigate(direction) => {
                 let clients_guard = clients.lock().unwrap();
-                let next_pid = next_submenu_pid(&clients_guard, highlighted_pid, direction);
+                let grid = build_client_grid(
+                    &clients_guard,
+                    workspace_area,
+                    self.config.aspect_ratio_adjustement,
+                );
+                let (next_pid, next_anchor) = next_submenu_selection(
+                    &grid,
+                    highlighted_pid,
+                    anchor_col,
+                    direction,
+                    self.config.submenu_edge_behavior,
+                );
                 self.apply_submenu_highlight(&clients_guard, highlighted_pid, next_pid);
                 self.control_mode_state = ControlModeState::EnableDisableSubmenu {
                     highlighted_pid: next_pid,
+                    anchor_col: next_anchor,
                 };
                 self.render_enable_disable_submenu(windows_api);
             }
@@ -1315,6 +1454,9 @@ async fn launch_clients<W: WindowsApi + 'static + Clone>(
                     process_id,
                     state_sender,
                     highlight_sender,
+                    // Placeholder - `Clients::push` overwrites with the
+                    // dense `list.len()`-based tile index.
+                    tile_index: 0,
                 },
             );
         });
@@ -1742,6 +1884,24 @@ fn arrange_client_window<W: WindowsApi>(
         });
 }
 
+/// Return the workspace area's aspect ratio (width / height) including
+/// the frame padding the tiler accounts for.
+///
+/// # Arguments
+///
+/// * `workspace_area` - Available workspace minus the daemon console.
+///
+/// # Returns
+///
+/// Aspect ratio as a `f64` for use by both the tiler and the navigation
+/// grid.
+fn workspace_aspect_ratio(workspace_area: &workspace::WorkspaceArea) -> f64 {
+    return (workspace_area.width + (workspace_area.x_fixed_frame + workspace_area.x_size_frame) * 2)
+        as f64
+        / (workspace_area.height + (workspace_area.y_fixed_frame + workspace_area.y_size_frame) * 2)
+            as f64;
+}
+
 /// Calculates the position and dimensions for a client window given its index,
 /// the total number of clients and the `aspect_ratio_adjustment` daemon configuration.
 ///
@@ -1766,20 +1926,9 @@ fn determine_client_spatial_attributes(
     workspace_area: &workspace::WorkspaceArea,
     aspect_ratio_adjustment: f64,
 ) -> (i32, i32, i32, i32) {
-    let aspect_ratio = (workspace_area.width
-        + (workspace_area.x_fixed_frame + workspace_area.x_size_frame) * 2)
-        as f64
-        / (workspace_area.height + (workspace_area.y_fixed_frame + workspace_area.y_size_frame) * 2)
-            as f64;
-
-    let grid_columns = max(
-        ((number_of_consoles as f64).sqrt() * (aspect_ratio + aspect_ratio_adjustment)) as i32,
-        1,
-    );
-    let grid_rows = max(
-        (number_of_consoles as f64 / grid_columns as f64).ceil() as i32,
-        1,
-    );
+    let aspect_ratio = workspace_aspect_ratio(workspace_area);
+    let (grid_columns, grid_rows) =
+        grid_dimensions(number_of_consoles, aspect_ratio, aspect_ratio_adjustment);
 
     let grid_column_index = index % grid_columns;
     let grid_row_index = index / grid_columns;
@@ -1915,6 +2064,7 @@ fn defer_windows<W: WindowsApi>(windows_api: &W, clients: &[Client], daemon_hand
         process_id: 0,
         state_sender: watch::channel(ClientState::Active).0,
         highlight_sender: watch::channel(false).0,
+        tile_index: 0,
     }]) {
         let placement = match windows_api.get_window_placement(client.window_handle) {
             Ok(placement) => placement,
