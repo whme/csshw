@@ -78,12 +78,12 @@ Example:
 
 We recommend using the [ssh_config](https://linux.die.net/man/5/ssh_config) for any configurations like default username etc.
 
-### Configuration
+## Configuration
 
 `csshw-config.toml` contains all relevant configurations and is located in the same directory as the executable.
 It is automatically created with default values if not present.
 
-#### `clusters`
+### `clusters`
 An array of clusters that can be used to alias a set of host names to a specific tag:
 ```toml
 clusters = [
@@ -92,7 +92,7 @@ clusters = [
 ```
 Clusters may be nested, but be aware of recursive clusters which are not checked for.
 
-#### `[client]`
+### `[client]`
 A collection containing client relevant configuration.
 
 ```toml
@@ -111,10 +111,10 @@ highlighted_console_color = 31
 | `program` | string | `'ssh'` | Executable used to establish ssh connections. |
 | `arguments` | list of strings | `['-XY', '{{USERNAME_AT_HOST}}']` | Additional arguments passed to `program`. |
 | `username_host_placeholder` | string | `'{{USERNAME_AT_HOST}}'` | Token in `arguments` replaced with `username@host`. |
-| <a id="disabled_console_color"></a>`disabled_console_color` | u16 | `135` | Colors used while a client is in the disabled state (input ignored). See [Console color encoding](#console-color-encoding). |
-| <a id="highlighted_console_color"></a>`highlighted_console_color` | u16 | `31` | Colors used while a client is the currently selected window in the control-mode `[e]nable/disable input` submenu. See [Console color encoding](#console-color-encoding) and [Highlight overlay](#highlight-overlay). |
+| <a id="disabled_console_color"></a>`disabled_console_color` | u16 | `135` (`4+2+1+128`) | Colors used while a client is in the disabled state (input ignored). Default paints default-grey text on muted dark-grey. See [Console color encoding](#console-color-encoding). |
+| <a id="highlighted_console_color"></a>`highlighted_console_color` | u16 | `31` (`4+2+1+8+16`) | Colors used while a client is the currently selected window in the control-mode `[e]nable/disable input` submenu. Default paints bright-white text on blue. See [Console color encoding](#console-color-encoding) and [Highlight overlay](#highlight-overlay). |
 
-#### `[daemon]`
+### `[daemon]`
 A collection containing daemon relevant configuration.
 
 ```toml
@@ -129,10 +129,10 @@ submenu_edge_behavior = 'clamp'
 |---|---|---|---|
 | `height` | u16 | `200` | Height of the daemon console. |
 | `aspect_ratio_adjustement` | float | `-1.0` | Bias for vertical vs. horizontal layout of client windows. See [Aspect ratio](#aspect-ratio). |
-| <a id="console_color"></a>`console_color` | u16 | `207` | Daemon console colors. See [Console color encoding](#console-color-encoding). |
+| <a id="console_color"></a>`console_color` | u16 | `207` (`8+4+2+1+64+128`) | Daemon console colors. Default paints white text on red. See [Console color encoding](#console-color-encoding). |
 | `submenu_edge_behavior` | enum | `'clamp'` | What happens when an arrow / `hjkl` keystroke in the submenu would move the highlight past the edge of the client grid. See [Submenu edge behavior](#submenu-edge-behavior). |
 
-#### Console color encoding
+### Console color encoding
 Console-color options encode background and foreground attributes as a single integer.
 Available are all standard Windows color combinations ([windows docs](https://learn.microsoft.com/en-us/windows/console/console-screen-buffers#character-attributes)):
 ```
@@ -145,21 +145,17 @@ BACKGROUND_GREEN:       32
 BACKGROUND_RED:         64
 BACKGROUND_INTENSITY:   128
 ```
-Worked defaults:
-* `console_color = 207` - white text on red: `8+4+2+1+64+128`.
-* `disabled_console_color = 135` - default-grey text on muted dark-grey: `4+2+1+128`.
-* `highlighted_console_color = 31` - bright-white text on blue: `4+2+1+8+16`.
 
-#### Aspect ratio
+### Highlight overlay
+The highlight wins over [`disabled_console_color`](#disabled_console_color); pressing `[d]`/`[e]`/`[t]` on the selected window briefly flashes the underlying state color (~250ms) as action feedback before the highlight color is restored.
+
+### Aspect ratio
 `aspect_ratio_adjustement` configures whether the available screen space should rather be used horizontally or vertically.
 * `> 0.0` - aims for vertical rectangle shape. The larger the value, the more exaggerated the "verticality". Eventually the windows will all be columns.
 * `= 0.0` - aims for square shape.
 * `< 0.0` - aims for horizontal rectangle shape. The smaller the value, the more exaggerated the "horizontality". Eventually the windows will all be rows. `-1.0` is the sweetspot for mostly preserving a 16:9 ratio.
 
-#### Highlight overlay
-The highlight wins over [`disabled_console_color`](#disabled_console_color); pressing `[d]`/`[e]`/`[t]` on the selected window briefly flashes the underlying state color (~250ms) as action feedback before the highlight color is restored.
-
-#### Submenu edge behavior
+### Submenu edge behavior
 `submenu_edge_behavior` selects what happens when an arrow / `hjkl` keystroke in the `[e]nable/disable input` submenu would move the highlight past the edge of the client grid:
 * `'clamp'` (default) - the highlight stays on the current cell.
 * `'wrap'` - the highlight wraps to the opposite edge of the same row (Left/Right) or column (Up/Down).
