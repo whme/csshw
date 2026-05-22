@@ -846,10 +846,6 @@ fn test_get_flash_color_disabled_no_original_returns_none() {
 
 /// Builds a [`MockWindowsApi`] that satisfies one full
 /// [`crate::utils::windows::set_console_color`] call.
-///
-/// Returns a Win11 OS version so the post-fill invalidate is gated
-/// off (already covered by the dedicated `set_console_color` tests
-/// in `src/tests/utils/test_windows.rs`).
 fn mock_for_one_set_console_color() -> MockWindowsApi {
     use windows::Win32::System::Console::{CONSOLE_SCREEN_BUFFER_INFO, COORD};
     let mut mock = MockWindowsApi::new();
@@ -866,8 +862,9 @@ fn mock_for_one_set_console_color() -> MockWindowsApi {
     mock.expect_fill_console_output_attribute()
         .times(25)
         .returning(|_, _, _| return Ok(80));
-    mock.expect_get_os_version()
-        .returning(|| return "10.0.22631".to_string());
+    mock.expect_invalidate_console_window()
+        .times(1)
+        .returning(|| return Ok(()));
     return mock;
 }
 
@@ -940,8 +937,9 @@ fn mock_for_n_set_console_color_calls(n: usize) -> MockWindowsApi {
         .returning(move || return Ok(buffer_info));
     mock.expect_fill_console_output_attribute()
         .returning(|_, _, _| return Ok(80));
-    mock.expect_get_os_version()
-        .returning(|| return "10.0.22631".to_string());
+    mock.expect_invalidate_console_window()
+        .times(n)
+        .returning(|| return Ok(()));
     return mock;
 }
 

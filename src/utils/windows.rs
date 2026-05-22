@@ -931,14 +931,14 @@ pub fn set_console_color(api: &dyn WindowsApi, color: CONSOLE_CHARACTER_ATTRIBUT
         )
         .unwrap();
     }
-    // Win10 conhost leaves the bottom row + rightmost column stale after a
-    // bulk attribute fill until something forces a redraw (the user
-    // double-clicking is one such trigger). Win11+ Terminal repaints on
-    // its own.
-    if is_windows_10(api) {
-        if let Err(err) = api.invalidate_console_window() {
-            warn!("Failed to invalidate console window after recolor: {}", err);
-        }
+    // conhost leaves the bottom row + rightmost column stale after a bulk
+    // FillConsoleOutputAttribute until something forces a redraw (the user
+    // double-clicking is one such trigger). Reproduces on the conhost
+    // shipped with both Win10 and Win11, and csshw forces conhost as the
+    // host terminal (see WindowsSettingsDefaultTerminalApplicationGuard),
+    // so we always invalidate.
+    if let Err(err) = api.invalidate_console_window() {
+        warn!("Failed to invalidate console window after recolor: {}", err);
     }
 }
 
