@@ -127,14 +127,14 @@ Add a `//` comment only for:
 Never paraphrase the next line, narrate steps (`// Step 1: ...`,
 `// First, ... // Then, ...`), add banner dividers (`// ----- Helpers -----`),
 or commit commented-out code. Canonical examples to study:
-`src/utils/windows.rs:934-937` (Win10/11 divergence),
+`src/utils/windows.rs:934-942` (conhost stale-cells workaround),
 `src/daemon/mod.rs:706-708` (async ordering invariant),
 `src/client/mod.rs:409-411` (protocol contract).
 
 ```rust
 // GOOD - cites a platform quirk and explains the workaround.
-// Win10 conhost leaves the bottom row stale after a bulk attribute fill
-// until something forces a redraw; Win11+ Terminal repaints on its own.
+// conhost leaves the bottom row stale after a bulk attribute fill until
+// something forces a redraw; invalidate to force one.
 nudge_cursor(handle)?;
 
 // BAD - paraphrases the call.
