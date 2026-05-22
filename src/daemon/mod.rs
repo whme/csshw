@@ -303,12 +303,25 @@ impl Clients {
     /// re-positions the actual windows on screen, so navigation reads
     /// the same layout the tiler just applied.
     ///
+    /// Invariant: `valid_pids` must cover every PID currently tracked
+    /// in `self.list`. Passing a strict subset (e.g. a liveness-filtered
+    /// list) would shrink `layout_n` while leaving stale `tile_index >=
+    /// layout_n` values on the excluded clients, breaking the
+    /// [`ClientGrid`] built from this collection. Drop dead clients
+    /// via [`Clients::retain`] before retiling.
+    ///
     /// # Arguments
     ///
     /// * `valid_pids` - PIDs of the clients that will be tiled, in the
     ///                  order they will be passed to
     ///                  [`arrange_client_window`].
     fn reset_tile_layout(&mut self, valid_pids: &[u32]) {
+        debug_assert_eq!(
+            valid_pids.len(),
+            self.list.len(),
+            "reset_tile_layout must receive every tracked client; \
+             call Clients::retain to drop dead entries first",
+        );
         for (index, pid) in valid_pids.iter().enumerate() {
             if let Some(&list_index) = self.pid_index.get(pid) {
                 self.list[list_index].tile_index = index;
@@ -500,15 +513,18 @@ fn next_submenu_selection(
     let current_pid = match current_pid.and_then(|pid| return grid.cell(pid)) {
         Some(cell) => cell.pid,
         None => {
-            let first = grid.first_pid();
+            let first = grid.top_left_pid();
             let first_anchor = first
                 .and_then(|pid| return grid.cell(pid))
-                .map(|c| return c.col);
+                .map(|c| return grid.anchor_for(c));
             return (first, first_anchor);
         }
     };
     let anchor = anchor_col.unwrap_or_else(|| {
-        return grid.cell(current_pid).map(|c| return c.col).unwrap_or(0);
+        return grid
+            .cell(current_pid)
+            .map(|c| return grid.anchor_for(c))
+            .unwrap_or(0);
     });
     return match grid.step(current_pid, anchor, direction, edge) {
         Some((pid, new_anchor)) => (Some(pid), Some(new_anchor)),
@@ -832,10 +848,10 @@ impl<'a> Daemon<'a> {
                         workspace_area,
                         self.config.aspect_ratio_adjustement,
                     );
-                    let next_pid = grid.first_pid();
+                    let next_pid = grid.top_left_pid();
                     let anchor_col = next_pid
                         .and_then(|p| return grid.cell(p))
-                        .map(|c| return c.col);
+                        .map(|c| return grid.anchor_for(c));
                     self.apply_submenu_highlight(&clients_guard, None, next_pid);
                     self.control_mode_state = ControlModeState::EnableDisableSubmenu {
                         highlighted_pid: next_pid,
@@ -1056,16 +1072,18 @@ impl<'a> Daemon<'a> {
         clients: &mut Clients,
         workspace_area: &workspace::WorkspaceArea,
     ) {
-        let mut valid_layout: Vec<(u32, HWND)> = Vec::new();
-        for client in clients.iter() {
+        clients.retain(|client| {
             let exit_code = match windows_api.get_exit_code(client.process_handle) {
                 Ok(code) => code,
-                Err(_) => continue, // Process handle is invalid, skip client
+                Err(_) => return false,
             };
-            if exit_code == STILL_ACTIVE.0 as u32 && windows_api.is_window(client.window_handle) {
-                valid_layout.push((client.process_id, client.window_handle));
-            }
-        }
+            return exit_code == STILL_ACTIVE.0 as u32
+                && windows_api.is_window(client.window_handle);
+        });
+        let valid_layout: Vec<(u32, HWND)> = clients
+            .iter()
+            .map(|c| return (c.process_id, c.window_handle))
+            .collect();
         let valid_pids: Vec<u32> = valid_layout.iter().map(|(pid, _)| return *pid).collect();
         clients.reset_tile_layout(&valid_pids);
         for (index, (_, window_handle)) in valid_layout.iter().enumerate() {

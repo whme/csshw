@@ -36,7 +36,7 @@ pub(super) struct GridCell {
     pub pos_in_row: i32,
 }
 
-/// Spatial-grid view over a launch-ordered sequence of client PIDs.
+/// Spatial-grid view over the tracked client PIDs.
 pub(super) struct ClientGrid {
     /// Number of columns in the dense upper rows.
     pub cols: i32,
@@ -45,7 +45,7 @@ pub(super) struct ClientGrid {
     /// Cell count in the last row. `0` means the last row is also dense;
     /// otherwise `1..cols` last-row cells are stretched proportionally.
     last_row_count: i32,
-    /// Cells in launch order.
+    /// Cells sorted by `(row, col)` so the top-left cell is at index `0`.
     cells: Vec<GridCell>,
     /// PID lookup table.
     by_pid: HashMap<u32, usize>,
@@ -153,8 +153,9 @@ impl ClientGrid {
         return self.by_pid.get(&pid).map(|&i| return &self.cells[i]);
     }
 
-    /// First cell in launch order, or `None` for an empty grid.
-    pub(super) fn first_pid(&self) -> Option<u32> {
+    /// PID of the top-left cell, or `None` for an empty grid. Used to
+    /// re-anchor the submenu selection onto a sensible visual default.
+    pub(super) fn top_left_pid(&self) -> Option<u32> {
         return self.cells.first().map(|c| return c.pid);
     }
 
@@ -178,7 +179,7 @@ impl ClientGrid {
     /// # Returns
     ///
     /// The anchor column for the cell.
-    fn anchor_for(&self, cell: &GridCell) -> i32 {
+    pub(super) fn anchor_for(&self, cell: &GridCell) -> i32 {
         if cell.row == self.rows - 1 && self.last_row_count != 0 {
             return ((2 * cell.pos_in_row + 1) * self.cols) / (2 * self.last_row_count);
         }
