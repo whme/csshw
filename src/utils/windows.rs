@@ -923,20 +923,25 @@ pub fn build_command_line(application: &str, args: &[String]) -> Vec<u16> {
 pub fn set_console_color(api: &dyn WindowsApi, color: CONSOLE_CHARACTER_ATTRIBUTES) {
     api.set_console_text_attribute(color).unwrap();
     let buffer_info = api.get_console_screen_buffer_info().unwrap();
-    for y in 0..buffer_info.dwSize.Y {
-        api.fill_console_output_attribute(
-            color.0,
-            buffer_info.dwSize.X.try_into().unwrap(),
-            COORD { X: 0, Y: y },
-        )
+    // FillConsoleOutputAttribute continues into successive rows when the
+    // length extends past the end of the row, so a single call from (0,0)
+    // recolors the entire buffer in one LPC roundtrip. The screen buffer
+    // can be thousands of rows tall (scrollback), so a per-row loop here
+    // would dominate the cost of rapid submenu navigation.
+    let width: u32 = buffer_info.dwSize.X.try_into().unwrap();
+    let height: u32 = buffer_info.dwSize.Y.try_into().unwrap();
+    api.fill_console_output_attribute(color.0, width * height, COORD { X: 0, Y: 0 })
         .unwrap();
-    }
-    // conhost leaves the bottom row + rightmost column stale after a bulk
-    // FillConsoleOutputAttribute until something forces a redraw (the user
-    // double-clicking is one such trigger). Reproduces on the conhost
-    // shipped with both Win10 and Win11, and csshw forces conhost as the
-    // host terminal (see WindowsSettingsDefaultTerminalApplicationGuard),
-    // so we always invalidate.
+    // The console client area can contain a sub-cell-sized pixel sliver at
+    // the right and/or bottom edge when the OS window pixel dimensions do
+    // not divide evenly into the cell grid (csshw clients are sized in
+    // pixels via MoveWindow). Those slivers are not backed by any buffer
+    // cell, so the fill above cannot reach them, and conhost does not
+    // repaint them on an attribute-only update - they keep the old color
+    // until something triggers a WM_PAINT (user double-clicking is one
+    // such trigger). csshw forces conhost as the host terminal (see
+    // WindowsSettingsDefaultTerminalApplicationGuard), so this always
+    // applies.
     if let Err(err) = api.invalidate_console_window() {
         warn!("Failed to invalidate console window after recolor: {}", err);
     }

@@ -191,10 +191,17 @@ mod console_color_test {
             .times(1)
             .return_const(Ok(buffer_info));
 
+        // Single call covering the entire buffer (width * height cells
+        // from (0,0)) - FillConsoleOutputAttribute auto-spans rows.
         mock_api
             .expect_fill_console_output_attribute()
-            .times(25)
-            .returning(|_, _, _| return Ok(80));
+            .with(
+                mockall::predicate::eq(test_color.0),
+                mockall::predicate::eq(80u32 * 25u32),
+                mockall::predicate::eq(COORD { X: 0, Y: 0 }),
+            )
+            .times(1)
+            .returning(|_, _, _| return Ok(80 * 25));
 
         mock_api
             .expect_invalidate_console_window()
@@ -226,8 +233,8 @@ mod console_color_test {
             .return_const(Ok(buffer_info));
         mock_api
             .expect_fill_console_output_attribute()
-            .times(25)
-            .returning(|_, _, _| return Ok(80));
+            .times(1)
+            .returning(|_, _, _| return Ok(80 * 25));
         mock_api
             .expect_invalidate_console_window()
             .times(1)
