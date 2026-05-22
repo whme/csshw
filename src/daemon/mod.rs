@@ -539,7 +539,7 @@ fn next_submenu_selection(
 ///
 /// * `clients`                   - Currently tracked clients in launch order.
 /// * `workspace_area`            - Available workspace minus the daemon console.
-/// * `aspect_ratio_adjustment`   - The `aspect_ratio_adjustement` daemon config.
+/// * `aspect_ratio_adjustment`   - The `aspect_ratio_adjustment` daemon config.
 ///
 /// # Returns
 ///
@@ -624,7 +624,7 @@ impl<'a> Daemon<'a> {
                 self.port,
                 self.debug,
                 &workspace_area,
-                self.config.aspect_ratio_adjustement,
+                self.config.aspect_ratio_adjustment,
                 0,
             )
             .await,
@@ -846,7 +846,7 @@ impl<'a> Daemon<'a> {
                     let grid = build_client_grid(
                         &clients_guard,
                         workspace_area,
-                        self.config.aspect_ratio_adjustement,
+                        self.config.aspect_ratio_adjustment,
                     );
                     let next_pid = grid.top_left_pid();
                     let anchor_col = next_pid
@@ -908,7 +908,7 @@ impl<'a> Daemon<'a> {
                                 self.port,
                                 self.debug,
                                 workspace_area,
-                                self.config.aspect_ratio_adjustement,
+                                self.config.aspect_ratio_adjustment,
                                 number_of_existing_clients,
                             )
                             .await;
@@ -1093,7 +1093,7 @@ impl<'a> Daemon<'a> {
                 workspace_area,
                 index,
                 valid_layout.len(),
-                self.config.aspect_ratio_adjustement,
+                self.config.aspect_ratio_adjustment,
             )
         }
     }
@@ -1165,7 +1165,7 @@ impl<'a> Daemon<'a> {
                 let grid = build_client_grid(
                     &clients_guard,
                     workspace_area,
-                    self.config.aspect_ratio_adjustement,
+                    self.config.aspect_ratio_adjustment,
                 );
                 let (next_pid, next_anchor) = next_submenu_selection(
                     &grid,

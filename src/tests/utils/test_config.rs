@@ -185,8 +185,8 @@ mod daemon_config_test {
 
         assert_eq!(daemon_config.height, default_config.height);
         assert_eq!(
-            daemon_config.aspect_ratio_adjustement,
-            default_config.aspect_ratio_adjustement
+            daemon_config.aspect_ratio_adjustment,
+            default_config.aspect_ratio_adjustment
         );
         assert_eq!(daemon_config.console_color, default_config.console_color);
     }
@@ -195,14 +195,14 @@ mod daemon_config_test {
     fn test_daemon_config_opt_from_daemon_config() {
         let daemon_config = DaemonConfig {
             height: 300,
-            aspect_ratio_adjustement: 0.5,
+            aspect_ratio_adjustment: 0.5,
             console_color: 15, // White on black
             submenu_edge_behavior: EdgeBehavior::Wrap,
         };
 
         let config_opt: DaemonConfigOpt = DaemonConfigOpt {
             height: Some(daemon_config.height),
-            aspect_ratio_adjustement: Some(daemon_config.aspect_ratio_adjustement),
+            aspect_ratio_adjustment: Some(daemon_config.aspect_ratio_adjustment),
             console_color: Some(daemon_config.console_color),
             submenu_edge_behavior: Some(daemon_config.submenu_edge_behavior),
         };
@@ -210,8 +210,8 @@ mod daemon_config_test {
 
         assert_eq!(converted_back.height, daemon_config.height);
         assert_eq!(
-            converted_back.aspect_ratio_adjustement,
-            daemon_config.aspect_ratio_adjustement
+            converted_back.aspect_ratio_adjustment,
+            daemon_config.aspect_ratio_adjustment
         );
         assert_eq!(converted_back.console_color, daemon_config.console_color);
         assert_eq!(
@@ -224,7 +224,7 @@ mod daemon_config_test {
     fn test_daemon_config_opt_partial_values() {
         let config_opt = DaemonConfigOpt {
             height: Some(150),
-            aspect_ratio_adjustement: None,
+            aspect_ratio_adjustment: None,
             console_color: Some(112),
             submenu_edge_behavior: None,
         };
@@ -234,8 +234,8 @@ mod daemon_config_test {
 
         assert_eq!(daemon_config.height, 150);
         assert_eq!(
-            daemon_config.aspect_ratio_adjustement,
-            default_config.aspect_ratio_adjustement
+            daemon_config.aspect_ratio_adjustment,
+            default_config.aspect_ratio_adjustment
         ); // Should use default
         assert_eq!(daemon_config.console_color, 112);
         assert_eq!(
@@ -256,12 +256,21 @@ mod daemon_config_test {
     fn test_daemon_config_opt_wrap_round_trip() {
         let config_opt = DaemonConfigOpt {
             height: None,
-            aspect_ratio_adjustement: None,
+            aspect_ratio_adjustment: None,
             console_color: None,
             submenu_edge_behavior: Some(EdgeBehavior::Wrap),
         };
         let daemon_config: DaemonConfig = config_opt.into();
         assert_eq!(daemon_config.submenu_edge_behavior, EdgeBehavior::Wrap);
+    }
+
+    #[test]
+    fn test_daemon_config_accepts_legacy_aspect_ratio_alias() {
+        // Older configs spelled the field `aspect_ratio_adjustement`. The
+        // serde alias must keep deserializing those files after the typo fix.
+        let toml = "aspect_ratio_adjustement = 0.5\n";
+        let config_opt: DaemonConfigOpt = toml::from_str(toml).unwrap();
+        assert_eq!(config_opt.aspect_ratio_adjustment, Some(0.5));
     }
 }
 
@@ -386,7 +395,7 @@ mod config_test {
             },
             daemon: DaemonConfig {
                 height: 250,
-                aspect_ratio_adjustement: 0.5,
+                aspect_ratio_adjustment: 0.5,
                 console_color: 15,
                 submenu_edge_behavior: EdgeBehavior::Clamp,
             },
@@ -406,7 +415,7 @@ mod config_test {
             }),
             daemon: Some(DaemonConfigOpt {
                 height: Some(original_config.daemon.height),
-                aspect_ratio_adjustement: Some(original_config.daemon.aspect_ratio_adjustement),
+                aspect_ratio_adjustment: Some(original_config.daemon.aspect_ratio_adjustment),
                 console_color: Some(original_config.daemon.console_color),
                 submenu_edge_behavior: Some(original_config.daemon.submenu_edge_behavior),
             }),
@@ -438,7 +447,7 @@ mod config_test {
             client: None, // Should use default
             daemon: Some(DaemonConfigOpt {
                 height: Some(300),
-                aspect_ratio_adjustement: None, // Should use default
+                aspect_ratio_adjustment: None, // Should use default
                 console_color: Some(112),
                 submenu_edge_behavior: None,
             }),
@@ -461,8 +470,8 @@ mod config_test {
         // Daemon should be partially custom, partially default
         assert_eq!(config.daemon.height, 300);
         assert_eq!(
-            config.daemon.aspect_ratio_adjustement,
-            default_daemon.aspect_ratio_adjustement
+            config.daemon.aspect_ratio_adjustment,
+            default_daemon.aspect_ratio_adjustment
         );
         assert_eq!(config.daemon.console_color, 112);
     }
@@ -528,7 +537,7 @@ mod config_integration_test {
             },
             daemon: DaemonConfig {
                 height: 180,
-                aspect_ratio_adjustement: -0.8,
+                aspect_ratio_adjustment: -0.8,
                 console_color: 240,
                 submenu_edge_behavior: EdgeBehavior::Wrap,
             },
@@ -547,7 +556,7 @@ mod config_integration_test {
             }),
             daemon: Some(DaemonConfigOpt {
                 height: Some(original.daemon.height),
-                aspect_ratio_adjustement: Some(original.daemon.aspect_ratio_adjustement),
+                aspect_ratio_adjustment: Some(original.daemon.aspect_ratio_adjustment),
                 console_color: Some(original.daemon.console_color),
                 submenu_edge_behavior: Some(original.daemon.submenu_edge_behavior),
             }),
@@ -582,8 +591,8 @@ mod config_integration_test {
 
         assert_eq!(roundtrip.daemon.height, original.daemon.height);
         assert_eq!(
-            roundtrip.daemon.aspect_ratio_adjustement,
-            original.daemon.aspect_ratio_adjustement
+            roundtrip.daemon.aspect_ratio_adjustment,
+            original.daemon.aspect_ratio_adjustment
         );
         assert_eq!(
             roundtrip.daemon.console_color,

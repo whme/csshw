@@ -70,6 +70,7 @@ features = [
 
 [dev-dependencies]
 mockall = "0.13.1"
+toml = "0.8"
 
 [build-dependencies]
 embed-resource = "3.0.9"

@@ -293,7 +293,8 @@ pub struct DaemonConfig {
     ///             The smaller the value, the more exaggerated the "horizontality".
     ///             Eventually the windows will all be rows.
     ///             `-1.0` is the sweetspot for mostly preserving a 16:9 ratio.
-    pub aspect_ratio_adjustement: f64,
+    #[serde(alias = "aspect_ratio_adjustement")]
+    pub aspect_ratio_adjustment: f64,
     /// Controls back- and foreground colors of the daemon console window.
     ///
     /// All [standard Windows color combinations][1] are available:
@@ -329,13 +330,13 @@ impl Default for DaemonConfig {
     ///
     /// `DaemonConfig` with the following values:
     /// * `height`                      - `200`
-    /// * `aspect_ratio_adjustement`   - `-1.0`
+    /// * `aspect_ratio_adjustment`    - `-1.0`
     /// * `console_color`               - `207`
     /// * `submenu_edge_behavior`       - `clamp`
     fn default() -> Self {
         return DaemonConfig {
             height: 200,
-            aspect_ratio_adjustement: -1f64,
+            aspect_ratio_adjustment: -1f64,
             console_color: (FOREGROUND_INTENSITY
                 | FOREGROUND_RED
                 | FOREGROUND_GREEN
@@ -355,7 +356,8 @@ pub struct DaemonConfigOpt {
     #[allow(missing_docs)]
     pub height: Option<i32>,
     #[allow(missing_docs)]
-    pub aspect_ratio_adjustement: Option<f64>,
+    #[serde(alias = "aspect_ratio_adjustement")]
+    pub aspect_ratio_adjustment: Option<f64>,
     #[allow(missing_docs)]
     pub console_color: Option<u16>,
     #[allow(missing_docs)]
@@ -374,9 +376,9 @@ impl From<DaemonConfigOpt> for DaemonConfig {
         let default = DaemonConfig::default();
         return DaemonConfig {
             height: val.height.unwrap_or(default.height),
-            aspect_ratio_adjustement: val
-                .aspect_ratio_adjustement
-                .unwrap_or(default.aspect_ratio_adjustement),
+            aspect_ratio_adjustment: val
+                .aspect_ratio_adjustment
+                .unwrap_or(default.aspect_ratio_adjustment),
             console_color: val.console_color.unwrap_or(default.console_color),
             submenu_edge_behavior: val
                 .submenu_edge_behavior
@@ -390,7 +392,7 @@ impl From<DaemonConfig> for DaemonConfigOpt {
     fn from(val: DaemonConfig) -> Self {
         return DaemonConfigOpt {
             height: Some(val.height),
-            aspect_ratio_adjustement: Some(val.aspect_ratio_adjustement),
+            aspect_ratio_adjustment: Some(val.aspect_ratio_adjustment),
             console_color: Some(val.console_color),
             submenu_edge_behavior: Some(val.submenu_edge_behavior),
         };
