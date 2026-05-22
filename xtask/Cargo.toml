@@ -16,7 +16,7 @@ toml_edit = "0.21"
 semver    = "1.0"
 
 [dev-dependencies]
-mockall = "0.13"
+mockall = "0.14"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage,coverage_nightly)'] }
