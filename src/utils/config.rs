@@ -329,7 +329,7 @@ impl Default for DaemonConfig {
     ///
     /// `DaemonConfig` with the following values:
     /// * `height`                      - `200`
-    /// * `aspect_ratio_adjustment`    - `-1.0`
+    /// * `aspect_ratio_adjustement`   - `-1.0`
     /// * `console_color`               - `207`
     /// * `submenu_edge_behavior`       - `clamp`
     fn default() -> Self {
