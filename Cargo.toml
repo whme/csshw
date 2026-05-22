@@ -69,7 +69,7 @@ features = [
 ]
 
 [dev-dependencies]
-mockall = "0.13.1"
+mockall = "0.14.0"
 toml = "0.8"
 
 [build-dependencies]
