@@ -64,29 +64,24 @@ enum ReadWriteResult {
 /// when the user toggles the state.
 const HIGHLIGHT_FLASH_DURATION: Duration = Duration::from_millis(250);
 
-/// Resolve the console color to paint for a given
-/// `(state, highlighted)` combination. Highlight wins over the
-/// disabled color. Returns `None` for every combination when
-/// `original_console_color` is `None`, so a failed startup capture
-/// degrades to a no-op rather than stranding the window in the
-/// disabled/highlight color with no restore path.
+/// Resolve the console color for a `(state, highlighted)` combination;
+/// highlight overlays the disabled color.
 ///
 /// # Arguments
 ///
-/// * `state`                    - The client's current [`ClientState`].
-/// * `highlighted`              - `true` while the client is the selected
-///                                window in the daemon's enable/disable
-///                                submenu.
-/// * `original_console_color`   - Console color captured at startup.
-/// * `disabled_console_color`   - Color applied while the client is
-///                                [`ClientState::Disabled`].
-/// * `highlighted_console_color`- Color applied while the client is
-///                                highlighted.
+/// * `state`                     - The client's current [`ClientState`].
+/// * `highlighted`               - `true` while the client is the selected
+///                                 window in the daemon's enable/disable
+///                                 submenu.
+/// * `original_console_color`    - Console color captured at startup.
+/// * `disabled_console_color`    - Color applied while the client is
+///                                 [`ClientState::Disabled`].
+/// * `highlighted_console_color` - Color applied while the client is
+///                                 highlighted.
 ///
 /// # Returns
 ///
-/// The color to paint, or `None` if no repaint is possible because the
-/// original color was never captured.
+/// The color to paint, or `None` when `original_console_color` is `None`.
 fn get_effective_color(
     state: ClientState,
     highlighted: bool,
@@ -104,11 +99,8 @@ fn get_effective_color(
     }
 }
 
-/// Color painted during the action-feedback flash: the underlying
-/// state color, with the highlight overlay bypassed so the user can
-/// see what they just did. Degrades to `None` when
-/// `original_console_color` is `None` for the same reason as
-/// [`get_effective_color`].
+/// Resolve the underlying state color, with the highlight overlay bypassed,
+/// for the action-feedback flash.
 ///
 /// # Arguments
 ///
@@ -119,8 +111,7 @@ fn get_effective_color(
 ///
 /// # Returns
 ///
-/// The color to paint for the flash, or `None` if no repaint is
-/// possible.
+/// The color to paint, or `None` when `original_console_color` is `None`.
 fn get_flash_color(
     state: ClientState,
     original_console_color: Option<CONSOLE_CHARACTER_ATTRIBUTES>,
@@ -134,11 +125,10 @@ fn get_flash_color(
 }
 
 /// Bundle of the three colors [`run_visuals_loop`] chooses between
-/// when repainting the per-client console. Cuts the five-arg color
-/// soup down to one borrowed reference at the call sites.
+/// when repainting the per-client console.
 struct ConsolePalette {
     /// Color captured before the SSH child wrote anything; `None`
-    /// degrades every paint to a no-op (see [`get_effective_color`]).
+    /// degrades every paint to a no-op.
     original: Option<CONSOLE_CHARACTER_ATTRIBUTES>,
     /// Color applied while [`ClientState::Disabled`].
     disabled: CONSOLE_CHARACTER_ATTRIBUTES,
@@ -203,17 +193,16 @@ fn start_flash(
 }
 
 /// Paint `target` if it differs from `last`, then update `last`.
+///
 /// Skipping unchanged repaints keeps the slow per-row
-/// `fill_console_output_attribute` calls off the hot path; a `None`
-/// target leaves the console untouched.
+/// `fill_console_output_attribute` calls off the hot path.
 ///
 /// # Arguments
 ///
 /// * `api`    - The Windows API implementation to use.
 /// * `target` - The color to paint, or `None` to skip.
-/// * `last`   - The most recently painted color. Updated in-place
-///              after a successful repaint so the next call can
-///              short-circuit on an unchanged target.
+/// * `last`   - The most recently painted color; updated in-place after a
+///              successful repaint.
 fn paint_console_color(
     api: &dyn WindowsApi,
     target: Option<CONSOLE_CHARACTER_ATTRIBUTES>,
@@ -624,9 +613,6 @@ async fn run(
 }
 
 /// Snapshot the current console color.
-/// Returns `None` (with a warning) if the Windows API
-/// rejects the query; in that case the visuals task degrades to a
-/// no-op for every `(state, highlight)` combination.
 ///
 /// # Arguments
 ///
@@ -634,8 +620,7 @@ async fn run(
 ///
 /// # Returns
 ///
-/// `Some(original)` on success, `None` if the buffer info could
-/// not be read.
+/// `Some(original)` on success, `None` if the buffer info could not be read.
 fn capture_original_console_color(api: &dyn WindowsApi) -> Option<CONSOLE_CHARACTER_ATTRIBUTES> {
     match api.get_console_screen_buffer_info() {
         Ok(info) => return Some(info.wAttributes),
@@ -757,9 +742,6 @@ async fn run_visuals_loop(
                 }
                 prev_state = *state_receiver.borrow_and_update();
                 if prev_highlight {
-                    // State pushes come from `[e]`/`[d]`/`[t]` keypresses;
-                    // flash even on no-op updates so the user always gets
-                    // visual confirmation.
                     flash_until = Some(start_flash(api, prev_state, &palette, &mut last_painted));
                 } else {
                     paint_steady(api, prev_state, prev_highlight, &palette, &mut last_painted);
@@ -820,7 +802,6 @@ pub async fn main(
     let (highlight_sender, highlight_receiver) = watch::channel(false);
 
     let (host, inline_port) = split_host_and_inline_port(&host);
-    // Inline port takes precedence over CLI port.
     let port = inline_port.or(cli_port);
 
     let resolved_username = resolve_username(username, host, config);

@@ -222,12 +222,9 @@ struct Client {
     /// pipe. [`watch::Sender`] is itself [`Clone`], so cloning a [`Client`]
     /// produces another sender that drives the same channel.
     state_sender: watch::Sender<ClientState>,
-    /// Authoritative source for this client's highlight flag. Set to
-    /// `true` while the client is the daemon's currently selected
-    /// submenu client. Visual only; input gating uses
-    /// [`Client::state_sender`]. The pipe-server task subscribes alongside
-    /// `state_sender` and forwards every change as a
-    /// [`crate::protocol::TAG_HIGHLIGHT`] frame.
+    /// Authoritative source for this client's highlight flag, set while
+    /// the client is the daemon's currently selected submenu client.
+    /// Visual only; input gating uses [`Client::state_sender`].
     highlight_sender: watch::Sender<bool>,
 }
 
@@ -294,15 +291,6 @@ impl Clients {
             .map(|&index| return &self.list[index]);
     }
 
-    /// Returns the index of the client with the given process id, if any.
-    ///
-    /// # Arguments
-    ///
-    /// * `pid` - The process id of the client to look up.
-    ///
-    /// # Returns
-    ///
-    /// `Some(index)` if a client with the given PID exists, `None` otherwise.
     fn index_of_pid(&self, pid: u32) -> Option<usize> {
         return self.pid_index.get(&pid).copied();
     }
@@ -399,14 +387,10 @@ enum ControlModeState {
     /// Active control mode prevents any input records from being sent to clients.
     Active,
     /// The user opened the `[e]nable/disable input` submenu from
-    /// [`ControlModeState::Active`]. `highlighted_pid` is the PID of
-    /// the currently selected client (or `None` when the cluster is
-    /// empty); tracking by PID rather than index keeps the selection
-    /// correct after the background monitor `retain`s out exited
-    /// clients while the submenu is open. The submenu is left only
-    /// via `Esc`, which exits control mode entirely; like
-    /// [`ControlModeState::Active`], this state suppresses input
-    /// forwarding to clients.
+    /// [`ControlModeState::Active`]; left only via `Esc`, which exits
+    /// control mode entirely. `highlighted_pid` is the currently selected
+    /// client (`None` when the cluster is empty); tracking by PID survives
+    /// background-monitor `retain`s while the submenu is open.
     EnableDisableSubmenu { highlighted_pid: Option<u32> },
 }
 
@@ -439,11 +423,9 @@ struct Daemon<'a> {
 }
 
 /// Compute the PID of the client one step from `current_pid` in
-/// `direction`, clamped to the bounds of `clients`.
-///
-/// Re-anchors on the first surviving client when `current_pid` is no
-/// longer present (the background monitor retain-ed it out while the
-/// submenu was open). Returns `None` only for an empty cluster.
+/// `direction`, clamped to `clients`. Re-anchors on the first surviving
+/// client when `current_pid` is no longer present (retained out while
+/// the submenu was open).
 ///
 /// # Arguments
 ///
@@ -1064,9 +1046,7 @@ impl<'a> Daemon<'a> {
         }
     }
 
-    /// Redraws the enable/disable submenu prompt. The currently
-    /// selected window is identified by its highlight color, so the
-    /// daemon console only needs to show the header and keymap.
+    /// Redraws the enable/disable submenu prompt.
     ///
     /// # Arguments
     ///
