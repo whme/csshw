@@ -195,7 +195,7 @@ fn start_flash(
 /// Paint `target` if it differs from `last`, then update `last`.
 ///
 /// Skipping unchanged repaints avoids an unnecessary LPC roundtrip to
-/// conhost (and, on Win10, the post-fill `InvalidateRect`/WM_PAINT).
+/// conhost and the post-fill `InvalidateRect`/WM_PAINT.
 ///
 /// # Arguments
 ///

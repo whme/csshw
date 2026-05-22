@@ -925,9 +925,7 @@ pub fn set_console_color(api: &dyn WindowsApi, color: CONSOLE_CHARACTER_ATTRIBUT
     let buffer_info = api.get_console_screen_buffer_info().unwrap();
     // FillConsoleOutputAttribute continues into successive rows when the
     // length extends past the end of the row, so a single call from (0,0)
-    // recolors the entire buffer in one LPC roundtrip. The screen buffer
-    // can be thousands of rows tall (scrollback), so a per-row loop here
-    // would dominate the cost of rapid submenu navigation.
+    // recolors the entire buffer in one LPC roundtrip.
     let width: u32 = buffer_info.dwSize.X.try_into().unwrap();
     let height: u32 = buffer_info.dwSize.Y.try_into().unwrap();
     api.fill_console_output_attribute(color.0, width * height, COORD { X: 0, Y: 0 })
@@ -939,9 +937,7 @@ pub fn set_console_color(api: &dyn WindowsApi, color: CONSOLE_CHARACTER_ATTRIBUT
     // cell, so the fill above cannot reach them, and conhost does not
     // repaint them on an attribute-only update - they keep the old color
     // until something triggers a WM_PAINT (user double-clicking is one
-    // such trigger). csshw forces conhost as the host terminal (see
-    // WindowsSettingsDefaultTerminalApplicationGuard), so this always
-    // applies.
+    // such trigger).
     if let Err(err) = api.invalidate_console_window() {
         warn!("Failed to invalidate console window after recolor: {}", err);
     }
