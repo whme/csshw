@@ -132,6 +132,12 @@ submenu_edge_behavior = 'clamp'
 | <a id="console_color"></a>`console_color` | u16 | `207` (`8+4+2+1+64+128`) | Daemon console colors. Default paints white text on red. See [Console color encoding](#console-color-encoding). |
 | `submenu_edge_behavior` | enum | `'clamp'` | What happens when an arrow / `hjkl` keystroke in the submenu would move the highlight past the edge of the client grid. See [Submenu edge behavior](#submenu-edge-behavior). |
 
+### Aspect ratio
+`aspect_ratio_adjustement` configures whether the available screen space should rather be used horizontally or vertically.
+* `> 0.0` - aims for vertical rectangle shape. The larger the value, the more exaggerated the "verticality". Eventually the windows will all be columns.
+* `= 0.0` - aims for square shape.
+* `< 0.0` - aims for horizontal rectangle shape. The smaller the value, the more exaggerated the "horizontality". Eventually the windows will all be rows. `-1.0` is the sweetspot for mostly preserving a 16:9 ratio.
+
 ### Console color encoding
 Console-color options encode background and foreground attributes as a single integer.
 Available are all standard Windows color combinations ([windows docs](https://learn.microsoft.com/en-us/windows/console/console-screen-buffers#character-attributes)):
@@ -148,12 +154,6 @@ BACKGROUND_INTENSITY:   128
 
 ### Highlight overlay
 The highlight wins over [`disabled_console_color`](#disabled_console_color); pressing `[d]`/`[e]`/`[t]` on the selected window briefly flashes the underlying state color (~250ms) as action feedback before the highlight color is restored.
-
-### Aspect ratio
-`aspect_ratio_adjustement` configures whether the available screen space should rather be used horizontally or vertically.
-* `> 0.0` - aims for vertical rectangle shape. The larger the value, the more exaggerated the "verticality". Eventually the windows will all be columns.
-* `= 0.0` - aims for square shape.
-* `< 0.0` - aims for horizontal rectangle shape. The smaller the value, the more exaggerated the "horizontality". Eventually the windows will all be rows. `-1.0` is the sweetspot for mostly preserving a 16:9 ratio.
 
 ### Submenu edge behavior
 `submenu_edge_behavior` selects what happens when an arrow / `hjkl` keystroke in the `[e]nable/disable input` submenu would move the highlight past the edge of the client grid:
