@@ -23,13 +23,15 @@ mod daemon_test {
     use crate::{
         daemon::{
             classify_control_mode_key, classify_enable_disable_submenu_key, expand_hosts,
-            named_pipe_server_routine, resolve_cluster_tags, Client, Clients, ControlModeAction,
-            ControlModeState, Daemon, EnableDisableSubmenuAction, HWNDWrapper, NavigationDirection,
+            named_pipe_server_routine, next_submenu_pid, resolve_cluster_tags, Client, Clients,
+            ControlModeAction, ControlModeState, Daemon, EnableDisableSubmenuAction, HWNDWrapper,
+            NavigationDirection,
         },
         protocol::{
-            serialization::serialize_pid, ClientState, FRAMED_INPUT_RECORD_LENGTH,
-            FRAMED_KEEP_ALIVE_LENGTH, FRAMED_STATE_CHANGE_LENGTH, SERIALIZED_INPUT_RECORD_0_LENGTH,
-            SERIALIZED_PID_LENGTH, TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
+            serialization::serialize_pid, ClientState, FRAMED_HIGHLIGHT_LENGTH,
+            FRAMED_INPUT_RECORD_LENGTH, FRAMED_KEEP_ALIVE_LENGTH, FRAMED_STATE_CHANGE_LENGTH,
+            SERIALIZED_INPUT_RECORD_0_LENGTH, SERIALIZED_PID_LENGTH, TAG_HIGHLIGHT,
+            TAG_INPUT_RECORD, TAG_KEEP_ALIVE, TAG_STATE_CHANGE,
         },
         utils::{
             config::{Cluster, DaemonConfig},
@@ -65,7 +67,8 @@ mod daemon_test {
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: pid,
-            state_tx: watch::channel(ClientState::Active).0,
+            state_sender: watch::channel(ClientState::Active).0,
+            highlight_sender: watch::channel(false).0,
         });
         return Arc::new(Mutex::new(clients));
     }
@@ -236,6 +239,12 @@ mod daemon_test {
                         assert_eq!(FRAMED_STATE_CHANGE_LENGTH, n);
                         assert_eq!(buf[1], ClientState::Active as u8);
                     }
+                    TAG_HIGHLIGHT => {
+                        // Initial highlight push emitted right after the
+                        // state push; the default highlight is `false`.
+                        assert_eq!(FRAMED_HIGHLIGHT_LENGTH, n);
+                        assert_eq!(buf[1], 0u8);
+                    }
                     other => panic!("Unexpected tag byte 0x{other:02X}"),
                 },
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -276,12 +285,12 @@ mod daemon_test {
         let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
         let clients = make_clients_with_pid(TEST_PID);
         // Grab the watch sender so we can later trigger a state change push.
-        let state_tx = clients
+        let state_sender = clients
             .lock()
             .unwrap()
             .get_by_pid(TEST_PID)
             .unwrap()
-            .state_tx
+            .state_sender
             .clone();
         send_pid(&named_pipe_client, TEST_PID).await?;
         let future = tokio::spawn(async move {
@@ -291,7 +300,7 @@ mod daemon_test {
         // subscribing, so the very first frame on the pipe must be the
         // initial `TAG_STATE_CHANGE(Active)` push. Receiving it also
         // proves the subscribe has happened and any subsequent
-        // `state_tx.send` will be observed.
+        // `state_sender.send` will be observed.
         loop {
             named_pipe_client.readable().await?;
             let mut buf = [0u8; FRAMED_INPUT_RECORD_LENGTH];
@@ -313,7 +322,7 @@ mod daemon_test {
         }
         // Push a real state transition through the watch sender; the routine
         // must write a tagged state-change frame to the pipe.
-        state_tx.send(ClientState::Disabled)?;
+        state_sender.send(ClientState::Disabled)?;
         let mut state_change_seen = false;
         loop {
             named_pipe_client.readable().await?;
@@ -330,6 +339,13 @@ mod daemon_test {
                     TAG_KEEP_ALIVE => {
                         assert_eq!(FRAMED_KEEP_ALIVE_LENGTH, n);
                         // Keep-alives may interleave with the state change; keep waiting.
+                    }
+                    TAG_HIGHLIGHT => {
+                        // Initial highlight push following the initial state
+                        // push; drain it and keep waiting for the state
+                        // transition.
+                        assert_eq!(FRAMED_HIGHLIGHT_LENGTH, n);
+                        assert_eq!(buf[1], 0u8);
                     }
                     other => panic!("Unexpected tag byte 0x{other:02X}"),
                 },
@@ -348,13 +364,13 @@ mod daemon_test {
     /// the PID handshake, even when no transition fires after subscribe.
     ///
     /// `Daemon::set_client_state` may run in the brief window between
-    /// `Client` construction and the routine's `state_tx.subscribe()`
-    /// call. In that case `state_rx.changed()` would never fire for the
+    /// `Client` construction and the routine's `state_sender.subscribe()`
+    /// call. In that case `state_receiver.changed()` would never fire for the
     /// pre-existing value, leaving the client stuck on its default
     /// `ClientState::Active` even though the daemon already gates
     /// forwarding on the new value. The fix - and what this test
     /// asserts - is that the routine pushes the snapshot from
-    /// `state_rx.borrow_and_update()` as its very first frame.
+    /// `state_receiver.borrow_and_update()` as its very first frame.
     #[tokio::test]
     async fn test_named_pipe_server_routine_sends_initial_state_after_subscribe(
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -371,7 +387,7 @@ mod daemon_test {
             .pipe_mode(PipeMode::Message)
             .create(&pipe_name)?;
         let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
-        let (clients, state_tx) = make_clients_with_pid_and_state(TEST_PID);
+        let (clients, state_sender) = make_clients_with_pid_and_state(TEST_PID);
 
         // Pre-disable BEFORE the routine subscribes. `send_replace`
         // updates the stored value even when there are no receivers,
@@ -379,7 +395,7 @@ mod daemon_test {
         // `Daemon::set_client_state` mutating the watch before the
         // pipe-server task has had a chance to call `subscribe`. A
         // regular `send` would error with no receivers.
-        state_tx.send_replace(ClientState::Disabled);
+        state_sender.send_replace(ClientState::Disabled);
 
         send_pid(&named_pipe_client, TEST_PID).await?;
         let future = tokio::spawn(async move {
@@ -498,6 +514,12 @@ mod daemon_test {
                         assert_eq!(FRAMED_STATE_CHANGE_LENGTH, n);
                         assert_eq!(buf[1], ClientState::Active as u8);
                     }
+                    TAG_HIGHLIGHT => {
+                        // Initial highlight push following the initial
+                        // state push. Drain and keep reading.
+                        assert_eq!(FRAMED_HIGHLIGHT_LENGTH, n);
+                        assert_eq!(buf[1], 0u8);
+                    }
                     other => panic!("Unexpected tag byte 0x{other:02X}"),
                 },
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -581,16 +603,17 @@ mod daemon_test {
     fn make_clients_with_pid_and_state(
         pid: u32,
     ) -> (Arc<Mutex<Clients>>, watch::Sender<ClientState>) {
-        let state_tx = watch::channel(ClientState::Active).0;
+        let state_sender = watch::channel(ClientState::Active).0;
         let mut clients = Clients::new();
         clients.push(Client {
             hostname: format!("test-host-{pid}"),
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: pid,
-            state_tx: state_tx.clone(),
+            state_sender: state_sender.clone(),
+            highlight_sender: watch::channel(false).0,
         });
-        return (Arc::new(Mutex::new(clients)), state_tx);
+        return (Arc::new(Mutex::new(clients)), state_sender);
     }
 
     /// Verifies that when a client's [`ClientState`] is set to
@@ -614,7 +637,7 @@ mod daemon_test {
             .pipe_mode(PipeMode::Message)
             .create(&pipe_name)?;
         let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
-        let (clients, state_tx) = make_clients_with_pid_and_state(TEST_PID);
+        let (clients, state_sender) = make_clients_with_pid_and_state(TEST_PID);
         send_pid(&named_pipe_client, TEST_PID).await?;
         let future = tokio::spawn(async move {
             named_pipe_server_routine(named_pipe_server, &mut receiver, clients).await;
@@ -649,6 +672,12 @@ mod daemon_test {
                         assert_eq!(FRAMED_STATE_CHANGE_LENGTH, n);
                         assert_eq!(buf[1], ClientState::Active as u8);
                     }
+                    TAG_HIGHLIGHT => {
+                        // Initial highlight push following the initial
+                        // state push. Drain and keep reading.
+                        assert_eq!(FRAMED_HIGHLIGHT_LENGTH, n);
+                        assert_eq!(buf[1], 0u8);
+                    }
                     other => panic!("Unexpected tag byte 0x{other:02X}"),
                 },
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => continue,
@@ -659,7 +688,7 @@ mod daemon_test {
 
         // Disable the client. The routine emits a `TAG_STATE_CHANGE`
         // frame as soon as it observes this transition.
-        state_tx.send(ClientState::Disabled).unwrap();
+        state_sender.send(ClientState::Disabled).unwrap();
 
         // Send more data - it must NOT arrive at the client.
         const SENDS: usize = 5;
@@ -710,6 +739,13 @@ mod daemon_test {
                                     "State-change announcement must carry Disabled"
                                 );
                                 saw_state_change = true;
+                            }
+                            TAG_HIGHLIGHT => {
+                                // Steady-state highlight is `false` while the
+                                // submenu is not driving navigation, so a
+                                // highlight frame may arrive once at startup.
+                                assert_eq!(FRAMED_HIGHLIGHT_LENGTH, n);
+                                assert_eq!(buf[1], 0u8);
                             }
                             TAG_INPUT_RECORD => panic!(
                                 "Received input-record frame after disabling - broadcast data leaked through"
@@ -767,7 +803,7 @@ mod daemon_test {
             .pipe_mode(PipeMode::Message)
             .create(&pipe_name)?;
         let named_pipe_client = ClientOptions::new().open(&pipe_name)?;
-        let (clients, state_tx) = make_clients_with_pid_and_state(TEST_PID);
+        let (clients, state_sender) = make_clients_with_pid_and_state(TEST_PID);
 
         // Disable up front so the routine throttles consumption and
         // cannot drain the broadcast buffer before we overflow it. Use
@@ -776,7 +812,7 @@ mod daemon_test {
         // receivers; `send_replace` updates the stored value either
         // way and the routine reads it through `borrow_and_update` on
         // its first iteration.
-        state_tx.send_replace(ClientState::Disabled);
+        state_sender.send_replace(ClientState::Disabled);
 
         // Overflow the bounded broadcast buffer before the routine
         // begins pulling from it so the first `try_recv` observes
@@ -823,6 +859,16 @@ mod daemon_test {
                                 );
                                 continue;
                             }
+                            TAG_HIGHLIGHT => {
+                                // Initial highlight push following the state
+                                // push; drain it and keep waiting for the
+                                // first keep-alive frame.
+                                assert_eq!(
+                                    FRAMED_HIGHLIGHT_LENGTH, n,
+                                    "Highlight frame must be exactly two bytes"
+                                );
+                                continue;
+                            }
                             TAG_INPUT_RECORD => panic!(
                                 "Received input-record frame while disabled - broadcast data leaked through after Lagged"
                             ),
@@ -863,7 +909,8 @@ mod daemon_test {
                 window_handle: HWND(std::ptr::null_mut()),
                 process_handle: HANDLE::default(),
                 process_id: pid,
-                state_tx: watch::channel(ClientState::Active).0,
+                state_sender: watch::channel(ClientState::Active).0,
+                highlight_sender: watch::channel(false).0,
             };
         };
         clients.push(make_client(1000));
@@ -881,21 +928,24 @@ mod daemon_test {
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: 1000,
-            state_tx: watch::channel(ClientState::Active).0,
+            state_sender: watch::channel(ClientState::Active).0,
+            highlight_sender: watch::channel(false).0,
         };
         let client_b = Client {
             hostname: "host-b".to_owned(),
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: 2000,
-            state_tx: watch::channel(ClientState::Active).0,
+            state_sender: watch::channel(ClientState::Active).0,
+            highlight_sender: watch::channel(false).0,
         };
         let client_c = Client {
             hostname: "host-c".to_owned(),
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: 3000,
-            state_tx: watch::channel(ClientState::Active).0,
+            state_sender: watch::channel(ClientState::Active).0,
+            highlight_sender: watch::channel(false).0,
         };
 
         clients.push(client_a);
@@ -931,7 +981,8 @@ mod daemon_test {
             window_handle: HWND(std::ptr::null_mut()),
             process_handle: HANDLE::default(),
             process_id: pid,
-            state_tx: watch::channel(state).0,
+            state_sender: watch::channel(state).0,
+            highlight_sender: watch::channel(false).0,
         };
     }
 
@@ -954,7 +1005,7 @@ mod daemon_test {
         let snapshot = |c: &Clients| -> Vec<ClientState> {
             return c
                 .iter()
-                .map(|client| return *client.state_tx.borrow())
+                .map(|client| return *client.state_sender.borrow())
                 .collect();
         };
 
@@ -974,7 +1025,7 @@ mod daemon_test {
             let flips: Vec<ClientState> = c
                 .iter()
                 .map(|client| {
-                    return match *client.state_tx.borrow() {
+                    return match *client.state_sender.borrow() {
                         ClientState::Active => ClientState::Disabled,
                         ClientState::Disabled => ClientState::Active,
                     };
@@ -984,7 +1035,7 @@ mod daemon_test {
             // tests don't spin up the pipe-server routine that would
             // normally hold the receiver.
             for (client, flipped) in c.iter().zip(flips) {
-                client.state_tx.send_replace(flipped);
+                client.state_sender.send_replace(flipped);
             }
         };
 
@@ -1008,7 +1059,7 @@ mod daemon_test {
     fn snapshot_states(clients: &Clients) -> Vec<ClientState> {
         return clients
             .iter()
-            .map(|client| return *client.state_tx.borrow())
+            .map(|client| return *client.state_sender.borrow())
             .collect();
     }
 
@@ -1084,9 +1135,13 @@ mod daemon_test {
 
         let config = DaemonConfig::default();
         let clusters: Vec<Cluster> = Vec::new();
-        let mut daemon =
-            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
-        daemon.submenu_selected_index = Some(0);
+        let mut daemon = Daemon::for_test(
+            &config,
+            &clusters,
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: Some(1),
+            },
+        );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_no_calls(),
@@ -1102,10 +1157,10 @@ mod daemon_test {
                 ClientState::Disabled,
             ]
         );
-        assert_eq!(
+        assert!(matches!(
             daemon.control_mode_state,
-            ControlModeState::EnableDisableSubmenu
-        );
+            ControlModeState::EnableDisableSubmenu { .. }
+        ));
     }
 
     /// Verifies that `VK_D` in the enable/disable submenu disables
@@ -1123,9 +1178,13 @@ mod daemon_test {
 
         let config = DaemonConfig::default();
         let clusters: Vec<Cluster> = Vec::new();
-        let mut daemon =
-            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
-        daemon.submenu_selected_index = Some(0);
+        let mut daemon = Daemon::for_test(
+            &config,
+            &clusters,
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: Some(1),
+            },
+        );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_no_calls(),
@@ -1141,10 +1200,10 @@ mod daemon_test {
                 ClientState::Active,
             ]
         );
-        assert_eq!(
+        assert!(matches!(
             daemon.control_mode_state,
-            ControlModeState::EnableDisableSubmenu
-        );
+            ControlModeState::EnableDisableSubmenu { .. }
+        ));
     }
 
     /// Verifies that `VK_T` in the enable/disable submenu flips only
@@ -1163,9 +1222,13 @@ mod daemon_test {
 
         let config = DaemonConfig::default();
         let clusters: Vec<Cluster> = Vec::new();
-        let mut daemon =
-            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
-        daemon.submenu_selected_index = Some(0);
+        let mut daemon = Daemon::for_test(
+            &config,
+            &clusters,
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: Some(1),
+            },
+        );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_no_calls(),
@@ -1180,10 +1243,10 @@ mod daemon_test {
                 ClientState::Active,
             ]
         );
-        assert_eq!(
+        assert!(matches!(
             daemon.control_mode_state,
-            ControlModeState::EnableDisableSubmenu
-        );
+            ControlModeState::EnableDisableSubmenu { .. }
+        ));
 
         // Second press without re-entering the submenu: the submenu
         // must still be open from the first press, and the toggle is
@@ -1194,10 +1257,10 @@ mod daemon_test {
             submenu_key_event(VK_T),
         );
         assert_eq!(snapshot_states(&clients.lock().unwrap()), initial);
-        assert_eq!(
+        assert!(matches!(
             daemon.control_mode_state,
-            ControlModeState::EnableDisableSubmenu
-        );
+            ControlModeState::EnableDisableSubmenu { .. }
+        ));
     }
 
     /// Verifies that an unrecognised key in the enable/disable
@@ -1214,9 +1277,13 @@ mod daemon_test {
 
         let config = DaemonConfig::default();
         let clusters: Vec<Cluster> = Vec::new();
-        let mut daemon =
-            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
-        daemon.submenu_selected_index = Some(0);
+        let mut daemon = Daemon::for_test(
+            &config,
+            &clusters,
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: Some(1),
+            },
+        );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_no_calls(),
@@ -1225,10 +1292,10 @@ mod daemon_test {
         );
 
         assert_eq!(snapshot_states(&clients.lock().unwrap()), initial);
-        assert_eq!(
+        assert!(matches!(
             daemon.control_mode_state,
-            ControlModeState::EnableDisableSubmenu
-        );
+            ControlModeState::EnableDisableSubmenu { .. }
+        ));
     }
 
     /// Verifies that pressing `VK_E` with no clients tracked is a
@@ -1240,11 +1307,15 @@ mod daemon_test {
 
         let config = DaemonConfig::default();
         let clusters: Vec<Cluster> = Vec::new();
-        let mut daemon =
-            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
-        // Submenu entry on an empty cluster leaves the selection at
+        // Submenu entry on an empty cluster leaves the highlight at
         // `None`; the dispatch must not panic.
-        daemon.submenu_selected_index = None;
+        let mut daemon = Daemon::for_test(
+            &config,
+            &clusters,
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: None,
+            },
+        );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_no_calls(),
@@ -1253,10 +1324,10 @@ mod daemon_test {
         );
 
         assert!(clients.lock().unwrap().iter().next().is_none());
-        assert_eq!(
+        assert!(matches!(
             daemon.control_mode_state,
-            ControlModeState::EnableDisableSubmenu
-        );
+            ControlModeState::EnableDisableSubmenu { .. }
+        ));
     }
 
     /// Regression for GH #196: control-mode dispatch must ignore
@@ -1386,9 +1457,13 @@ mod daemon_test {
 
         let config = DaemonConfig::default();
         let clusters: Vec<Cluster> = Vec::new();
-        let mut daemon =
-            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
-        daemon.submenu_selected_index = Some(0);
+        let mut daemon = Daemon::for_test(
+            &config,
+            &clusters,
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: Some(1),
+            },
+        );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_no_calls(),
@@ -1401,10 +1476,10 @@ mod daemon_test {
             vec![ClientState::Active, ClientState::Disabled],
             "VK_E with lock-state bits set must still enable the selected client",
         );
-        assert_eq!(
+        assert!(matches!(
             daemon.control_mode_state,
-            ControlModeState::EnableDisableSubmenu
-        );
+            ControlModeState::EnableDisableSubmenu { .. }
+        ));
     }
 
     /// Regression test for #197: when control mode is `Active` and the
@@ -1450,7 +1525,8 @@ mod daemon_test {
         };
 
         // Act
-        let consumed = daemon.control_mode_is_active(&mock, esc_input);
+        let clients: Arc<Mutex<Clients>> = Arc::new(Mutex::new(Clients::new()));
+        let consumed = daemon.control_mode_is_active(&mock, &clients, esc_input);
 
         // Assert: the `Esc` is reported as owned by control mode (so the
         // caller will skip forwarding it) and the state machine is back
@@ -1459,17 +1535,21 @@ mod daemon_test {
         assert_eq!(daemon.control_mode_state, ControlModeState::Inactive);
     }
 
-    /// Verifies that `quit_control_mode` clears
-    /// `submenu_selected_index` so the selection cursor never
-    /// outlives a control-mode session.
+    /// Verifies that `quit_control_mode` transitions back to
+    /// `Inactive` so any submenu highlight state carried on the
+    /// previous variant is dropped along with it.
     #[test]
-    fn test_quit_control_mode_clears_submenu_selection() {
+    fn test_quit_control_mode_transitions_to_inactive() {
         use crate::utils::windows::MockWindowsApi;
         let config = DaemonConfig::default();
         let clusters: Vec<Cluster> = Vec::new();
-        let mut daemon =
-            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
-        daemon.submenu_selected_index = Some(2);
+        let mut daemon = Daemon::for_test(
+            &config,
+            &clusters,
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: Some(3),
+            },
+        );
 
         let mut mock = MockWindowsApi::new();
         mock.expect_get_console_screen_buffer_info().returning(|| {
@@ -1487,61 +1567,70 @@ mod daemon_test {
         daemon.quit_control_mode(&mock);
 
         assert_eq!(daemon.control_mode_state, ControlModeState::Inactive);
-        assert_eq!(daemon.submenu_selected_index, None);
     }
 
-    /// Verifies that `move_submenu_selection` advances the cursor by
-    /// one position on `Down`/`Right` and clamps at `len - 1`.
+    /// Verifies that `next_submenu_pid` advances by one on
+    /// `Down`/`Right` and clamps at the last surviving client.
     #[test]
-    fn test_move_submenu_selection_down_right_clamp_at_last() {
-        let config = DaemonConfig::default();
-        let clusters: Vec<Cluster> = Vec::new();
-        let mut daemon =
-            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
-        daemon.submenu_selected_index = Some(0);
+    fn test_next_submenu_pid_down_right_clamp_at_last() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.push(make_client_with_state(3, ClientState::Active));
 
-        daemon.move_submenu_selection(NavigationDirection::Down, 3);
-        assert_eq!(daemon.submenu_selected_index, Some(1));
-        daemon.move_submenu_selection(NavigationDirection::Right, 3);
-        assert_eq!(daemon.submenu_selected_index, Some(2));
+        assert_eq!(
+            next_submenu_pid(&clients, Some(1), NavigationDirection::Down),
+            Some(2)
+        );
+        assert_eq!(
+            next_submenu_pid(&clients, Some(2), NavigationDirection::Right),
+            Some(3)
+        );
         // Clamp at the last client - no wrap.
-        daemon.move_submenu_selection(NavigationDirection::Down, 3);
-        assert_eq!(daemon.submenu_selected_index, Some(2));
-        daemon.move_submenu_selection(NavigationDirection::Right, 3);
-        assert_eq!(daemon.submenu_selected_index, Some(2));
+        assert_eq!(
+            next_submenu_pid(&clients, Some(3), NavigationDirection::Down),
+            Some(3)
+        );
+        assert_eq!(
+            next_submenu_pid(&clients, Some(3), NavigationDirection::Right),
+            Some(3)
+        );
     }
 
-    /// Verifies that `move_submenu_selection` steps back by one on
-    /// `Up`/`Left` and clamps at `0` rather than wrapping.
+    /// Verifies that `next_submenu_pid` steps back by one on
+    /// `Up`/`Left` and clamps at the first surviving client rather
+    /// than wrapping.
     #[test]
-    fn test_move_submenu_selection_up_left_clamp_at_zero() {
-        let config = DaemonConfig::default();
-        let clusters: Vec<Cluster> = Vec::new();
-        let mut daemon =
-            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
-        daemon.submenu_selected_index = Some(2);
+    fn test_next_submenu_pid_up_left_clamp_at_first() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.push(make_client_with_state(3, ClientState::Active));
 
-        daemon.move_submenu_selection(NavigationDirection::Up, 3);
-        assert_eq!(daemon.submenu_selected_index, Some(1));
-        daemon.move_submenu_selection(NavigationDirection::Left, 3);
-        assert_eq!(daemon.submenu_selected_index, Some(0));
-        // Clamp at zero - no wrap.
-        daemon.move_submenu_selection(NavigationDirection::Up, 3);
-        assert_eq!(daemon.submenu_selected_index, Some(0));
-        daemon.move_submenu_selection(NavigationDirection::Left, 3);
-        assert_eq!(daemon.submenu_selected_index, Some(0));
+        assert_eq!(
+            next_submenu_pid(&clients, Some(3), NavigationDirection::Up),
+            Some(2)
+        );
+        assert_eq!(
+            next_submenu_pid(&clients, Some(2), NavigationDirection::Left),
+            Some(1)
+        );
+        // Clamp at the first client - no wrap.
+        assert_eq!(
+            next_submenu_pid(&clients, Some(1), NavigationDirection::Up),
+            Some(1)
+        );
+        assert_eq!(
+            next_submenu_pid(&clients, Some(1), NavigationDirection::Left),
+            Some(1)
+        );
     }
 
-    /// Verifies that `move_submenu_selection` is a no-op when the
-    /// cluster is empty: the selection is cleared and stays `None`
-    /// across every direction.
+    /// Verifies that `next_submenu_pid` returns `None` for an empty
+    /// cluster regardless of direction.
     #[test]
-    fn test_move_submenu_selection_empty_clients_stays_none() {
-        let config = DaemonConfig::default();
-        let clusters: Vec<Cluster> = Vec::new();
-        let mut daemon =
-            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
-        daemon.submenu_selected_index = None;
+    fn test_next_submenu_pid_empty_clients_returns_none() {
+        let clients = Clients::new();
 
         for direction in [
             NavigationDirection::Up,
@@ -1549,14 +1638,14 @@ mod daemon_test {
             NavigationDirection::Left,
             NavigationDirection::Right,
         ] {
-            daemon.move_submenu_selection(direction, 0);
-            assert_eq!(daemon.submenu_selected_index, None);
+            assert_eq!(next_submenu_pid(&clients, None, direction), None);
+            assert_eq!(next_submenu_pid(&clients, Some(1), direction), None);
         }
     }
 
     /// Verifies that the dispatch arm for `Navigate(Down)` calls
-    /// through `move_submenu_selection` and triggers a re-render
-    /// (which performs the console calls stubbed on the mock).
+    /// through `next_submenu_pid` and triggers a re-render (which
+    /// performs the console calls stubbed on the mock).
     #[test]
     fn test_submenu_navigate_down_advances_selection_via_dispatch() {
         let mut clients = Clients::new();
@@ -1567,9 +1656,13 @@ mod daemon_test {
 
         let config = DaemonConfig::default();
         let clusters: Vec<Cluster> = Vec::new();
-        let mut daemon =
-            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
-        daemon.submenu_selected_index = Some(0);
+        let mut daemon = Daemon::for_test(
+            &config,
+            &clusters,
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: Some(1),
+            },
+        );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_with_clear_screen(),
@@ -1577,10 +1670,11 @@ mod daemon_test {
             submenu_key_event(VK_DOWN),
         );
 
-        assert_eq!(daemon.submenu_selected_index, Some(1));
         assert_eq!(
             daemon.control_mode_state,
-            ControlModeState::EnableDisableSubmenu
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: Some(2)
+            }
         );
     }
 
@@ -1597,9 +1691,13 @@ mod daemon_test {
 
         let config = DaemonConfig::default();
         let clusters: Vec<Cluster> = Vec::new();
-        let mut daemon =
-            Daemon::for_test(&config, &clusters, ControlModeState::EnableDisableSubmenu);
-        daemon.submenu_selected_index = Some(1);
+        let mut daemon = Daemon::for_test(
+            &config,
+            &clusters,
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: Some(2),
+            },
+        );
 
         daemon.handle_enable_disable_submenu_key(
             &mock_no_calls(),
@@ -1615,6 +1713,257 @@ mod daemon_test {
                 ClientState::Disabled,
             ],
             "VK_E with selection at index 1 must enable only client 1",
+        );
+    }
+
+    /// Collects every client's `highlight_sender` value in insertion order.
+    fn snapshot_highlights(clients: &Clients) -> Vec<bool> {
+        return clients
+            .iter()
+            .map(|client| return *client.highlight_sender.borrow())
+            .collect();
+    }
+
+    /// Verifies that opening the enable/disable submenu pushes
+    /// `highlight_sender = true` on the first client and leaves the
+    /// others cleared - the visual signal that drives the new
+    /// per-client highlight color.
+    #[test]
+    fn test_open_enable_disable_submenu_highlights_first_client() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.push(make_client_with_state(3, ClientState::Active));
+        let clients = Mutex::new(clients);
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let daemon = Daemon::for_test(&config, &clusters, ControlModeState::Active);
+
+        let clients_guard = clients.lock().unwrap();
+        daemon.apply_submenu_highlight(&clients_guard, None, Some(1));
+
+        assert_eq!(
+            snapshot_highlights(&clients_guard),
+            vec![true, false, false],
+            "opening the submenu must highlight only the first client",
+        );
+    }
+
+    /// Verifies that the `Navigate(Down)` dispatch arm moves the
+    /// per-client highlight from the previously selected index to
+    /// the new one.
+    #[test]
+    fn test_submenu_navigate_moves_highlight() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.push(make_client_with_state(3, ClientState::Active));
+        // Start with client 0 highlighted, matching the state just
+        // after `OpenEnableDisableSubmenu`.
+        clients.first().unwrap().highlight_sender.send_replace(true);
+        let clients = Mutex::new(clients);
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon = Daemon::for_test(
+            &config,
+            &clusters,
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: Some(1),
+            },
+        );
+
+        daemon.handle_enable_disable_submenu_key(
+            &mock_with_clear_screen(),
+            &clients,
+            submenu_key_event(VK_DOWN),
+        );
+
+        assert_eq!(
+            daemon.control_mode_state,
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: Some(2)
+            }
+        );
+        assert_eq!(
+            snapshot_highlights(&clients.lock().unwrap()),
+            vec![false, true, false],
+            "Navigate(Down) must clear the old highlight and set the new one",
+        );
+    }
+
+    /// Verifies that `apply_submenu_highlight(.., None)` -
+    /// the path the `Esc` arm in `control_mode_is_active` takes when
+    /// leaving the submenu - clears the highlight on every client.
+    #[test]
+    fn test_submenu_esc_clears_highlight() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.push(make_client_with_state(3, ClientState::Active));
+        clients.get(1).unwrap().highlight_sender.send_replace(true);
+        let clients = Mutex::new(clients);
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let daemon = Daemon::for_test(
+            &config,
+            &clusters,
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: Some(2),
+            },
+        );
+
+        let clients_guard = clients.lock().unwrap();
+        daemon.apply_submenu_highlight(&clients_guard, Some(2), None);
+
+        assert_eq!(
+            snapshot_highlights(&clients_guard),
+            vec![false, false, false],
+            "Esc must clear the highlight on the previously-selected client",
+        );
+    }
+
+    /// Regression test: when an exited client is retained-out
+    /// mid-submenu, the same numeric index now points at a
+    /// different client. The new occupant of the selected index
+    /// must still receive `highlight_sender = true` even though the
+    /// index value did not change.
+    #[test]
+    fn test_apply_submenu_highlight_handles_index_reuse_after_retain() {
+        let mut clients = Clients::new();
+        // Two clients, the first is highlighted (state right after
+        // `OpenEnableDisableSubmenu`).
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.first().unwrap().highlight_sender.send_replace(true);
+
+        // The background monitor would call `retain` to remove the
+        // exited client; do the same here.
+        clients.retain(|client| return client.process_id != 1);
+        assert_eq!(clients.len(), 1);
+        // The surviving client (PID 2) was never highlighted: its
+        // `highlight_sender` is still `false`.
+        assert!(!*clients.first().unwrap().highlight_sender.borrow());
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        // The daemon thought PID 1 was highlighted before retain;
+        // re-anchoring on the surviving PID 2 must turn its highlight on.
+        let daemon = Daemon::for_test(
+            &config,
+            &clusters,
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: Some(1),
+            },
+        );
+
+        daemon.apply_submenu_highlight(&clients, Some(1), Some(2));
+
+        assert_eq!(
+            snapshot_highlights(&clients),
+            vec![true],
+            "after retain reuses an index the surviving client must be highlighted",
+        );
+    }
+
+    /// Regression test: when a client BEFORE the selected one exits
+    /// mid-submenu, surviving clients slide to lower indices but
+    /// the previously-highlighted client must still be cleared on
+    /// the next navigation. PID-based tracking handles this; the
+    /// previous index-based clear would have left the highlight
+    /// stale on the shifted client.
+    #[test]
+    fn test_apply_submenu_highlight_clears_shifted_client_after_retain() {
+        let mut clients = Clients::new();
+        // Three clients, the second is highlighted.
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.push(make_client_with_state(3, ClientState::Active));
+        clients.get(1).unwrap().highlight_sender.send_replace(true);
+
+        // Drop the FIRST client - PID 2 (still highlighted) shifts
+        // to index 0, PID 3 shifts to index 1.
+        clients.retain(|client| return client.process_id != 1);
+        assert_eq!(clients.len(), 2);
+        assert_eq!(
+            snapshot_highlights(&clients),
+            vec![true, false],
+            "precondition: PID 2 stayed highlighted after retain shifted it to index 0",
+        );
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let daemon = Daemon::for_test(
+            &config,
+            &clusters,
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: Some(2),
+            },
+        );
+
+        // User navigates `Down`: the daemon now wants PID 3
+        // highlighted. The clear half must find PID 2 by id and turn
+        // it off, even though it is no longer at the index the daemon
+        // last saw it at.
+        daemon.apply_submenu_highlight(&clients, Some(2), Some(3));
+
+        assert_eq!(
+            snapshot_highlights(&clients),
+            vec![false, true],
+            "the previously highlighted client must be cleared even after a retain shift",
+        );
+    }
+
+    /// Regression test: when the selected client (and others past it)
+    /// are retained-out mid-submenu, the `highlighted_pid` carried on
+    /// the variant no longer maps to any surviving client. An Up/Left
+    /// navigation must still re-anchor on a surviving client and
+    /// propagate the highlight to it instead of silently leaving the
+    /// submenu untargeted.
+    #[test]
+    fn test_submenu_navigate_clamps_stale_index_after_retain() {
+        let mut clients = Clients::new();
+        clients.push(make_client_with_state(1, ClientState::Active));
+        clients.push(make_client_with_state(2, ClientState::Active));
+        clients.push(make_client_with_state(3, ClientState::Active));
+        // Submenu opened with the last client highlighted.
+        clients.get(2).unwrap().highlight_sender.send_replace(true);
+
+        // The background monitor retains-out the last two clients
+        // while the submenu is open, leaving the highlighted PID stale.
+        clients.retain(|client| return client.process_id == 1);
+        assert_eq!(clients.len(), 1);
+        let clients = Mutex::new(clients);
+
+        let config = DaemonConfig::default();
+        let clusters: Vec<Cluster> = Vec::new();
+        let mut daemon = Daemon::for_test(
+            &config,
+            &clusters,
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: Some(3),
+            },
+        );
+
+        daemon.handle_enable_disable_submenu_key(
+            &mock_with_clear_screen(),
+            &clients,
+            submenu_key_event(VK_UP),
+        );
+
+        assert_eq!(
+            daemon.control_mode_state,
+            ControlModeState::EnableDisableSubmenu {
+                highlighted_pid: Some(1)
+            },
+            "Up navigation from a stale PID must re-anchor on the surviving client",
+        );
+        assert_eq!(
+            snapshot_highlights(&clients.lock().unwrap()),
+            vec![true],
+            "the surviving client must receive the highlight after re-anchor",
         );
     }
 }

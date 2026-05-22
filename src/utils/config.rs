@@ -3,8 +3,8 @@
 use serde_derive::{Deserialize, Serialize};
 use std::env;
 use windows::Win32::System::Console::{
-    BACKGROUND_INTENSITY, BACKGROUND_RED, FOREGROUND_BLUE, FOREGROUND_GREEN, FOREGROUND_INTENSITY,
-    FOREGROUND_RED,
+    BACKGROUND_BLUE, BACKGROUND_INTENSITY, BACKGROUND_RED, FOREGROUND_BLUE, FOREGROUND_GREEN,
+    FOREGROUND_INTENSITY, FOREGROUND_RED,
 };
 
 /// Default console color applied when a client is in the
@@ -16,6 +16,15 @@ use windows::Win32::System::Console::{
 /// that stays visually distinct from the daemon's bright-red palette.
 const DEFAULT_DISABLED_CONSOLE_COLOR: u16 =
     FOREGROUND_RED.0 | FOREGROUND_GREEN.0 | FOREGROUND_BLUE.0 | BACKGROUND_INTENSITY.0;
+
+/// Default console color for the daemon's currently selected submenu
+/// client: bright-white on blue, distinct from the daemon's bright-red
+/// and the muted disabled palettes so it stands out at a glance.
+const DEFAULT_HIGHLIGHTED_CONSOLE_COLOR: u16 = FOREGROUND_RED.0
+    | FOREGROUND_GREEN.0
+    | FOREGROUND_BLUE.0
+    | FOREGROUND_INTENSITY.0
+    | BACKGROUND_BLUE.0;
 
 /// Placeholder for the `<username>@<host>` argument to the chosen SSH program.
 const DEFAULT_USERNAME_HOST_PLACEHOLDER: &str = "{{USERNAME_AT_HOST}}";
@@ -132,6 +141,29 @@ pub struct ClientConfig {
     ///
     /// [1]: https://learn.microsoft.com/en-us/windows/console/console-screen-buffers#character-attributes
     pub disabled_console_color: u16,
+    /// Controls back- and foreground colors of the client console window
+    /// while it is the currently selected window in the daemon's
+    /// enable/disable submenu.
+    ///
+    /// Uses the same encoding as [`DaemonConfig::console_color`].
+    /// All [standard Windows color combinations][1] are available:
+    ///
+    /// FOREGROUND_BLUE:        1   \
+    /// FOREGROUND_GREEN:       2   \
+    /// FOREGROUND_RED:         4   \
+    /// FOREGROUND_INTENSITY:   8   \
+    /// BACKGROUND_BLUE:        16  \
+    /// BACKGROUND_GREEN:       32  \
+    /// BACKGROUND_RED:         64  \
+    /// BACKGROUND_INTENSITY:   128 \
+    ///
+    /// # Example
+    ///
+    /// Bright-white font on blue background:
+    /// 4 + 2 + 1 + 8 + 16 = `31`
+    ///
+    /// [1]: https://learn.microsoft.com/en-us/windows/console/console-screen-buffers#character-attributes
+    pub highlighted_console_color: u16,
 }
 
 impl Default for ClientConfig {
@@ -145,6 +177,7 @@ impl Default for ClientConfig {
     /// * `arguments`                   - `-XY {{USERNAME_AT_HOST}}`
     /// * `username_host_placeholder`   - `{{USERNAME_AT_HOST}}`
     /// * `disabled_console_color`      - `135`
+    /// * `highlighted_console_color`   - `31`
     ///
     /// Note: %USERPROFILE% actually is resolved by us, so the actual value
     ///       is whatever the environment variable at runtime points to.
@@ -158,6 +191,7 @@ impl Default for ClientConfig {
             ],
             username_host_placeholder: DEFAULT_USERNAME_HOST_PLACEHOLDER.to_string(),
             disabled_console_color: DEFAULT_DISABLED_CONSOLE_COLOR,
+            highlighted_console_color: DEFAULT_HIGHLIGHTED_CONSOLE_COLOR,
         };
     }
 }
@@ -176,6 +210,8 @@ pub struct ClientConfigOpt {
     pub username_host_placeholder: Option<String>,
     #[allow(missing_docs)]
     pub disabled_console_color: Option<u16>,
+    #[allow(missing_docs)]
+    pub highlighted_console_color: Option<u16>,
 }
 
 impl Default for ClientConfigOpt {
@@ -198,6 +234,9 @@ impl From<ClientConfigOpt> for ClientConfig {
             disabled_console_color: val
                 .disabled_console_color
                 .unwrap_or(default.disabled_console_color),
+            highlighted_console_color: val
+                .highlighted_console_color
+                .unwrap_or(default.highlighted_console_color),
         };
     }
 }
@@ -211,6 +250,7 @@ impl From<ClientConfig> for ClientConfigOpt {
             arguments: Some(val.arguments),
             username_host_placeholder: Some(val.username_host_placeholder),
             disabled_console_color: Some(val.disabled_console_color),
+            highlighted_console_color: Some(val.highlighted_console_color),
         };
     }
 }
