@@ -210,7 +210,7 @@ impl ClientGrid {
         let current = self.cell(pid)?;
         return match direction {
             NavigationDirection::Left | NavigationDirection::Right => {
-                self.step_horizontal(current, direction, edge)
+                self.step_horizontal(current, anchor_col, direction, edge)
             }
             NavigationDirection::Up | NavigationDirection::Down => {
                 Some(self.step_vertical(current, anchor_col, direction, edge))
@@ -220,10 +220,13 @@ impl ClientGrid {
 
     /// Horizontal step within `current.row`. Returns `None` only when
     /// the row somehow contains no cells (cannot happen for a valid
-    /// `current` looked up from the grid).
+    /// `current` looked up from the grid). A clamped no-op preserves
+    /// the in-flight `anchor_col` so a subsequent vertical step still
+    /// targets the column the user originally carried over.
     fn step_horizontal(
         &self,
         current: &GridCell,
+        anchor_col: i32,
         direction: NavigationDirection,
         edge: EdgeBehavior,
     ) -> Option<(u32, i32)> {
@@ -238,9 +241,7 @@ impl ClientGrid {
             NavigationDirection::Left => {
                 if pos == 0 {
                     match edge {
-                        EdgeBehavior::Clamp => {
-                            return Some((current.pid, self.anchor_for(current)));
-                        }
+                        EdgeBehavior::Clamp => return Some((current.pid, anchor_col)),
                         EdgeBehavior::Wrap => *row_cells.last()?,
                     }
                 } else {
@@ -250,9 +251,7 @@ impl ClientGrid {
             NavigationDirection::Right => {
                 if pos + 1 >= row_cells.len() {
                     match edge {
-                        EdgeBehavior::Clamp => {
-                            return Some((current.pid, self.anchor_for(current)));
-                        }
+                        EdgeBehavior::Clamp => return Some((current.pid, anchor_col)),
                         EdgeBehavior::Wrap => *row_cells.first()?,
                     }
                 } else {

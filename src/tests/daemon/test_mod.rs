@@ -1658,6 +1658,40 @@ mod daemon_test {
         );
     }
 
+    /// Regression: a clamped horizontal no-op must preserve the
+    /// in-flight anchor column. A prior vertical snap into a gap can
+    /// leave `anchor_col` pointing at a different column than the
+    /// current cell; re-aligning the anchor to the current cell on a
+    /// clamped Left/Right keypress would silently break the "anchor
+    /// carried across vertical moves" invariant the next Up/Down
+    /// relies on.
+    #[test]
+    fn test_next_submenu_selection_horizontal_clamp_preserves_anchor() {
+        let grid = dense_3x2_grid();
+        assert_eq!(
+            next_submenu_selection(
+                &grid,
+                Some(1),
+                Some(2),
+                NavigationDirection::Left,
+                EdgeBehavior::Clamp,
+            ),
+            (Some(1), Some(2)),
+            "Left clamp keeps the stale anchor, not the cell's own column",
+        );
+        assert_eq!(
+            next_submenu_selection(
+                &grid,
+                Some(3),
+                Some(0),
+                NavigationDirection::Right,
+                EdgeBehavior::Clamp,
+            ),
+            (Some(3), Some(0)),
+            "Right clamp keeps the stale anchor, not the cell's own column",
+        );
+    }
+
     /// Verifies vertical stepping (Up/Down) clamps at the top/bottom row
     /// when `EdgeBehavior::Clamp` is set.
     #[test]
