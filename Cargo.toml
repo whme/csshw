@@ -44,7 +44,7 @@ tokio = { version = "1.52.3", features = [
 ] }
 
 [dependencies.confy]
-version = "0.6.1"
+version = "2.0.0"
 features = ["toml_conf"]
 default-features = false
 
