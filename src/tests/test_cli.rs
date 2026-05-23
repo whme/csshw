@@ -1629,7 +1629,11 @@ mod main_entrypoint_test {
         let mut mock_windows_api = mock_windows_api;
         mock_windows_api
             .expect_create_process_with_args()
-            .with(eq(crate::current_exe_path()), eq(vec!["daemon".to_string()]), eq(true))
+            .with(
+                eq(crate::current_exe_path()),
+                eq(vec!["daemon".to_string()]),
+                eq(true),
+            )
             .times(1)
             .returning(|_, _, _| {
                 return Some(PROCESS_INFORMATION {
