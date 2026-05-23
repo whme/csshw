@@ -358,7 +358,7 @@ mod cli_main_test {
                     mock_windows_api
                         .expect_create_process_with_args()
                         .with(
-                            mockall::predicate::eq("csshw.exe"),
+                            mockall::predicate::eq(crate::current_exe_path()),
                             mockall::predicate::eq(vec![
                                 "daemon".to_string(),
                                 "host1".to_string(),
@@ -1355,7 +1355,7 @@ mod main_entrypoint_test {
         mock_windows_api
             .expect_create_process_with_args()
             .with(
-                eq("csshw.exe"),
+                eq(crate::current_exe_path()),
                 eq(vec![
                     "daemon".to_string(),
                     "host1".to_string(),
@@ -1421,7 +1421,7 @@ mod main_entrypoint_test {
         mock_windows_api
             .expect_create_process_with_args()
             .with(
-                eq("csshw.exe"),
+                eq(crate::current_exe_path()),
                 eq(vec![
                     "-d".to_string(),
                     "daemon".to_string(),
@@ -1487,7 +1487,7 @@ mod main_entrypoint_test {
         mock_windows_api
             .expect_create_process_with_args()
             .with(
-                eq("csshw.exe"),
+                eq(crate::current_exe_path()),
                 eq(vec![
                     "-u".to_string(),
                     "testuser".to_string(),
@@ -1557,7 +1557,7 @@ mod main_entrypoint_test {
         mock_windows_api
             .expect_create_process_with_args()
             .with(
-                eq("csshw.exe"),
+                eq(crate::current_exe_path()),
                 eq(vec![
                     "-d".to_string(),
                     "-u".to_string(),
@@ -1629,7 +1629,11 @@ mod main_entrypoint_test {
         let mut mock_windows_api = mock_windows_api;
         mock_windows_api
             .expect_create_process_with_args()
-            .with(eq("csshw.exe"), eq(vec!["daemon".to_string()]), eq(true))
+            .with(
+                eq(crate::current_exe_path()),
+                eq(vec!["daemon".to_string()]),
+                eq(true),
+            )
             .times(1)
             .returning(|_, _, _| {
                 return Some(PROCESS_INFORMATION {
@@ -1727,7 +1731,7 @@ mod main_entrypoint_test {
         mock_windows_api
             .expect_create_process_with_args()
             .with(
-                eq("csshw.exe"),
+                eq(crate::current_exe_path()),
                 eq(vec!["daemon".to_string(), "host1".to_string()]),
                 eq(true),
             )
