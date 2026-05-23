@@ -14,9 +14,13 @@ mock! {
         fn git_status_porcelain(&self) -> anyhow::Result<String>;
         fn git_current_branch(&self) -> anyhow::Result<String>;
         fn git_checkout_new_branch(&self, name: &str) -> anyhow::Result<()>;
+        fn git_checkout(&self, name: &str) -> anyhow::Result<()>;
+        fn git_branch_exists_local(&self, name: &str) -> anyhow::Result<bool>;
+        fn git_branch_exists_origin(&self, name: &str) -> anyhow::Result<bool>;
         fn git_add(&self, files: &[String]) -> anyhow::Result<()>;
         fn git_commit(&self, message: &str, no_verify: bool) -> anyhow::Result<()>;
         fn git_push(&self, args: &[String]) -> anyhow::Result<()>;
+        fn gh_pr_create(&self, base: &str) -> anyhow::Result<()>;
         fn git_tag_list(&self, tag: &str) -> anyhow::Result<String>;
         fn git_log_latest_subject(&self) -> anyhow::Result<String>;
         fn git_fetch(&self) -> anyhow::Result<()>;
@@ -171,19 +175,13 @@ fn test_prepare_release_aborts_on_unexpected_branch() {
     assert!(result.is_err());
 }
 
-#[test]
-fn test_prepare_release_happy_path_main_branch() {
-    // Arrange
-    let mut mock = clean_mock();
-    mock.expect_git_current_branch()
-        .returning(|| Ok("main".to_owned()));
-    mock.expect_read_cargo_toml()
-        .returning(|| Ok(cargo_toml_with_version("0.18.1")));
-    mock.expect_prompt_user()
-        .times(1)
-        .returning(|_| Ok("y".to_owned()));
+/// Add common expectations for the post-maintenance-branch portion of a
+/// successful minor release flow: version bump, commit, push release branch,
+/// open PR. The caller is responsible for the maintenance-branch setup
+/// expectations.
+fn expect_minor_release_tail(mock: &mut MockReleaseSystemMock) {
     mock.expect_git_checkout_new_branch()
-        .withf(|name| name == "0.19-maintenance")
+        .withf(|name| name == "release-0.19.0")
         .times(1)
         .returning(|_| Ok(()));
     mock.expect_write_cargo_toml()
@@ -206,17 +204,175 @@ fn test_prepare_release_happy_path_main_branch() {
             args == [
                 "-u".to_owned(),
                 "origin".to_owned(),
+                "release-0.19.0".to_owned(),
+            ]
+        })
+        .times(1)
+        .returning(|_| Ok(()));
+    mock.expect_gh_pr_create()
+        .withf(|base| base == "0.19-maintenance")
+        .times(1)
+        .returning(|_| Ok(()));
+}
+
+fn main_branch_minor_mock() -> MockReleaseSystemMock {
+    let mut mock = clean_mock();
+    mock.expect_git_current_branch()
+        .returning(|| Ok("main".to_owned()));
+    mock.expect_read_cargo_toml()
+        .returning(|| Ok(cargo_toml_with_version("0.18.1")));
+    mock.expect_prompt_user()
+        .times(1)
+        .returning(|_| Ok("y".to_owned()));
+    mock.expect_git_fetch().times(1).returning(|| Ok(()));
+    mock
+}
+
+#[test]
+fn test_prepare_release_minor_creates_maintenance_branch_when_missing() {
+    // Arrange: neither local nor origin has the maintenance branch.
+    let mut mock = main_branch_minor_mock();
+    mock.expect_git_branch_exists_local()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(false));
+    mock.expect_git_branch_exists_origin()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(false));
+    mock.expect_git_checkout_new_branch()
+        .withf(|name| name == "0.19-maintenance")
+        .times(1)
+        .returning(|_| Ok(()));
+    mock.expect_git_push()
+        .withf(|args| {
+            args == [
+                "-u".to_owned(),
+                "origin".to_owned(),
                 "0.19-maintenance".to_owned(),
             ]
         })
         .times(1)
         .returning(|_| Ok(()));
+    mock.expect_git_checkout().never();
+    expect_minor_release_tail(&mut mock);
 
     // Act
     let result = prepare_release(&mock);
 
     // Assert
     assert!(result.is_ok());
+}
+
+#[test]
+fn test_prepare_release_minor_pushes_existing_local_maintenance_branch() {
+    // Arrange: maintenance branch exists locally only.
+    let mut mock = main_branch_minor_mock();
+    mock.expect_git_branch_exists_local()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(true));
+    mock.expect_git_branch_exists_origin()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(false));
+    mock.expect_git_checkout()
+        .withf(|name| name == "0.19-maintenance")
+        .times(1)
+        .returning(|_| Ok(()));
+    mock.expect_git_push()
+        .withf(|args| {
+            args == [
+                "-u".to_owned(),
+                "origin".to_owned(),
+                "0.19-maintenance".to_owned(),
+            ]
+        })
+        .times(1)
+        .returning(|_| Ok(()));
+    expect_minor_release_tail(&mut mock);
+
+    // Act
+    let result = prepare_release(&mock);
+
+    // Assert
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_prepare_release_minor_checks_out_remote_only_maintenance_branch() {
+    // Arrange: maintenance branch exists only on origin.
+    let mut mock = main_branch_minor_mock();
+    mock.expect_git_branch_exists_local()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(false));
+    mock.expect_git_branch_exists_origin()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(true));
+    mock.expect_git_checkout()
+        .withf(|name| name == "0.19-maintenance")
+        .times(1)
+        .returning(|_| Ok(()));
+    // No push of the maintenance branch when it already exists on origin; the
+    // only push comes from `expect_minor_release_tail` for the release branch.
+    expect_minor_release_tail(&mut mock);
+
+    // Act
+    let result = prepare_release(&mock);
+
+    // Assert
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_prepare_release_minor_uses_existing_maintenance_branch_when_up_to_date() {
+    // Arrange: maintenance branch exists locally and on origin, local is current.
+    let mut mock = main_branch_minor_mock();
+    mock.expect_git_branch_exists_local()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(true));
+    mock.expect_git_branch_exists_origin()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(true));
+    mock.expect_git_checkout()
+        .withf(|name| name == "0.19-maintenance")
+        .times(1)
+        .returning(|_| Ok(()));
+    mock.expect_git_rev_list_count_behind()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(0));
+    expect_minor_release_tail(&mut mock);
+
+    // Act
+    let result = prepare_release(&mock);
+
+    // Assert
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_prepare_release_minor_bails_when_existing_maintenance_branch_behind() {
+    // Arrange: both exist, but local is behind origin.
+    let mut mock = main_branch_minor_mock();
+    mock.expect_git_branch_exists_local()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(true));
+    mock.expect_git_branch_exists_origin()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(true));
+    mock.expect_git_checkout()
+        .withf(|name| name == "0.19-maintenance")
+        .times(1)
+        .returning(|_| Ok(()));
+    mock.expect_git_rev_list_count_behind()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(3));
+    mock.expect_write_cargo_toml().never();
+    mock.expect_gh_pr_create().never();
+
+    // Act
+    let result = prepare_release(&mock);
+
+    // Assert
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("behind origin"), "unexpected error: {err}");
 }
 
 #[test]
@@ -231,6 +387,7 @@ fn test_prepare_release_happy_path_maintenance_branch() {
         .times(1)
         .returning(|_| Ok("y".to_owned()));
     mock.expect_git_checkout_new_branch().never();
+    mock.expect_gh_pr_create().never();
     mock.expect_write_cargo_toml()
         .withf(|content| content.contains("\"0.18.2\""))
         .times(1)
