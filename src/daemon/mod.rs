@@ -53,7 +53,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VIRTUAL_KEY, VK_A, VK_C, VK_D, VK_DOWN, VK_E, VK_ESCAPE, VK_H, VK_J, VK_K, VK_L, VK_LEFT, VK_N,
     VK_R, VK_RIGHT, VK_T, VK_UP,
 };
-use windows::Win32::UI::WindowsAndMessaging::{SW_RESTORE, SW_SHOWMINIMIZED};
+use windows::Win32::UI::WindowsAndMessaging::{SW_RESTORE, SW_SHOWMINIMIZED, SW_SHOWNOACTIVATE};
 use windows::Win32::{
     Foundation::{COLORREF, HANDLE, HWND, STILL_ACTIVE},
     System::{Console::ENABLE_PROCESSED_INPUT, Threading::PROCESS_QUERY_INFORMATION},
@@ -2052,11 +2052,11 @@ fn ensure_client_z_order_in_sync_with_daemon<W: WindowsApi + Send + Sync + 'stat
 /// * `daemon_handle`                 - Handle to the daemon console window.
 fn defer_windows<W: WindowsApi>(windows_api: &W, clients: &[Client], daemon_handle: &HWND) {
     for client in clients.iter() {
-        restore_if_minimized(windows_api, client.window_handle);
+        restore_if_minimized(windows_api, client.window_handle, false);
         let _ = windows_api.bring_window_to_top(client.window_handle, false);
     }
     // Raise the daemon last so it ends up on top and keeps keyboard focus.
-    restore_if_minimized(windows_api, *daemon_handle);
+    restore_if_minimized(windows_api, *daemon_handle, true);
     let _ = windows_api.bring_window_to_top(*daemon_handle, true);
 }
 
@@ -2065,13 +2065,34 @@ fn defer_windows<W: WindowsApi>(windows_api: &W, clients: &[Client], daemon_hand
 /// Silently does nothing when the placement query fails or the window is
 /// not minimized. Used by [`defer_windows`] so both client and daemon
 /// windows are brought back from the taskbar before z-order updates.
-fn restore_if_minimized<W: WindowsApi>(windows_api: &W, window_handle: HWND) {
+///
+/// # Arguments
+///
+/// * `windows_api`         - Windows API implementation.
+/// * `window_handle`       - Handle to the window to potentially restore.
+/// * `with_keyboard_focus` - Whether the restored window should be activated.
+///                           Pass `false` for client windows so unminimizing
+///                           them does not steal foreground from the daemon -
+///                           `SW_RESTORE` activates, which would let the
+///                           last-restored client win the foreground race and
+///                           block [`WindowsApi::bring_window_to_top`] from
+///                           refocusing the daemon.
+fn restore_if_minimized<W: WindowsApi>(
+    windows_api: &W,
+    window_handle: HWND,
+    with_keyboard_focus: bool,
+) {
     let placement = match windows_api.get_window_placement(window_handle) {
         Ok(placement) => placement,
         Err(_) => return,
     };
     if placement.showCmd == SW_SHOWMINIMIZED.0.try_into().unwrap() {
-        let _ = windows_api.show_window(window_handle, SW_RESTORE);
+        let cmd = if with_keyboard_focus {
+            SW_RESTORE
+        } else {
+            SW_SHOWNOACTIVATE
+        };
+        let _ = windows_api.show_window(window_handle, cmd);
     }
 }
 
