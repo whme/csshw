@@ -11,8 +11,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
-      day: monday
-      time: "06:00"
+      day: friday
+      time: "18:00"
       timezone: Europe/Berlin
     open-pull-requests-limit: 10
     commit-message:
@@ -35,7 +35,7 @@ updates:
           - patch
 
   # Rust toolchain (rust-toolchain.toml). Requires Dependabot's
-  # rust-toolchain ecosystem (GA 2025-08).
+  # rust-toolchain ecosystem (generally available since 2025-08).
   - package-ecosystem: rust-toolchain
     directory: /
     schedule:
@@ -54,8 +54,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
-      day: monday
-      time: "06:00"
+      day: friday
+      time: "18:00"
       timezone: Europe/Berlin
     open-pull-requests-limit: 5
     commit-message:

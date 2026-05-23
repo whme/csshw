@@ -25,4 +25,4 @@ jobs:
         uses: crazy-max/ghaction-github-labeler@v5
         with:
           yaml-file: .github/labels.yml
-          skip-delete: true
+          skip-delete: false
