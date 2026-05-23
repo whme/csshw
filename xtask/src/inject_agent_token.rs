@@ -20,23 +20,36 @@
 //! the repo root.
 //!
 //! If the token file is missing the subcommand is a silent no-op
-//! (with an informational log line). If it contains anything other
-//! than a fine-grained PAT - e.g. a classic `ghp_...` or OAuth `gho_...`
-//! token - the subcommand aborts, since those token types grant far
-//! more than the least-privilege goal allows.
+//! (with an informational log line). Fine-grained PATs
+//! (`github_pat_...`) are recommended because they can be restricted
+//! to specific repositories and to a subset of repository permissions.
+//! Classic (`ghp_...`) and OAuth (`gho_...`) tokens are accepted to
+//! avoid hard-blocking contributors who only have those, but each
+//! triggers a warning log line since they cannot be scoped tightly
+//! enough to preserve the least-privilege property. Any other content
+//! is rejected so we never inject arbitrary text as a token.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 
-/// Expected prefix for a fine-grained personal access token. Classic
-/// tokens (`ghp_`) and OAuth tokens (`gho_`) are rejected to preserve
-/// the least-privilege property - classic tokens cannot be restricted
-/// to specific repositories or to a subset of repository permissions.
+/// Prefix for a fine-grained personal access token. This is the
+/// recommended token shape because it can be restricted to specific
+/// repositories and to a subset of repository permissions.
 const FINE_GRAINED_PREFIX: &str = "github_pat_";
 
+/// Prefix for a classic personal access token. Accepted to avoid
+/// hard-blocking contributors who only have a classic token, but
+/// flagged with a warning since classic tokens cannot be scoped to
+/// specific repositories or to a subset of repository permissions.
+const CLASSIC_PREFIX: &str = "ghp_";
+
+/// Prefix for an OAuth user-to-server token. Accepted with the same
+/// caveat as [`CLASSIC_PREFIX`].
+const OAUTH_PREFIX: &str = "gho_";
+
 /// Relative path inside the source checkout where the contributor
-/// stores their fine-grained PAT.
+/// stores their GitHub token.
 const TOKEN_FILE_REL_PATH: &str = ".paseo/gh-token";
 
 /// Relative path inside the worktree where Claude Code reads local,
@@ -150,11 +163,11 @@ impl InjectAgentTokenSystem for RealSystem {
 /// `[A-Za-z0-9_]`. That alphabet has no characters that require JSON
 /// escaping, which is what lets this function skip a general-purpose
 /// JSON encoder without risking injection. The invariant is enforced
-/// by [`is_fine_grained_pat_alphabet`] inside [`inject_agent_token`].
+/// by [`is_in_token_alphabet`] inside [`inject_agent_token`].
 ///
 /// # Arguments
 ///
-/// * `token` - Fine-grained PAT, already validated and trimmed.
+/// * `token` - GitHub token, already validated and trimmed.
 ///
 /// # Returns
 ///
@@ -165,14 +178,16 @@ fn build_settings_body(token: &str) -> String {
     )
 }
 
-/// Return `true` when every byte of `token` is in the fine-grained
-/// PAT alphabet `[A-Za-z0-9_]`.
+/// Return `true` when every byte of `token` is in the GitHub token
+/// alphabet `[A-Za-z0-9_]`.
 ///
 /// Enforcing this invariant is what lets [`build_settings_body`]
 /// embed the token directly into a JSON template without escaping -
 /// none of the characters in this alphabet need JSON escaping, so a
 /// token that passes this check cannot break out of its string
-/// literal nor inject additional keys.
+/// literal nor inject additional keys. Fine-grained PATs, classic
+/// PATs, and OAuth tokens all share the same alphabet, so the same
+/// check applies to every accepted token shape.
 ///
 /// # Arguments
 ///
@@ -182,11 +197,43 @@ fn build_settings_body(token: &str) -> String {
 ///
 /// `true` when `token` is non-empty and contains only the allowed
 /// characters; `false` otherwise.
-fn is_fine_grained_pat_alphabet(token: &str) -> bool {
+fn is_in_token_alphabet(token: &str) -> bool {
     !token.is_empty()
         && token
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
+/// Recognized GitHub token shapes.
+#[derive(Clone, Copy)]
+enum TokenKind {
+    FineGrained,
+    Classic,
+    OAuth,
+}
+
+impl TokenKind {
+    /// Identify the token shape from its prefix.
+    ///
+    /// # Arguments
+    ///
+    /// * `token` - Trimmed token contents.
+    ///
+    /// # Returns
+    ///
+    /// `Some(kind)` when the token starts with a recognized prefix,
+    /// `None` otherwise.
+    fn classify(token: &str) -> Option<Self> {
+        if token.starts_with(FINE_GRAINED_PREFIX) {
+            Some(Self::FineGrained)
+        } else if token.starts_with(CLASSIC_PREFIX) {
+            Some(Self::Classic)
+        } else if token.starts_with(OAUTH_PREFIX) {
+            Some(Self::OAuth)
+        } else {
+            None
+        }
+    }
 }
 
 /// Resolve the source checkout directory.
@@ -215,13 +262,15 @@ fn resolve_source_checkout<S: InjectAgentTokenSystem>(system: &S) -> Result<Path
     system.current_dir()
 }
 
-/// Inject the contributor's fine-grained GitHub PAT into the
-/// current worktree's Claude Code settings.
+/// Inject the contributor's GitHub token into the current worktree's
+/// Claude Code settings.
 ///
 /// The token is read from `<source-checkout>/.paseo/gh-token`. A
 /// missing token file is treated as an opt-out: the function logs a
 /// notice and returns `Ok(())` so worktree creation is not blocked
-/// for contributors who have not set a token up yet.
+/// for contributors who have not set a token up yet. Fine-grained
+/// PATs are written silently; classic and OAuth tokens are written
+/// but trigger a warning log line recommending fine-grained PATs.
 ///
 /// # Arguments
 ///
@@ -234,8 +283,9 @@ fn resolve_source_checkout<S: InjectAgentTokenSystem>(system: &S) -> Result<Path
 /// # Errors
 ///
 /// Returns an error when a token file exists but does not start with
-/// [`FINE_GRAINED_PREFIX`], when its trimmed contents fall outside
-/// the fine-grained PAT alphabet (see [`is_fine_grained_pat_alphabet`]),
+/// one of the recognized prefixes ([`FINE_GRAINED_PREFIX`],
+/// [`CLASSIC_PREFIX`], [`OAUTH_PREFIX`]), when its trimmed contents
+/// fall outside the token alphabet (see [`is_in_token_alphabet`]),
 /// or when the settings file cannot be written.
 pub fn inject_agent_token<S: InjectAgentTokenSystem>(system: &S) -> Result<()> {
     let source = resolve_source_checkout(system)?;
@@ -252,21 +302,25 @@ pub fn inject_agent_token<S: InjectAgentTokenSystem>(system: &S) -> Result<()> {
     let token = raw.trim();
     if token.is_empty() {
         bail!(
-            "{} is empty; expected a fine-grained PAT starting with `{}`. See CONTRIBUTING.md.",
+            "{} is empty; expected a GitHub token starting with `{}` (recommended), `{}`, or `{}`. See CONTRIBUTING.md.",
             token_file.display(),
-            FINE_GRAINED_PREFIX
+            FINE_GRAINED_PREFIX,
+            CLASSIC_PREFIX,
+            OAUTH_PREFIX,
         );
     }
-    if !token.starts_with(FINE_GRAINED_PREFIX) {
+    let Some(kind) = TokenKind::classify(token) else {
         bail!(
-            "{} must contain a fine-grained PAT (prefix `{}`); classic `ghp_...` and OAuth `gho_...` tokens are not accepted because they cannot be scoped tightly enough. See CONTRIBUTING.md.",
+            "{} must contain a GitHub token starting with `{}` (recommended), `{}`, or `{}`. See CONTRIBUTING.md.",
             token_file.display(),
-            FINE_GRAINED_PREFIX
+            FINE_GRAINED_PREFIX,
+            CLASSIC_PREFIX,
+            OAUTH_PREFIX,
         );
-    }
-    if !is_fine_grained_pat_alphabet(token) {
+    };
+    if !is_in_token_alphabet(token) {
         bail!(
-            "{} contains characters outside the fine-grained PAT alphabet ([A-Za-z0-9_]); refusing to embed it in settings. See CONTRIBUTING.md.",
+            "{} contains characters outside the GitHub token alphabet ([A-Za-z0-9_]); refusing to embed it in settings. See CONTRIBUTING.md.",
             token_file.display()
         );
     }
@@ -276,11 +330,31 @@ pub fn inject_agent_token<S: InjectAgentTokenSystem>(system: &S) -> Result<()> {
     let body = build_settings_body(token);
     system.write_settings(&settings_path, &body)?;
 
-    system.log(&format!(
-        "INFO - paseo agent GitHub auth: wrote {} from {} (scoped PAT)",
-        settings_path.display(),
-        token_file.display()
-    ));
+    match kind {
+        TokenKind::FineGrained => {
+            system.log(&format!(
+                "INFO - paseo agent GitHub auth: wrote {} from {} (scoped PAT)",
+                settings_path.display(),
+                token_file.display()
+            ));
+        }
+        TokenKind::Classic => {
+            system.log(&format!(
+                "WARN - paseo agent GitHub auth: detected a classic token in {}; wrote {} but fine-grained PATs (prefix `{}`) are recommended because they can be restricted to specific repositories and permissions, while classic tokens cannot. See CONTRIBUTING.md.",
+                token_file.display(),
+                settings_path.display(),
+                FINE_GRAINED_PREFIX,
+            ));
+        }
+        TokenKind::OAuth => {
+            system.log(&format!(
+                "WARN - paseo agent GitHub auth: detected an OAuth token in {}; wrote {} but fine-grained PATs (prefix `{}`) are recommended because they can be restricted to specific repositories and permissions, while OAuth tokens cannot. See CONTRIBUTING.md.",
+                token_file.display(),
+                settings_path.display(),
+                FINE_GRAINED_PREFIX,
+            ));
+        }
+    }
 
     Ok(())
 }

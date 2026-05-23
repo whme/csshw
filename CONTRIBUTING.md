@@ -76,10 +76,13 @@ force-push to `main`. You can scope an agent down by providing a
 `worktree.setup` and will write the token into the worktree's
 `.claude/settings.local.json` at creation time, where Claude Code
 injects it as `GH_TOKEN` for the agent process. If the file is absent
-the step is a no-op; classic `ghp_...` or OAuth `gho_...` tokens are
-rejected. To rotate, overwrite `.paseo/gh-token` in the source
-checkout and either re-run `cargo xtask inject-agent-token` from there
-or recreate the worktree.
+the step is a no-op. Fine-grained PATs are the recommended shape;
+classic (`ghp_...`) and OAuth (`gho_...`) tokens are also accepted,
+but each triggers a warning at injection time because they cannot be
+scoped to specific repositories or to a subset of repository
+permissions. Any other content is rejected. To rotate, overwrite
+`.paseo/gh-token` in the source checkout and either re-run
+`cargo xtask inject-agent-token` from there or recreate the worktree.
 
 ### Development Workflow
 

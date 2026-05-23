@@ -156,43 +156,139 @@ fn test_whitespace_in_token_is_trimmed() {
 }
 
 #[test]
-fn test_classic_token_is_rejected() {
-    // Arrange
-    let (mut mock, _source, _cwd) =
+fn test_classic_token_is_accepted_with_warning() {
+    // Arrange - classic tokens (`ghp_...`) are accepted to unblock
+    // contributors who only have a classic token, but the user must
+    // be warned because classic tokens cannot be scoped tightly.
+    let token = "ghp_classicTokenAcceptedWithWarning";
+    let (mut mock, _source, cwd) =
         make_mock_with_layout("C:\\src", "C:\\worktree", Some("C:\\src"));
+    let token_owned = token.to_owned();
     mock.expect_read_token_file()
-        .returning(|_| Ok(Some("ghp_classicTokenShouldNotBeAccepted".to_owned())));
-    mock.expect_write_settings().never();
-    mock.expect_log().returning(|_| {});
+        .returning(move |_| Ok(Some(token_owned.clone())));
+
+    let written = Arc::new(Mutex::new(None::<String>));
+    let written_clone = written.clone();
+    let expected_settings_path = cwd.join(".claude").join("settings.local.json");
+    mock.expect_write_settings()
+        .withf(move |path, _| path == expected_settings_path)
+        .times(1)
+        .returning(move |_, contents| {
+            *written_clone.lock().unwrap() = Some(contents.to_owned());
+            Ok(())
+        });
+
+    let logged = Arc::new(Mutex::new(Vec::<String>::new()));
+    let logged_clone = logged.clone();
+    mock.expect_log().returning(move |msg| {
+        logged_clone.lock().unwrap().push(msg.to_owned());
+    });
 
     // Act
     let result = inject_agent_token(&mock);
 
     // Assert
-    let err = result.expect_err("classic tokens must be rejected");
-    let msg = err.to_string();
     assert!(
-        msg.contains("github_pat_"),
-        "error must name required prefix: {msg}"
+        result.is_ok(),
+        "classic tokens must be accepted: {result:?}"
+    );
+    let contents = written
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("write_settings not invoked");
+    assert!(
+        contents.contains(&format!("\"GH_TOKEN\": \"{token}\"")),
+        "classic token must be embedded verbatim: {contents}"
+    );
+    let logs = logged.lock().unwrap();
+    let warn = logs
+        .iter()
+        .find(|line| line.starts_with("WARN"))
+        .expect("classic token must emit a WARN log line");
+    assert!(
+        warn.contains("classic"),
+        "warning must name the token kind: {warn}"
     );
     assert!(
-        msg.contains("ghp_") && msg.contains("gho_"),
-        "error must call out both classic and OAuth token shapes: {msg}"
+        warn.contains("fine-grained"),
+        "warning must recommend fine-grained PATs: {warn}"
     );
     assert!(
-        msg.contains("CONTRIBUTING.md"),
-        "error must reference CONTRIBUTING.md: {msg}"
+        warn.contains("CONTRIBUTING.md"),
+        "warning must point at CONTRIBUTING.md: {warn}"
     );
 }
 
 #[test]
-fn test_oauth_token_is_rejected() {
-    // Arrange - OAuth tokens (`gho_...`) take the same rejection path as
-    // classic tokens; the wording must remain accurate for both.
+fn test_oauth_token_is_accepted_with_warning() {
+    // Arrange - OAuth tokens (`gho_...`) take the same accept-with-warning
+    // path as classic tokens; the wording must mention "OAuth" explicitly.
+    let token = "gho_oauthTokenAcceptedWithWarning";
+    let (mut mock, _source, cwd) =
+        make_mock_with_layout("C:\\src", "C:\\worktree", Some("C:\\src"));
+    let token_owned = token.to_owned();
+    mock.expect_read_token_file()
+        .returning(move |_| Ok(Some(token_owned.clone())));
+
+    let written = Arc::new(Mutex::new(None::<String>));
+    let written_clone = written.clone();
+    let expected_settings_path = cwd.join(".claude").join("settings.local.json");
+    mock.expect_write_settings()
+        .withf(move |path, _| path == expected_settings_path)
+        .times(1)
+        .returning(move |_, contents| {
+            *written_clone.lock().unwrap() = Some(contents.to_owned());
+            Ok(())
+        });
+
+    let logged = Arc::new(Mutex::new(Vec::<String>::new()));
+    let logged_clone = logged.clone();
+    mock.expect_log().returning(move |msg| {
+        logged_clone.lock().unwrap().push(msg.to_owned());
+    });
+
+    // Act
+    let result = inject_agent_token(&mock);
+
+    // Assert
+    assert!(result.is_ok(), "OAuth tokens must be accepted: {result:?}");
+    let contents = written
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("write_settings not invoked");
+    assert!(
+        contents.contains(&format!("\"GH_TOKEN\": \"{token}\"")),
+        "OAuth token must be embedded verbatim: {contents}"
+    );
+    let logs = logged.lock().unwrap();
+    let warn = logs
+        .iter()
+        .find(|line| line.starts_with("WARN"))
+        .expect("OAuth token must emit a WARN log line");
+    assert!(
+        warn.contains("OAuth"),
+        "warning must name the token kind: {warn}"
+    );
+    assert!(
+        warn.contains("fine-grained"),
+        "warning must recommend fine-grained PATs: {warn}"
+    );
+    assert!(
+        warn.contains("CONTRIBUTING.md"),
+        "warning must point at CONTRIBUTING.md: {warn}"
+    );
+}
+
+#[test]
+fn test_unrecognized_prefix_is_rejected() {
+    // Arrange - tokens that do not start with any recognized GitHub
+    // prefix must be rejected so we never inject arbitrary text.
     let (mut mock, _source, _cwd) =
         make_mock_with_layout("C:\\src", "C:\\worktree", Some("C:\\src"));
     mock.expect_read_token_file()
-        .returning(|_| Ok(Some("gho_oauthTokenShouldNotBeAccepted".to_owned())));
+        .returning(|_| Ok(Some("random_not_a_github_token".to_owned())));
     mock.expect_write_settings().never();
     mock.expect_log().returning(|_| {});
 
@@ -200,11 +296,15 @@ fn test_oauth_token_is_rejected() {
     let result = inject_agent_token(&mock);
 
     // Assert
-    let err = result.expect_err("OAuth tokens must be rejected");
+    let err = result.expect_err("unrecognized prefixes must be rejected");
     let msg = err.to_string();
     assert!(
-        msg.contains("github_pat_"),
-        "error must name required prefix: {msg}"
+        msg.contains("github_pat_") && msg.contains("ghp_") && msg.contains("gho_"),
+        "error must list all accepted prefixes: {msg}"
+    );
+    assert!(
+        msg.contains("CONTRIBUTING.md"),
+        "error must reference CONTRIBUTING.md: {msg}"
     );
 }
 
