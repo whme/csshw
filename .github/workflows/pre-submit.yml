@@ -8,7 +8,9 @@ name: Pre-Submit CI
 
 on:
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - "*-maintenance"
 
 jobs:
   detect-changes:

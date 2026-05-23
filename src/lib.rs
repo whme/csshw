@@ -317,6 +317,30 @@ pub fn spawn_console_process<W: WindowsApi>(
     return api.create_process_with_args(application, args, with_keyboard_focus);
 }
 
+/// Return the path to the currently running executable.
+///
+/// Used when spawning child daemon/client consoles so that they invoke the same
+/// binary that is currently running, regardless of how the user has named the
+/// executable on disk. Hard-coding `csshw.exe` would break any deployment that
+/// renames the binary (e.g. release artifacts that embed the version number).
+///
+/// # Returns
+///
+/// The current executable path as a UTF-8 string. The conversion is lossy if
+/// the path contains non-UTF-8 code units.
+///
+/// # Panics
+///
+/// Panics if `std::env::current_exe()` fails. The standard library only
+/// returns an error in highly unusual circumstances (e.g. the executable has
+/// been deleted while running); the caller cannot meaningfully recover.
+pub fn current_exe_path() -> String {
+    return std::env::current_exe()
+        .expect("Failed to determine current executable path")
+        .to_string_lossy()
+        .into_owned();
+}
+
 /// Initialize the logger.
 ///
 /// Makes sure a `logs` directory exists in the current working directory.
