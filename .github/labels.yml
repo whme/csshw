@@ -32,9 +32,9 @@
   description: "Indicates that this PR does not require a news fragment"
 
 - name: "dependencies"
-  color: "006b75"
+  color: "0366d6"
   description: "Pull requests that update a dependency"
 
 - name: "internal"
-  color: "5319e7"
+  color: "d4c5f9"
   description: "Internal maintenance, tooling, or chores"
