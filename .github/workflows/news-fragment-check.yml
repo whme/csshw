@@ -9,7 +9,9 @@ name: News Fragment Check
 on:
   pull_request:
     types: [opened, synchronize, labeled, unlabeled]
-    branches: [main]
+    branches:
+      - main
+      - "*-maintenance"
 
 env:
   OVERRIDE_LABEL: "no-news-fragment-needed"
@@ -30,8 +32,9 @@ jobs:
         run: |
           echo "🔍 Checking for news fragments in PR..."
 
-          # Check if PR adds any news fragments
-          FRAGMENTS=$(git diff --name-only --diff-filter=A origin/main...HEAD | \
+          # Check if PR adds any news fragments. Diff against the PR's
+          # actual base so this works for both `main` and `*-maintenance`.
+          FRAGMENTS=$(git diff --name-only --diff-filter=A "origin/${{ github.base_ref }}...HEAD" | \
             grep -E '${{ env.NEWS_FRAGMENT_PATTERN }}' || true)
 
           if [ -n "$FRAGMENTS" ]; then

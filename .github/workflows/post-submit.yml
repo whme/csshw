@@ -1,15 +1,16 @@
 #
 #   csshw Post-Submit CI
 #
-# Runs on the main branch after merges with full coverage collection.
-# For pull requests, see pre-submit.yml which includes coverage reporting.
-# Uses the shared CI workflow.
+# Runs on `main` and `*-maintenance` branches after merges with full
+# coverage collection. For pull requests, see pre-submit.yml which
+# includes coverage reporting. Uses the shared CI workflow.
 #
 # Trigger model:
-#   - `push` to `main` covers normal human-driven merges. The resulting
-#     workflow run carries `main` as its head_branch, so downstream
-#     `workflow_run` consumers (see `deploy_github_pages.yml`) that
-#     filter on `branches: [main]` keep firing.
+#   - `push` to `main` or a `*-maintenance` branch covers normal
+#     human-driven merges. The resulting workflow run carries the
+#     pushed branch as its head_branch, so downstream `workflow_run`
+#     consumers (see `deploy_github_pages.yml`) that filter on
+#     `branches: [main]` keep firing for `main` merges.
 #   - `pull_request_target` `closed` covers Dependabot auto-merges. The
 #     auto-merge workflow enables `--auto` with the default
 #     `GITHUB_TOKEN`; per GitHub's anti-loop safeguard for
@@ -27,9 +28,13 @@ name: Post-Submit CI
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - "main"
+      - "*-maintenance"
   pull_request_target:
-    branches: ["main"]
+    branches:
+      - "main"
+      - "*-maintenance"
     types: [closed]
 
 # Constrain `pull_request_target` to the minimum scopes required.
@@ -52,10 +57,11 @@ jobs:
     with:
       # On `pull_request_target`, default checkout would resolve to
       # `refs/pull/<n>/merge` (a synthetic merge ref) rather than the
-      # commit that actually landed on `main`. Pass `merge_commit_sha`
-      # so the build runs against the merged commit (matters for
-      # squash/rebase merges). Falls through to `github.sha` on `push`,
-      # which is already the merged commit on `main`.
+      # commit that actually landed on the target branch. Pass
+      # `merge_commit_sha` so the build runs against the merged commit
+      # (matters for squash/rebase merges). Falls through to
+      # `github.sha` on `push`, which is already the merged commit on
+      # the pushed branch.
       ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
 
   coverage-report:
@@ -64,9 +70,9 @@ jobs:
     steps:
       # Mirror the `ci` job's checkout ref so the local
       # `./.github/workflows/_coverage_report` action is loaded from the
-      # merged commit on `main`, not the `pull_request_target` default
-      # `refs/pull/<n>/merge` (which would source the action from
-      # PR-controlled content).
+      # merged commit on the target branch, not the
+      # `pull_request_target` default `refs/pull/<n>/merge` (which would
+      # source the action from PR-controlled content).
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
