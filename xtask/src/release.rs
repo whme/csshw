@@ -61,6 +61,49 @@ pub trait ReleaseSystem {
     /// Returns an error if the process fails.
     fn git_checkout_new_branch(&self, name: &str) -> Result<()>;
 
+    /// Switch to an existing branch with `git checkout <name>`.
+    ///
+    /// Relies on git's DWIM behaviour: when `<name>` exists only as
+    /// `refs/remotes/origin/<name>`, a local tracking branch is created.
+    /// The caller is responsible for fetching beforehand.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Branch name to switch to.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the process fails.
+    fn git_checkout(&self, name: &str) -> Result<()>;
+
+    /// Return `true` when `refs/heads/<name>` exists locally.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Local branch name to look up.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the process fails for a reason other than the ref
+    /// not existing.
+    fn git_branch_exists_local(&self, name: &str) -> Result<bool>;
+
+    /// Return `true` when `refs/remotes/origin/<name>` exists locally.
+    ///
+    /// The remote ref is only present after a successful `git fetch`, so
+    /// callers must fetch before relying on this answer to reflect the
+    /// remote's actual state.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Branch name to look up under `origin/`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the process fails for a reason other than the ref
+    /// not existing.
+    fn git_branch_exists_origin(&self, name: &str) -> Result<bool>;
+
     /// Stage the given files with `git add`.
     ///
     /// # Arguments
@@ -94,6 +137,20 @@ pub trait ReleaseSystem {
     ///
     /// Returns an error if the process fails.
     fn git_push(&self, args: &[String]) -> Result<()>;
+
+    /// Open a GitHub pull request against `base` using `gh pr create --fill`.
+    ///
+    /// `--fill` derives title and body from the latest commit, so the caller
+    /// must ensure that commit has the desired subject/body.
+    ///
+    /// # Arguments
+    ///
+    /// * `base` - Branch the PR targets.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the process fails.
+    fn gh_pr_create(&self, base: &str) -> Result<()>;
 
     /// Return `git tag -l <tag>` stdout for the given tag name.
     ///
@@ -131,6 +188,18 @@ pub trait ReleaseSystem {
     ///
     /// Returns an error if the process fails.
     fn git_rev_list_count_behind(&self, branch: &str) -> Result<u32>;
+
+    /// Return the number of commits the local branch is ahead of `<branch>`
+    /// on the remote.
+    ///
+    /// # Arguments
+    ///
+    /// * `branch` - Remote branch to compare against.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the process fails.
+    fn git_rev_list_count_ahead(&self, branch: &str) -> Result<u32>;
 
     /// Create an annotated git tag.
     ///
@@ -199,6 +268,53 @@ pub trait ReleaseSystem {
     fn prompt_user(&self, message: &str) -> Result<String>;
 }
 
+/// Check whether `ref_name` exists via `git show-ref --verify`.
+///
+/// `git show-ref` is documented to exit 0 when the ref exists, 1 when it does
+/// not, and other non-zero codes for actual failures (bad arguments, broken
+/// repo, etc.). Mapping every non-zero exit to "missing" would silently
+/// swallow real errors, so the latter must surface as an `Err`.
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn show_ref_exists(ref_name: &str) -> Result<bool> {
+    let output = std::process::Command::new("git")
+        .args(["show-ref", "--verify", "--quiet", ref_name])
+        .output()
+        .context("failed to run `git show-ref`")?;
+    match output.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => bail!(
+            "`git show-ref --verify {ref_name}` failed with status {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim(),
+        ),
+    }
+}
+
+/// Run `git rev-list --count <range>` and return the parsed commit count.
+///
+/// A non-zero exit (e.g. unknown ref) or unparseable stdout must surface as an
+/// `Err` - returning `0` would silently mask "stale ref" or "git failed" as
+/// "branch is up to date".
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn rev_list_count(range: &str) -> Result<u32> {
+    let output = std::process::Command::new("git")
+        .args(["rev-list", "--count", range])
+        .output()
+        .context("failed to run `git rev-list`")?;
+    if !output.status.success() {
+        bail!(
+            "`git rev-list --count {range}` failed with status {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim(),
+        );
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout.trim().parse::<u32>().with_context(|| {
+        format!("failed to parse `git rev-list --count {range}` stdout: {stdout:?}")
+    })
+}
+
 /// Production implementation of [`ReleaseSystem`].
 pub struct RealSystem;
 
@@ -229,6 +345,25 @@ impl ReleaseSystem for RealSystem {
             bail!("`git checkout -b {name}` failed with status {status}");
         }
         Ok(())
+    }
+
+    fn git_checkout(&self, name: &str) -> Result<()> {
+        let status = std::process::Command::new("git")
+            .args(["checkout", name])
+            .status()
+            .context("failed to run `git checkout`")?;
+        if !status.success() {
+            bail!("`git checkout {name}` failed with status {status}");
+        }
+        Ok(())
+    }
+
+    fn git_branch_exists_local(&self, name: &str) -> Result<bool> {
+        show_ref_exists(&format!("refs/heads/{name}"))
+    }
+
+    fn git_branch_exists_origin(&self, name: &str) -> Result<bool> {
+        show_ref_exists(&format!("refs/remotes/origin/{name}"))
     }
 
     fn git_add(&self, files: &[String]) -> Result<()> {
@@ -268,6 +403,17 @@ impl ReleaseSystem for RealSystem {
         Ok(())
     }
 
+    fn gh_pr_create(&self, base: &str) -> Result<()> {
+        let status = std::process::Command::new("gh")
+            .args(["pr", "create", "--base", base, "--fill"])
+            .status()
+            .context("failed to run `gh pr create`")?;
+        if !status.success() {
+            bail!("`gh pr create --base {base}` failed with status {status}");
+        }
+        Ok(())
+    }
+
     fn git_tag_list(&self, tag: &str) -> Result<String> {
         let output = std::process::Command::new("git")
             .args(["tag", "-l", tag])
@@ -296,15 +442,11 @@ impl ReleaseSystem for RealSystem {
     }
 
     fn git_rev_list_count_behind(&self, branch: &str) -> Result<u32> {
-        let output = std::process::Command::new("git")
-            .args(["rev-list", "--count", &format!("HEAD..origin/{branch}")])
-            .output()
-            .context("failed to run `git rev-list`")?;
-        let count = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .parse::<u32>()
-            .unwrap_or(0);
-        Ok(count)
+        rev_list_count(&format!("HEAD..origin/{branch}"))
+    }
+
+    fn git_rev_list_count_ahead(&self, branch: &str) -> Result<u32> {
+        rev_list_count(&format!("origin/{branch}..HEAD"))
     }
 
     fn git_create_annotated_tag(&self, tag: &str, message: &str) -> Result<()> {
@@ -445,17 +587,128 @@ pub fn set_cargo_toml_version(cargo_toml_content: &str, new_version: &str) -> Re
     Ok(doc.to_string())
 }
 
+/// Ensure the maintenance branch exists and is checked out before any release
+/// prepared from `main` (major/minor create + push the maintenance branch and
+/// then branch off `release-X.Y.Z`; a custom patch version typed on `main`
+/// switches to an existing maintenance branch and pushes the version bump
+/// directly).
+///
+/// Fetches once, then handles the four
+/// (local exists, origin exists) combinations:
+///
+/// - `(false, false)`: create the branch from the current HEAD (`main`) and
+///   push it to `origin`.
+/// - `(true, false)`: switch to the existing local branch and push it.
+/// - `(false, true)`: switch to the branch - git's DWIM creates a local
+///   tracking branch from `origin/<name>`.
+/// - `(true, true)`: switch to the local branch and verify it is neither
+///   behind nor ahead of `origin`.
+///
+/// A failed `git fetch` is fatal here: every subsequent decision depends on
+/// `refs/remotes/origin/*` reflecting the remote's actual state, and a stale
+/// view can cause the wrong branch (create / push / checkout / fail-behind)
+/// to be taken.
+///
+/// # Arguments
+///
+/// * `system` - Injected I/O provider.
+/// * `maintenance_branch` - Name of the maintenance branch to ready.
+///
+/// # Errors
+///
+/// Returns an error if any git step fails or the local branch is behind or
+/// ahead of origin.
+fn ensure_maintenance_branch_ready<S: ReleaseSystem>(
+    system: &S,
+    maintenance_branch: &str,
+) -> Result<()> {
+    println!("INFO - Fetching origin to check maintenance branch state");
+    system
+        .git_fetch()
+        .context("failed to fetch from origin - cannot determine maintenance branch state")?;
+
+    let local_exists = system.git_branch_exists_local(maintenance_branch)?;
+    let origin_exists = system.git_branch_exists_origin(maintenance_branch)?;
+
+    match (local_exists, origin_exists) {
+        (false, false) => {
+            println!(
+                "INFO - Maintenance branch {maintenance_branch} does not exist; \
+                 creating from current HEAD and pushing to origin"
+            );
+            system.git_checkout_new_branch(maintenance_branch)?;
+            system.git_push(&[
+                "-u".to_owned(),
+                "origin".to_owned(),
+                maintenance_branch.to_owned(),
+            ])?;
+        }
+        (true, false) => {
+            println!(
+                "INFO - Maintenance branch {maintenance_branch} exists locally only; \
+                 switching to it and pushing to origin"
+            );
+            system.git_checkout(maintenance_branch)?;
+            system.git_push(&[
+                "-u".to_owned(),
+                "origin".to_owned(),
+                maintenance_branch.to_owned(),
+            ])?;
+        }
+        (false, true) => {
+            println!(
+                "INFO - Maintenance branch {maintenance_branch} exists on origin only; \
+                 creating a local tracking branch"
+            );
+            system.git_checkout(maintenance_branch)?;
+        }
+        (true, true) => {
+            println!(
+                "INFO - Maintenance branch {maintenance_branch} exists locally and on \
+                 origin; switching to local branch"
+            );
+            system.git_checkout(maintenance_branch)?;
+            let behind = system.git_rev_list_count_behind(maintenance_branch)?;
+            if behind > 0 {
+                bail!(
+                    "local maintenance branch {maintenance_branch} is {behind} commit(s) \
+                     behind origin - run `git pull` first"
+                );
+            }
+            // Unpushed local commits would otherwise leak into the release PR
+            // when we branch off `release-X.Y.Z` from here.
+            let ahead = system.git_rev_list_count_ahead(maintenance_branch)?;
+            if ahead > 0 {
+                bail!(
+                    "local maintenance branch {maintenance_branch} is {ahead} commit(s) \
+                     ahead of origin - push it before preparing a release"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Prepare a new release.
 ///
 /// Full workflow:
 /// 1. Verify working tree is clean.
 /// 2. Detect branch and suggest release type / next version.
 /// 3. Prompt user (accepts custom version input).
-/// 4. Create maintenance branch if on `main`.
+/// 4. When releasing from `main`: ensure the target maintenance branch is
+///    ready (see [`ensure_maintenance_branch_ready`]). For a major/minor
+///    release this creates the branch when missing; for a patch release
+///    entered as a custom version it switches to the existing branch.
+///    Then, for a major/minor release, branch off a `release-X.Y.Z` branch
+///    for the version bump. For a patch release on a maintenance branch
+///    (or switched to one above), stay on that branch.
 /// 5. Update `Cargo.toml` version.
 /// 6. Run `cargo update --workspace`.
 /// 7. Generate changelog.
-/// 8. Commit and push.
+/// 8. Commit the version bump.
+/// 9. For a major/minor release from `main`: push the `release-X.Y.Z`
+///    branch and open a GH PR against the maintenance branch. For a patch
+///    release: push directly to the maintenance branch.
 ///
 /// # Arguments
 ///
@@ -509,18 +762,26 @@ pub fn prepare_release<S: ReleaseSystem>(system: &S) -> Result<()> {
             bail!("invalid input - please enter Y or n");
         };
 
-    let target_branch = if current_branch == "main" {
+    let releases_from_main = current_branch == "main";
+    let opens_pr =
+        releases_from_main && matches!(actual_type, ReleaseType::Major | ReleaseType::Minor);
+    let maintenance_branch = if releases_from_main {
         format!("{}.{}-maintenance", next_version.major, next_version.minor)
     } else {
         current_branch.clone()
     };
+    let pr_branch = opens_pr.then(|| format!("release-{next_version}"));
 
     println!("INFO - Preparing {actual_type} release: {current_version} -> {next_version}");
-    println!("INFO - Target branch: {target_branch}");
+    println!("INFO - Maintenance branch: {maintenance_branch}");
 
-    if current_branch == "main" {
-        println!("INFO - Creating maintenance branch: {target_branch}");
-        system.git_checkout_new_branch(&target_branch)?;
+    if releases_from_main {
+        ensure_maintenance_branch_ready(system, &maintenance_branch)?;
+    }
+
+    if let Some(pr_branch_name) = pr_branch.as_deref() {
+        println!("INFO - Creating release branch: {pr_branch_name}");
+        system.git_checkout_new_branch(pr_branch_name)?;
     }
 
     println!("INFO - Updating Cargo.toml version to {next_version}");
@@ -546,15 +807,32 @@ pub fn prepare_release<S: ReleaseSystem>(system: &S) -> Result<()> {
     // fail on Windows with an access-denied error.
     system.git_commit(&commit_message, true)?;
 
-    println!("INFO - Pushing to remote");
-    if current_branch == "main" {
-        system.git_push(&["-u".to_owned(), "origin".to_owned(), target_branch.clone()])?;
-    } else {
-        system.git_push(&[])?;
-    }
+    if let Some(pr_branch_name) = pr_branch.as_deref() {
+        println!("INFO - Pushing release branch: {pr_branch_name}");
+        system.git_push(&[
+            "-u".to_owned(),
+            "origin".to_owned(),
+            pr_branch_name.to_owned(),
+        ])?;
 
-    println!("INFO - Release {next_version} prepared on branch {target_branch}");
-    println!("INFO - Run `cargo xtask create-release-tag` to tag the release");
+        println!("INFO - Opening PR against {maintenance_branch}");
+        system.gh_pr_create(&maintenance_branch)?;
+
+        println!(
+            "INFO - Release {next_version} prepared on branch {pr_branch_name} \
+             with PR against {maintenance_branch}"
+        );
+        println!(
+            "INFO - After the PR is merged, switch to {maintenance_branch}, \
+             pull, and run `cargo xtask create-release-tag` to tag the release"
+        );
+    } else {
+        println!("INFO - Pushing to remote");
+        system.git_push(&[])?;
+
+        println!("INFO - Release {next_version} prepared on branch {maintenance_branch}");
+        println!("INFO - Run `cargo xtask create-release-tag` to tag the release");
+    }
     Ok(())
 }
 
