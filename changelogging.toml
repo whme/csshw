@@ -1,3 +1,5 @@
+order = ["security", "feature", "bugfix", "deprecation", "removal"]
+
 [context]
 name = "csshw"
 version = "0.18.1"
