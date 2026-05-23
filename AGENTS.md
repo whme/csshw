@@ -126,10 +126,7 @@ Add a `//` comment only for:
 
 Never paraphrase the next line, narrate steps (`// Step 1: ...`,
 `// First, ... // Then, ...`), add banner dividers (`// ----- Helpers -----`),
-or commit commented-out code. Canonical examples to study:
-`src/utils/windows.rs:933-940` (conhost stale-cells workaround),
-`src/daemon/mod.rs:1640` (async ordering invariant),
-`src/client/mod.rs:541-543` (named-pipe contract).
+or commit commented-out code.
 
 ```rust
 // GOOD - cites a platform quirk and explains the workaround.
