@@ -25,6 +25,7 @@ mock! {
         fn git_log_latest_subject(&self) -> anyhow::Result<String>;
         fn git_fetch(&self) -> anyhow::Result<()>;
         fn git_rev_list_count_behind(&self, branch: &str) -> anyhow::Result<u32>;
+        fn git_rev_list_count_ahead(&self, branch: &str) -> anyhow::Result<u32>;
         fn git_create_annotated_tag(&self, tag: &str, message: &str) -> anyhow::Result<()>;
         fn git_push_tag(&self, tag: &str) -> anyhow::Result<()>;
         fn read_cargo_toml(&self) -> anyhow::Result<String>;
@@ -337,6 +338,9 @@ fn test_prepare_release_minor_uses_existing_maintenance_branch_when_up_to_date()
     mock.expect_git_rev_list_count_behind()
         .withf(|name| name == "0.19-maintenance")
         .returning(|_| Ok(0));
+    mock.expect_git_rev_list_count_ahead()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(0));
     expect_minor_release_tail(&mut mock);
 
     // Act
@@ -373,6 +377,131 @@ fn test_prepare_release_minor_bails_when_existing_maintenance_branch_behind() {
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("behind origin"), "unexpected error: {err}");
+}
+
+#[test]
+fn test_prepare_release_minor_bails_when_existing_maintenance_branch_ahead() {
+    // Arrange: both exist, local has unpushed commits.
+    let mut mock = main_branch_minor_mock();
+    mock.expect_git_branch_exists_local()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(true));
+    mock.expect_git_branch_exists_origin()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(true));
+    mock.expect_git_checkout()
+        .withf(|name| name == "0.19-maintenance")
+        .times(1)
+        .returning(|_| Ok(()));
+    mock.expect_git_rev_list_count_behind()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(0));
+    mock.expect_git_rev_list_count_ahead()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(2));
+    mock.expect_write_cargo_toml().never();
+    mock.expect_gh_pr_create().never();
+
+    // Act
+    let result = prepare_release(&mock);
+
+    // Assert
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("ahead of origin"), "unexpected error: {err}");
+}
+
+/// Custom-version patch from `main` (current 0.19.0 -> 0.19.2): the task must
+/// switch to the existing `0.19-maintenance` branch and push the version
+/// bump directly, without creating a release-branch PR.
+#[test]
+fn test_prepare_release_patch_from_main_uses_existing_maintenance_branch() {
+    // Arrange: on main, current version 0.19.0; user enters custom patch 0.19.2.
+    let mut mock = clean_mock();
+    mock.expect_git_current_branch()
+        .returning(|| Ok("main".to_owned()));
+    mock.expect_read_cargo_toml()
+        .returning(|| Ok(cargo_toml_with_version("0.19.0")));
+    let mut prompts = vec!["n".to_owned(), "0.19.2".to_owned()].into_iter();
+    mock.expect_prompt_user()
+        .times(2)
+        .returning(move |_| Ok(prompts.next().unwrap()));
+    mock.expect_git_fetch().times(1).returning(|| Ok(()));
+    mock.expect_git_branch_exists_local()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(true));
+    mock.expect_git_branch_exists_origin()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(true));
+    mock.expect_git_checkout()
+        .withf(|name| name == "0.19-maintenance")
+        .times(1)
+        .returning(|_| Ok(()));
+    mock.expect_git_rev_list_count_behind()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(0));
+    mock.expect_git_rev_list_count_ahead()
+        .withf(|name| name == "0.19-maintenance")
+        .returning(|_| Ok(0));
+    // No release-branch creation, no PR for a patch release.
+    mock.expect_git_checkout_new_branch().never();
+    mock.expect_gh_pr_create().never();
+    mock.expect_write_cargo_toml()
+        .withf(|content| content.contains("\"0.19.2\""))
+        .times(1)
+        .returning(|_| Ok(()));
+    mock.expect_cargo_update_workspace()
+        .times(1)
+        .returning(|| Ok(()));
+    mock.expect_generate_changelog()
+        .times(1)
+        .returning(|| Ok(()));
+    mock.expect_git_add().times(1).returning(|_| Ok(()));
+    mock.expect_git_commit()
+        .withf(|msg, no_verify| msg == "Version 0.19.2" && *no_verify)
+        .times(1)
+        .returning(|_, _| Ok(()));
+    mock.expect_git_push()
+        .withf(|args| args.is_empty())
+        .times(1)
+        .returning(|_| Ok(()));
+
+    // Act
+    let result = prepare_release(&mock);
+
+    // Assert
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_prepare_release_aborts_on_fetch_failure() {
+    // Arrange: on main preparing a minor release, but fetch fails.
+    let mut mock = clean_mock();
+    mock.expect_git_current_branch()
+        .returning(|| Ok("main".to_owned()));
+    mock.expect_read_cargo_toml()
+        .returning(|| Ok(cargo_toml_with_version("0.18.1")));
+    mock.expect_prompt_user()
+        .times(1)
+        .returning(|_| Ok("y".to_owned()));
+    mock.expect_git_fetch()
+        .times(1)
+        .returning(|| Err(anyhow::anyhow!("network down")));
+    mock.expect_git_branch_exists_local().never();
+    mock.expect_git_branch_exists_origin().never();
+    mock.expect_write_cargo_toml().never();
+    mock.expect_gh_pr_create().never();
+
+    // Act
+    let result = prepare_release(&mock);
+
+    // Assert
+    assert!(result.is_err());
+    let err = format!("{:#}", result.unwrap_err());
+    assert!(
+        err.contains("failed to fetch from origin"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
