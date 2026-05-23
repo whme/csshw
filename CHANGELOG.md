@@ -9,7 +9,7 @@
 - The default behavior when launching `csshw` without arguments has been changed:
   - when launched from an existing console terminal - the help text will be printed
   - when launched from the FileExplorer or otherwise in a new console - interactive mode will be
-  used
+    used
   
   In interactive mode CLI arguments can be entered in the new console window directly which will
   remain open until closed. (#69)
@@ -46,6 +46,27 @@
 
 - Changelog entries are now automatically created based on news fragments thanks to
   ✨[changelogging](https://github.com/nekitdev/changelogging)✨.
+
+### Bug Fixes
+
+- Fixed `[c]reate window(s)` in control mode to expand brace expressions
+  and cluster tags in the entered hostnames, so input like `{1..10}.local`
+  now spawns ten client windows instead of a single window literally named
+  `{1..10}.local`. (#193)
+
+- Fixed control-mode keys silently doing nothing when CapsLock, NumLock,
+  or any other lock toggle was engaged. The dispatch now masks
+  `dwControlKeyState` down to the actual modifier bits (Ctrl/Alt/Shift)
+  before matching, so all control mode options (e.g. `[c]reate window(s)`)
+  work regardless of lock state. (#196)
+
+- Fixed control mode leaking the `Esc` keystroke to all connected
+  clients when used to exit control mode. The keystroke is now
+  consumed by the daemon and no longer broadcast. (#197)
+
+- Fixed the typo in the `aspect_ratio_adjustement` daemon config key.
+  The correct spelling is now `aspect_ratio_adjustment`; existing TOML
+  configs using the old key continue to work via a serde alias. (#210)
 
 ## 0.18.1 (2025-10-07)
 
