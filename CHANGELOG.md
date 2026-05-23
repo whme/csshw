@@ -2,6 +2,51 @@
 
 <!-- changelogging: start -->
 
+## 0.19.0 (2026-05-23)
+
+### Features
+
+- The default behavior when launching `csshw` without arguments has been changed:
+  - when launched from an existing console terminal - the help text will be printed
+  - when launched from the FileExplorer or otherwise in a new console - interactive mode will be
+  used
+  
+  In interactive mode CLI arguments can be entered in the new console window directly which will
+  remain open until closed. (#69)
+
+- Added a new `[t]oggle enabled` control-mode option that suspends input
+  forwarding to all currently-enabled client windows, so keystrokes typed
+  in the daemon console no longer reach them until toggled back on. (#168)
+
+- Added a new `e[n]able all` control-mode option that resumes input
+  forwarding to every currently-disabled client window, so keystrokes
+  typed in the daemon console reach them again without needing to
+  re-enable them individually. (#172)
+
+- Disabled clients now repaint their console window with a muted color
+  and revert to their original colors when re-enabled, giving an
+  immediate visual confirmation that the daemon's `[t]oggle enabled` and
+  `e[n]able all` control-mode bindings landed on the right window. The
+  disabled-state color defaults to dark-grey on dark-grey and is
+  customisable via the new `client.disabled_console_color` key in
+  `csshw-config.toml`. (#181)
+
+- Added `[e]nable/disable input` control-mode option that opens a
+  submenu for managing input forwarding on a per-client basis. The
+  currently selected client is highlighted with a configurable console
+  color (`client.highlighted_console_color` in `csshw-config.toml`), and
+  arrow keys or the vim motions `h`, `j`, `k`, `l` move the highlight
+  across the client grid. The new `daemon.submenu_edge_behavior` key in
+  `csshw-config.toml` selects what happens when a move would leave the
+  grid: `clamp` (default, keeps the current selection) or `wrap` (wraps
+  to the opposite edge of the same row or column). Pressing `[e]nable`,
+  `[d]isable`, or `[t]oggle` applies the action to the highlighted
+  client and briefly flashes the resulting state color on that window
+  before restoring the highlight. (#195)
+
+- Changelog entries are now automatically created based on news fragments thanks to
+  ✨[changelogging](https://github.com/nekitdev/changelogging)✨.
+
 ## 0.18.1 (2025-10-07)
 
 ### Bug Fixes
