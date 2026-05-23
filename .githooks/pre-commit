@@ -1,5 +1,19 @@
 #!/bin/bash
 set -e
+
+# Git launches hooks with a sanitized PATH (MSYS2 default on Windows),
+# stripping the user's ~/.cargo/bin. Restore it.
+CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+if [ -f "$CARGO_HOME/env" ]; then
+    # shellcheck disable=SC1091
+    . "$CARGO_HOME/env"
+elif [ -d "$CARGO_HOME/bin" ]; then
+    case ":$PATH:" in
+        *":$CARGO_HOME/bin:"*) ;;
+        *) PATH="$CARGO_HOME/bin:$PATH" ;;
+    esac
+fi
+
 cargo fmt
 cargo lint
 cargo xtask check-typography
