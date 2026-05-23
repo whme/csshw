@@ -24,6 +24,14 @@ Focussing a client will cause any key-strokes to be sent to this client only.
 csshW is a portable application and is not installed.<br>
 To download the csshW application refer to the [Releases 📦](https://github.com/whme/csshw/releases) page.
 
+> [!NOTE]
+> The released `csshw.exe` is not code-signed. On first launch Windows
+> SmartScreen shows a "Windows protected your PC" warning because the
+> binary was downloaded from the internet and has no recognized publisher.
+> To run it: click `More info` -> `Run anyway`, or right-click
+> `csshw.exe` -> `Properties` -> tick `Unblock` -> `Apply`. Equivalent
+> from PowerShell: `Unblock-File .\csshw.exe`.
+
 ## Usage
 
 <!-- HELP_OUTPUT_START -->
