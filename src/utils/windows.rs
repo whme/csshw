@@ -19,7 +19,6 @@ use windows::core::{BOOL, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{COLORREF, FALSE, HANDLE, HWND, LPARAM, TRUE};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR};
 use windows::Win32::Graphics::Gdi::InvalidateRect;
-use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 use windows::Win32::System::Console::{
     FillConsoleOutputAttribute, GetConsoleProcessList, GetConsoleScreenBufferInfo,
     GetConsoleWindow, GetStdHandle, ReadConsoleInputW, SetConsoleTextAttribute,
@@ -33,17 +32,14 @@ use windows::Win32::System::Console::{
 };
 use windows::Win32::System::Threading::PROCESS_ACCESS_RIGHTS;
 use windows::Win32::System::Threading::{
-    CreateProcessW, CREATE_NEW_CONSOLE, PROCESS_INFORMATION, STARTUPINFOW,
+    CreateProcessW, CREATE_NEW_CONSOLE, PROCESS_INFORMATION, STARTF_USESHOWWINDOW, STARTUPINFOW,
 };
 use windows::Win32::System::Threading::{GetExitCodeProcess, OpenProcess};
-use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowTextW, GetWindowThreadProcessId, MoveWindow, SetWindowTextW,
-    SYSTEM_METRICS_INDEX,
-};
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowPlacement, SetForegroundWindow, ShowWindow, SHOW_WINDOW_CMD,
-    WINDOWPLACEMENT,
+    BringWindowToTop, EnumWindows, GetForegroundWindow, GetWindowPlacement, GetWindowTextW,
+    GetWindowThreadProcessId, MoveWindow, SetWindowPos, SetWindowTextW, ShowWindow, HWND_NOTOPMOST,
+    HWND_TOPMOST, SHOW_WINDOW_CMD, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_SHOWNOACTIVATE,
+    SYSTEM_METRICS_INDEX, WINDOWPLACEMENT,
 };
 
 #[cfg(test)]
@@ -271,12 +267,21 @@ pub trait WindowsApi: Send + Sync {
     /// Console screen buffer information or error
     fn get_console_attached_process_count(&self) -> u32;
 
-    /// Create a new process
+    /// Create a new process attached to its own console window.
+    ///
+    /// When `with_keyboard_focus` is false the new console window is
+    /// shown without activation (`STARTF_USESHOWWINDOW` +
+    /// `SW_SHOWNOACTIVATE`), so the caller retains keyboard focus.
+    /// Used when the daemon spawns client consoles - otherwise the
+    /// last-spawned client wins the foreground and Windows refuses to
+    /// let the daemon steal it back.
     ///
     /// # Arguments
     ///
-    /// * `application` - Application name including file extension
-    /// * `args` - List of arguments to the application
+    /// * `application`         - Application name including file extension
+    /// * `args`                - List of arguments to the application
+    /// * `with_keyboard_focus` - Whether the new console window should take
+    ///                           foreground focus when it appears.
     ///
     /// # Returns
     ///
@@ -285,12 +290,10 @@ pub trait WindowsApi: Send + Sync {
         &self,
         application: &str,
         args: Vec<String>,
+        with_keyboard_focus: bool,
     ) -> Option<windows::Win32::System::Threading::PROCESS_INFORMATION> {
         let command_line = build_command_line(application, &args);
-        let mut startupinfo = STARTUPINFOW {
-            cb: mem::size_of::<STARTUPINFOW>() as u32,
-            ..Default::default()
-        };
+        let mut startupinfo = build_startupinfo(with_keyboard_focus);
         let mut process_information = PROCESS_INFORMATION::default();
         let mut cmd_line = command_line;
         let command_line_ptr = windows::core::PWSTR(cmd_line.as_mut_ptr());
@@ -351,16 +354,27 @@ pub trait WindowsApi: Send + Sync {
     /// Handle to the foreground window
     fn get_foreground_window(&self) -> HWND;
 
-    /// Sets the foreground window.
+    /// Bring `hwnd` to the top of the z-order.
+    ///
+    /// When `with_keyboard_focus` is true the window is also activated and
+    /// receives keyboard focus. When false the window is raised without
+    /// activation, avoiding the taskbar flash that would happen if the
+    /// window is not the current input target.
     ///
     /// # Arguments
     ///
-    /// * `hwnd` - Handle to the window to set as foreground
+    /// * `hwnd`                - Handle to the window to raise.
+    /// * `with_keyboard_focus` - Whether to activate the window and give
+    ///                           it keyboard focus.
     ///
     /// # Returns
     ///
     /// Result indicating success or failure of the operation
-    fn set_foreground_window(&self, hwnd: HWND) -> windows::core::Result<()>;
+    fn bring_window_to_top(
+        &self,
+        hwnd: HWND,
+        with_keyboard_focus: bool,
+    ) -> windows::core::Result<()>;
 
     /// Gets console mode for the specified handle.
     ///
@@ -443,17 +457,6 @@ pub trait WindowsApi: Send + Sync {
     /// Result indicating success or failure of the operation
     fn show_window(&self, hwnd: HWND, cmd_show: SHOW_WINDOW_CMD) -> windows::core::Result<bool>;
 
-    /// Focuses a window using UI Automation.
-    ///
-    /// # Arguments
-    ///
-    /// * `hwnd` - Handle to the window to focus
-    ///
-    /// # Returns
-    ///
-    /// Result indicating success or failure of the operation
-    fn focus_window_with_automation(&self, hwnd: HWND) -> windows::core::Result<()>;
-
     /// Checks if a window handle is valid.
     ///
     /// # Arguments
@@ -482,20 +485,6 @@ pub trait WindowsApi: Send + Sync {
         inherit: bool,
         process_id: u32,
     ) -> windows::core::Result<HANDLE>;
-
-    /// Initializes the COM library for use by the calling thread.
-    ///
-    /// # Arguments
-    ///
-    /// * `coinit` - Initialization options for the COM library
-    ///
-    /// # Returns
-    ///
-    /// Result indicating success or failure of the operation
-    fn initialize_com_library(
-        &self,
-        coinit: windows::Win32::System::Com::COINIT,
-    ) -> windows::core::Result<()>;
 
     /// Gets system metrics information.
     ///
@@ -763,13 +752,41 @@ impl WindowsApi for DefaultWindowsApi {
         return unsafe { GetForegroundWindow() };
     }
 
-    fn set_foreground_window(&self, hwnd: HWND) -> windows::core::Result<()> {
-        let result = unsafe { SetForegroundWindow(hwnd) };
-        if result.as_bool() {
-            return Ok(());
-        } else {
-            return Err(windows::core::Error::from_thread());
+    fn bring_window_to_top(
+        &self,
+        hwnd: HWND,
+        with_keyboard_focus: bool,
+    ) -> windows::core::Result<()> {
+        if with_keyboard_focus {
+            return unsafe { BringWindowToTop(hwnd) };
         }
+        // Raise without activation via the HWND_TOPMOST -> HWND_NOTOPMOST
+        // trick. Synchronous SetWindowPos (no SWP_ASYNCWINDOWPOS) so
+        // HWND_TOPMOST is applied before we strip it again - otherwise
+        // rapid invocations from the z-order loop can leave the
+        // WS_EX_TOPMOST flag set, floating client windows above other
+        // applications. See https://stackoverflow.com/questions/5257977.
+        unsafe {
+            SetWindowPos(
+                hwnd,
+                Some(HWND_TOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            )?;
+            SetWindowPos(
+                hwnd,
+                Some(HWND_NOTOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            )?;
+        }
+        return Ok(());
     }
 
     fn get_console_mode(&self, handle: HANDLE) -> windows::core::Result<CONSOLE_MODE> {
@@ -814,14 +831,6 @@ impl WindowsApi for DefaultWindowsApi {
         return Ok(result.as_bool());
     }
 
-    fn focus_window_with_automation(&self, hwnd: HWND) -> windows::core::Result<()> {
-        let automation: IUIAutomation =
-            unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_ALL)? };
-        let window = unsafe { automation.ElementFromHandle(hwnd)? };
-        unsafe { window.SetFocus()? };
-        return Ok(());
-    }
-
     fn is_window(&self, hwnd: HWND) -> bool {
         return unsafe { windows::Win32::UI::WindowsAndMessaging::IsWindow(Some(hwnd)).as_bool() };
     }
@@ -833,18 +842,6 @@ impl WindowsApi for DefaultWindowsApi {
         process_id: u32,
     ) -> windows::core::Result<HANDLE> {
         return unsafe { OpenProcess(PROCESS_ACCESS_RIGHTS(access), inherit, process_id) };
-    }
-
-    fn initialize_com_library(
-        &self,
-        coinit: windows::Win32::System::Com::COINIT,
-    ) -> windows::core::Result<()> {
-        let result = unsafe { windows::Win32::System::Com::CoInitializeEx(None, coinit) };
-        if result.is_ok() {
-            return Ok(());
-        } else {
-            return Err(windows::core::Error::from(result));
-        }
     }
 
     fn get_system_metrics(&self, index: SYSTEM_METRICS_INDEX) -> i32 {
@@ -867,6 +864,34 @@ impl WindowsApi for DefaultWindowsApi {
 /// [1]: https://microsoft.github.io/windows-docs-rs/doc/windows/Win32/System/Console/constant.KEY_EVENT.html
 /// [2]: https://microsoft.github.io/windows-docs-rs/doc/windows/Win32/System/Console/struct.INPUT_RECORD.html
 pub const KEY_EVENT: u16 = KEY_EVENT_U32 as u16;
+
+/// Build a `STARTUPINFOW` for [`WindowsApi::create_process_with_args`].
+///
+/// When `with_keyboard_focus` is false, `STARTF_USESHOWWINDOW` and
+/// `SW_SHOWNOACTIVATE` are populated so the new console appears without
+/// stealing foreground focus. Otherwise the struct is left at its default
+/// (the new process picks its own show-window behaviour).
+///
+/// # Arguments
+///
+/// * `with_keyboard_focus` - Whether the spawned process is allowed to take
+///                           foreground focus when its console appears.
+///
+/// # Returns
+///
+/// A `STARTUPINFOW` with `cb` set and, when applicable, the no-activate
+/// show-window flags applied.
+pub(crate) fn build_startupinfo(with_keyboard_focus: bool) -> STARTUPINFOW {
+    let mut startupinfo = STARTUPINFOW {
+        cb: mem::size_of::<STARTUPINFOW>() as u32,
+        ..Default::default()
+    };
+    if !with_keyboard_focus {
+        startupinfo.dwFlags = STARTF_USESHOWWINDOW;
+        startupinfo.wShowWindow = SW_SHOWNOACTIVATE.0 as u16;
+    }
+    return startupinfo;
+}
 
 /// Build command line string for Windows process creation
 ///

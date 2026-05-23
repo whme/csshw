@@ -53,7 +53,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VIRTUAL_KEY, VK_A, VK_C, VK_D, VK_DOWN, VK_E, VK_ESCAPE, VK_H, VK_J, VK_K, VK_L, VK_LEFT, VK_N,
     VK_R, VK_RIGHT, VK_T, VK_UP,
 };
-use windows::Win32::UI::WindowsAndMessaging::{SW_RESTORE, SW_SHOWMINIMIZED};
+use windows::Win32::UI::WindowsAndMessaging::{SW_RESTORE, SW_SHOWMINIMIZED, SW_SHOWNOACTIVATE};
 use windows::Win32::{
     Foundation::{COLORREF, HANDLE, HWND, STILL_ACTIVE},
     System::{Console::ENABLE_PROCESSED_INPUT, Threading::PROCESS_QUERY_INFORMATION},
@@ -601,11 +601,6 @@ impl<'a> Daemon<'a> {
 
         toggle_processed_input_mode(windows_api); // Disable processed input mode
 
-        // Initialize the COM library so we can use UI automation
-        windows_api
-            .initialize_com_library(windows::Win32::System::Com::COINIT_MULTITHREADED)
-            .unwrap();
-
         let workspace_area = workspace::get_workspace_area(windows_api, self.config.height);
 
         self.arrange_daemon_console(windows_api, &workspace_area);
@@ -632,8 +627,7 @@ impl<'a> Daemon<'a> {
 
         // Now that all clients started, focus the daemon console again.
         let daemon_console = windows_api.get_console_window();
-        let _ = windows_api.set_foreground_window(daemon_console);
-        let _ = windows_api.focus_window_with_automation(daemon_console);
+        let _ = windows_api.bring_window_to_top(daemon_console, true);
 
         self.print_instructions(windows_api);
         self.run(windows_api, &mut clients, &workspace_area).await;
@@ -934,8 +928,7 @@ impl<'a> Daemon<'a> {
                     self.arrange_daemon_console(windows_api, workspace_area);
                     // Focus the daemon console again.
                     let daemon_window = windows_api.get_console_window();
-                    let _ = windows_api.set_foreground_window(daemon_window);
-                    let _ = windows_api.focus_window_with_automation(daemon_window);
+                    let _ = windows_api.bring_window_to_top(daemon_window, true);
                     self.quit_control_mode(windows_api);
                 }
                 ControlModeAction::CopyHostnames => {
@@ -1540,8 +1533,9 @@ fn launch_client_console<W: WindowsApi>(
     client_args.push("client".to_string());
     client_args.extend(vec!["--".to_string(), actual_host.to_string()]);
 
-    let process_info = spawn_console_process(windows_api, &format!("{PKG_NAME}.exe"), client_args)
-        .expect("Failed to create process");
+    let process_info =
+        spawn_console_process(windows_api, &format!("{PKG_NAME}.exe"), client_args, false)
+            .expect("Failed to create process");
     let client_window_handle = get_console_window_handle(windows_api, process_info.dwProcessId);
     let process_handle = windows_api
         .open_process(PROCESS_QUERY_INFORMATION.0, false, process_info.dwProcessId)
@@ -2057,27 +2051,48 @@ fn ensure_client_z_order_in_sync_with_daemon<W: WindowsApi + Send + Sync + 'stat
 ///                                     and the clients console window handle.
 /// * `daemon_handle`                 - Handle to the daemon console window.
 fn defer_windows<W: WindowsApi>(windows_api: &W, clients: &[Client], daemon_handle: &HWND) {
-    for client in clients.iter().chain([&Client {
-        hostname: "root".to_owned(),
-        window_handle: *daemon_handle,
-        process_handle: HANDLE::default(),
-        process_id: 0,
-        state_sender: watch::channel(ClientState::Active).0,
-        highlight_sender: watch::channel(false).0,
-        tile_index: 0,
-    }]) {
-        let placement = match windows_api.get_window_placement(client.window_handle) {
-            Ok(placement) => placement,
-            Err(_) => {
-                continue;
-            }
+    for client in clients.iter() {
+        restore_if_minimized(windows_api, client.window_handle, false);
+        let _ = windows_api.bring_window_to_top(client.window_handle, false);
+    }
+    // Raise the daemon last so it ends up on top and keeps keyboard focus.
+    restore_if_minimized(windows_api, *daemon_handle, true);
+    let _ = windows_api.bring_window_to_top(*daemon_handle, true);
+}
+
+/// Restore `window_handle` if its current placement reports minimized.
+///
+/// Silently does nothing when the placement query fails or the window is
+/// not minimized. Used by [`defer_windows`] so both client and daemon
+/// windows are brought back from the taskbar before z-order updates.
+///
+/// # Arguments
+///
+/// * `windows_api`         - Windows API implementation.
+/// * `window_handle`       - Handle to the window to potentially restore.
+/// * `with_keyboard_focus` - Whether the restored window should be activated.
+///                           Pass `false` for client windows so unminimizing
+///                           them does not steal foreground from the daemon -
+///                           `SW_RESTORE` activates, which would let the
+///                           last-restored client win the foreground race and
+///                           block [`WindowsApi::bring_window_to_top`] from
+///                           refocusing the daemon.
+fn restore_if_minimized<W: WindowsApi>(
+    windows_api: &W,
+    window_handle: HWND,
+    with_keyboard_focus: bool,
+) {
+    let placement = match windows_api.get_window_placement(window_handle) {
+        Ok(placement) => placement,
+        Err(_) => return,
+    };
+    if placement.showCmd == SW_SHOWMINIMIZED.0.try_into().unwrap() {
+        let cmd = if with_keyboard_focus {
+            SW_RESTORE
+        } else {
+            SW_SHOWNOACTIVATE
         };
-        // First restore if window is minimized
-        if placement.showCmd == SW_SHOWMINIMIZED.0.try_into().unwrap() {
-            let _ = windows_api.show_window(client.window_handle, SW_RESTORE);
-        }
-        // Then bring it to front using UI automation
-        let _ = windows_api.focus_window_with_automation(client.window_handle);
+        let _ = windows_api.show_window(window_handle, cmd);
     }
 }
 

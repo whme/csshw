@@ -364,8 +364,9 @@ mod cli_main_test {
                                 "host1".to_string(),
                                 "host2".to_string(),
                             ]),
+                            mockall::predicate::eq(true),
                         )
-                        .returning(|_, _| {
+                        .returning(|_, _, _| {
                             return Some(windows::Win32::System::Threading::PROCESS_INFORMATION {
                                 hProcess: windows::Win32::Foundation::HANDLE(
                                     std::ptr::dangling_mut::<std::ffi::c_void>(),
@@ -1360,9 +1361,10 @@ mod main_entrypoint_test {
                     "host1".to_string(),
                     "host2".to_string(),
                 ]),
+                eq(true),
             )
             .times(1)
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 return Some(PROCESS_INFORMATION {
                     hProcess: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
                         std::ffi::c_void,
@@ -1425,9 +1427,10 @@ mod main_entrypoint_test {
                     "daemon".to_string(),
                     "host1".to_string(),
                 ]),
+                eq(true),
             )
             .times(1)
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 return Some(PROCESS_INFORMATION {
                     hProcess: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
                         std::ffi::c_void,
@@ -1494,9 +1497,10 @@ mod main_entrypoint_test {
                     "server1".to_string(),
                     "server2".to_string(),
                 ]),
+                eq(true),
             )
             .times(1)
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 return Some(PROCESS_INFORMATION {
                     hProcess: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
                         std::ffi::c_void,
@@ -1565,9 +1569,10 @@ mod main_entrypoint_test {
                     "web2".to_string(),
                     "web3".to_string(),
                 ]),
+                eq(true),
             )
             .times(1)
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 return Some(PROCESS_INFORMATION {
                     hProcess: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
                         std::ffi::c_void,
@@ -1624,9 +1629,9 @@ mod main_entrypoint_test {
         let mut mock_windows_api = mock_windows_api;
         mock_windows_api
             .expect_create_process_with_args()
-            .with(eq("csshw.exe"), eq(vec!["daemon".to_string()]))
+            .with(eq("csshw.exe"), eq(vec!["daemon".to_string()]), eq(true))
             .times(1)
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 return Some(PROCESS_INFORMATION {
                     hProcess: windows::Win32::Foundation::HANDLE(std::ptr::dangling_mut::<
                         std::ffi::c_void,
@@ -1724,9 +1729,10 @@ mod main_entrypoint_test {
             .with(
                 eq("csshw.exe"),
                 eq(vec!["daemon".to_string(), "host1".to_string()]),
+                eq(true),
             )
             .times(1)
-            .returning(|_, _| return None);
+            .returning(|_, _, _| return None);
 
         let args = Args {
             command: None,

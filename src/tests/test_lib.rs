@@ -360,9 +360,10 @@ mod spawn_process_test {
                     "echo".to_string(),
                     "test".to_string(),
                 ]),
+                eq(true),
             )
             .times(1)
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 return Some(PROCESS_INFORMATION {
                     hProcess: windows::Win32::Foundation::HANDLE(0x1234 as *mut c_void),
                     hThread: windows::Win32::Foundation::HANDLE(0x5678 as *mut c_void),
@@ -375,6 +376,7 @@ mod spawn_process_test {
             &mock_api,
             "cmd.exe",
             vec!["/c".to_string(), "echo".to_string(), "test".to_string()],
+            true,
         );
 
         assert!(result.is_some());
@@ -391,11 +393,16 @@ mod spawn_process_test {
 
         mock_api
             .expect_create_process_with_args()
-            .with(eq("nonexistent.exe"), eq(vec!["arg1".to_string()]))
+            .with(
+                eq("nonexistent.exe"),
+                eq(vec!["arg1".to_string()]),
+                eq(true),
+            )
             .times(1)
-            .returning(|_, _| return None);
+            .returning(|_, _, _| return None);
 
-        let result = spawn_console_process(&mock_api, "nonexistent.exe", vec!["arg1".to_string()]);
+        let result =
+            spawn_console_process(&mock_api, "nonexistent.exe", vec!["arg1".to_string()], true);
 
         assert!(result.is_none());
     }
@@ -408,9 +415,9 @@ mod spawn_process_test {
 
         mock_api
             .expect_create_process_with_args()
-            .with(eq("notepad.exe"), eq(Vec::<String>::new()))
+            .with(eq("notepad.exe"), eq(Vec::<String>::new()), eq(true))
             .times(1)
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 return Some(PROCESS_INFORMATION {
                     hProcess: windows::Win32::Foundation::HANDLE(0xABCD as *mut c_void),
                     hThread: windows::Win32::Foundation::HANDLE(0xEF01 as *mut c_void),
@@ -419,7 +426,7 @@ mod spawn_process_test {
                 });
             });
 
-        let result = spawn_console_process(&mock_api, "notepad.exe", vec![]);
+        let result = spawn_console_process(&mock_api, "notepad.exe", vec![], true);
 
         assert!(result.is_some());
         let process_info = result.unwrap();
@@ -440,9 +447,9 @@ mod spawn_process_test {
         ];
         mock_api
             .expect_create_process_with_args()
-            .with(eq("ssh.exe"), eq(args.clone()))
+            .with(eq("ssh.exe"), eq(args.clone()), eq(true))
             .times(1)
-            .returning(|_, _| {
+            .returning(|_, _, _| {
                 return Some(PROCESS_INFORMATION {
                     hProcess: windows::Win32::Foundation::HANDLE(0x2468 as *mut c_void),
                     hThread: windows::Win32::Foundation::HANDLE(0x1357 as *mut c_void),
@@ -451,7 +458,7 @@ mod spawn_process_test {
                 });
             });
 
-        let result = spawn_console_process(&mock_api, "ssh.exe", args);
+        let result = spawn_console_process(&mock_api, "ssh.exe", args, true);
 
         assert!(result.is_some());
         let process_info = result.unwrap();
