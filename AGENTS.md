@@ -23,7 +23,7 @@ multiple hosts simultaneously with synchronized keystroke distribution.
 
 - **Binary**: `csshw.exe` - Main executable with CLI interface (`src/main.rs`, `src/cli.rs`)
 - **Library**: `csshw_lib` - Core functionality (`src/lib.rs`)
-- **Modules**: `src/client/`, `src/daemon/`, `src/serde/`, `src/utils/`
+- **Modules**: `src/client/`, `src/daemon/`, `src/protocol/`, `src/utils/`
 - **Tests**: `src/tests/` with component-based organization (`test_*.rs` naming)
 - **xtask**: `xtask/` - Developer automation tasks (README checks, release, changelog, social preview)
 - **Config**: `.config/` - grouped, shared single-line marker files consumed
@@ -81,7 +81,7 @@ characters - do NOT add to the allowlist.
 - **Test functions, closures, trivial trait impls**: no docs.
 - **Module docs** (`//!`): one line for typical modules. Multi-paragraph only
   when the module defines a protocol or wire format (see
-  `src/serde/protocol/mod.rs`). All library modules use
+  `src/protocol/mod.rs`). All library modules use
   `#![doc(html_no_source)]`.
 
 ````rust
@@ -127,9 +127,9 @@ Add a `//` comment only for:
 Never paraphrase the next line, narrate steps (`// Step 1: ...`,
 `// First, ... // Then, ...`), add banner dividers (`// ----- Helpers -----`),
 or commit commented-out code. Canonical examples to study:
-`src/utils/windows.rs:934-942` (conhost stale-cells workaround),
-`src/daemon/mod.rs:706-708` (async ordering invariant),
-`src/client/mod.rs:409-411` (protocol contract).
+`src/utils/windows.rs:933-940` (conhost stale-cells workaround),
+`src/daemon/mod.rs:1640` (async ordering invariant),
+`src/client/mod.rs:541-543` (named-pipe contract).
 
 ```rust
 // GOOD - cites a platform quirk and explains the workaround.

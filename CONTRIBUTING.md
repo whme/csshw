@@ -54,11 +54,6 @@ Unsure where to begin contributing to csshW? Here are some suggestions:
    git config --local core.hooksPath .githooks/
    ```
 
-3. **Install Development Tools**:
-   ```cmd
-   cargo install cargo-make
-   ```
-
 ### AI agent GitHub auth (optional)
 
 If you use [paseo](https://paseo.dev) to spawn AI coding agents on this
@@ -88,7 +83,7 @@ or recreate the worktree.
 
 ### Development Workflow
 
-csshW uses cargo aliases and [cargo make](https://github.com/sagiegurari/cargo-make) for development automation. Key commands:
+csshW uses cargo aliases and the [`xtask`](https://github.com/matklad/cargo-xtask) crate for development automation. Key commands:
 
 - `cargo fmt` - Format code
 - `cargo lint` - Run clippy linting
@@ -219,17 +214,17 @@ For easy manual testing on Windows we recommend the following setup:
 
 ## Development Tools and Automation
 
-### Cargo Make Tasks
+### xtask Subcommands
 
-csshW uses several `cargo make` tasks for automation either as part of the pre-commit githook, in the GitHub Actions CI or locally.
+csshW uses `cargo xtask` subcommands for automation - run as part of the pre-commit githook, in the GitHub Actions CI, or locally. See `cargo xtask --help` for the full list.
 
 ### Release Process
 
 csshW follows a structured release process:
 
-1. **Prepare release** with `cargo make prepare-release`
+1. **Prepare release** with `cargo xtask prepare-release`
 2. **Create pull request** from maintenance branch to main
-3. **Create release tag** with `cargo make release`
+3. **Create release tag** with `cargo xtask create-release-tag`
 4. **Publish release** through GitHub Actions
 
 Contributors don't need to worry about releases - maintainers handle this process.

@@ -128,12 +128,12 @@ submenu_edge_behavior = 'clamp'
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `height` | u16 | `200` | Height of the daemon console. |
-| `aspect_ratio_adjustement` | float | `-1.0` | Bias for vertical vs. horizontal layout of client windows. See [Aspect ratio](#aspect-ratio). |
+| `aspect_ratio_adjustment` | float | `-1.0` | Bias for vertical vs. horizontal layout of client windows. See [Aspect ratio](#aspect-ratio). |
 | <a id="console_color"></a>`console_color` | u16 | `207` (`8+4+2+1+64+128`) | Daemon console colors. Default paints white text on red. See [Console color encoding](#console-color-encoding). |
 | `submenu_edge_behavior` | enum | `'clamp'` | What happens when an arrow / `hjkl` keystroke in the submenu would move the highlight past the edge of the client grid. See [Submenu edge behavior](#submenu-edge-behavior). |
 
 ### Aspect ratio
-`aspect_ratio_adjustement` configures whether the available screen space should rather be used horizontally or vertically.
+`aspect_ratio_adjustment` configures whether the available screen space should rather be used horizontally or vertically.
 * `> 0.0` - aims for vertical rectangle shape. The larger the value, the more exaggerated the "verticality". Eventually the windows will all be columns.
 * `= 0.0` - aims for square shape.
 * `< 0.0` - aims for horizontal rectangle shape. The smaller the value, the more exaggerated the "horizontality". Eventually the windows will all be rows. `-1.0` is the sweetspot for mostly preserving a 16:9 ratio.
@@ -166,9 +166,9 @@ Install them via ``git config --local core.hooksPath .githooks/``.
 
 ## Releases
 Step by step guide to create a new release:
-- `cargo make prepare-release` and follow the instructions
+- `cargo xtask prepare-release` and follow the instructions
 - Create a pull request from the new maintenance branch to main OR cherry-pick the new Version change from the existing maintenance branch to main
-- `cargo make release` and follow the instructions
+- `cargo xtask create-release-tag` and follow the instructions
 - Revise the automatically created Release Draft and publish it
 
 [^1]: The searchbar used to launch csshw in the demo clip is [keypirinha](https://keypirinha.com/).
