@@ -36,7 +36,7 @@ To download the csshW application refer to the [Releases 📦](https://github.co
 > [GitHub build attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds);
 > see the release notes for verification instructions. Verifying it
 > proves the archive came from this project's release workflow at the
-> tagged commit, but does not change SmartScreen's behaviour for the
+> tagged commit, but does not change SmartScreen's behavior for the
 > unsigned `.exe` inside.
 
 ## Usage
