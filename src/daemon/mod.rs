@@ -24,7 +24,7 @@ use crate::utils::config::{Cluster, DaemonConfig, EdgeBehavior};
 use crate::utils::debug::StringRepr;
 use crate::utils::windows::{clear_screen, set_console_color, WindowsApi};
 use crate::{
-    spawn_console_process,
+    current_exe_path, spawn_console_process,
     utils::{
         constants::{PIPE_NAME, PKG_NAME},
         windows::{
@@ -1533,9 +1533,8 @@ fn launch_client_console<W: WindowsApi>(
     client_args.push("client".to_string());
     client_args.extend(vec!["--".to_string(), actual_host.to_string()]);
 
-    let process_info =
-        spawn_console_process(windows_api, &format!("{PKG_NAME}.exe"), client_args, false)
-            .expect("Failed to create process");
+    let process_info = spawn_console_process(windows_api, &current_exe_path(), client_args, false)
+        .expect("Failed to create process");
     let client_window_handle = get_console_window_handle(windows_api, process_info.dwProcessId);
     let process_handle = windows_api
         .open_process(PROCESS_QUERY_INFORMATION.0, false, process_info.dwProcessId)

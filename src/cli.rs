@@ -5,8 +5,8 @@ use crate::daemon::{main as daemon_main, resolve_cluster_tags};
 use crate::utils::config::{ClientConfig, Cluster, Config, ConfigOpt, DaemonConfig};
 use crate::utils::windows::WindowsApi;
 use crate::{
-    get_console_window_handle, init_logger, is_launched_from_gui, spawn_console_process,
-    WindowsSettingsDefaultTerminalApplicationGuard,
+    current_exe_path, get_console_window_handle, init_logger, is_launched_from_gui,
+    spawn_console_process, WindowsSettingsDefaultTerminalApplicationGuard,
 };
 use clap::{ArgAction, CommandFactory, Parser, Subcommand};
 
@@ -313,7 +313,7 @@ impl Entrypoint for MainEntrypoint {
         // reset the configuration before the window was launched
         let _ = get_console_window_handle(
             windows_api,
-            spawn_console_process(windows_api, &format!("{PKG_NAME}.exe"), daemon_args, true)
+            spawn_console_process(windows_api, &current_exe_path(), daemon_args, true)
                 .expect("Failed to create process")
                 .dwProcessId,
         );
