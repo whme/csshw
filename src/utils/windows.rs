@@ -293,14 +293,7 @@ pub trait WindowsApi: Send + Sync {
         with_keyboard_focus: bool,
     ) -> Option<windows::Win32::System::Threading::PROCESS_INFORMATION> {
         let command_line = build_command_line(application, &args);
-        let mut startupinfo = STARTUPINFOW {
-            cb: mem::size_of::<STARTUPINFOW>() as u32,
-            ..Default::default()
-        };
-        if !with_keyboard_focus {
-            startupinfo.dwFlags = STARTF_USESHOWWINDOW;
-            startupinfo.wShowWindow = SW_SHOWNOACTIVATE.0 as u16;
-        }
+        let mut startupinfo = build_startupinfo(with_keyboard_focus);
         let mut process_information = PROCESS_INFORMATION::default();
         let mut cmd_line = command_line;
         let command_line_ptr = windows::core::PWSTR(cmd_line.as_mut_ptr());
@@ -871,6 +864,34 @@ impl WindowsApi for DefaultWindowsApi {
 /// [1]: https://microsoft.github.io/windows-docs-rs/doc/windows/Win32/System/Console/constant.KEY_EVENT.html
 /// [2]: https://microsoft.github.io/windows-docs-rs/doc/windows/Win32/System/Console/struct.INPUT_RECORD.html
 pub const KEY_EVENT: u16 = KEY_EVENT_U32 as u16;
+
+/// Build a `STARTUPINFOW` for [`WindowsApi::create_process_with_args`].
+///
+/// When `with_keyboard_focus` is false, `STARTF_USESHOWWINDOW` and
+/// `SW_SHOWNOACTIVATE` are populated so the new console appears without
+/// stealing foreground focus. Otherwise the struct is left at its default
+/// (the new process picks its own show-window behaviour).
+///
+/// # Arguments
+///
+/// * `with_keyboard_focus` - Whether the spawned process is allowed to take
+///                           foreground focus when its console appears.
+///
+/// # Returns
+///
+/// A `STARTUPINFOW` with `cb` set and, when applicable, the no-activate
+/// show-window flags applied.
+pub fn build_startupinfo(with_keyboard_focus: bool) -> STARTUPINFOW {
+    let mut startupinfo = STARTUPINFOW {
+        cb: mem::size_of::<STARTUPINFOW>() as u32,
+        ..Default::default()
+    };
+    if !with_keyboard_focus {
+        startupinfo.dwFlags = STARTF_USESHOWWINDOW;
+        startupinfo.wShowWindow = SW_SHOWNOACTIVATE.0 as u16;
+    }
+    return startupinfo;
+}
 
 /// Build command line string for Windows process creation
 ///

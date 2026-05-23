@@ -603,10 +603,11 @@ mod command_line_test {
 mod create_process_with_args_test {
     use windows::Win32::{
         Foundation::{GetLastError, STILL_ACTIVE},
-        System::Threading::TerminateProcess,
+        System::Threading::{TerminateProcess, STARTF_USESHOWWINDOW},
+        UI::WindowsAndMessaging::SW_SHOWNOACTIVATE,
     };
 
-    use crate::utils::windows::{DefaultWindowsApi, WindowsApi};
+    use crate::utils::windows::{build_startupinfo, DefaultWindowsApi, WindowsApi};
 
     /// Tests create_process_with_args with valid application and arguments.
     /// Validates that the process creation function is called with correct parameters.
@@ -623,5 +624,31 @@ mod create_process_with_args_test {
         assert!(windows_api.get_exit_code(process_info.hProcess).unwrap() == STILL_ACTIVE.0 as u32);
         unsafe { TerminateProcess(process_info.hProcess, 0) }.expect("Failed to terminate process");
         assert!(windows_api.get_exit_code(process_info.hProcess).unwrap() == 0);
+    }
+
+    /// Tests that build_startupinfo populates STARTF_USESHOWWINDOW and
+    /// SW_SHOWNOACTIVATE when keyboard focus is suppressed, so the spawned
+    /// console window appears without stealing foreground focus from the daemon.
+    #[test]
+    fn test_build_startupinfo_without_focus_sets_show_no_activate() {
+        let startupinfo = build_startupinfo(false);
+        assert!(
+            (startupinfo.dwFlags & STARTF_USESHOWWINDOW) == STARTF_USESHOWWINDOW,
+            "STARTF_USESHOWWINDOW must be set when keyboard focus is suppressed"
+        );
+        assert_eq!(startupinfo.wShowWindow, SW_SHOWNOACTIVATE.0 as u16);
+    }
+
+    /// Tests that build_startupinfo leaves STARTF_USESHOWWINDOW unset when
+    /// keyboard focus is allowed, so the spawned process picks its own
+    /// show-window behaviour.
+    #[test]
+    fn test_build_startupinfo_with_focus_leaves_flags_default() {
+        let startupinfo = build_startupinfo(true);
+        assert!(
+            (startupinfo.dwFlags & STARTF_USESHOWWINDOW) != STARTF_USESHOWWINDOW,
+            "STARTF_USESHOWWINDOW must not be set when keyboard focus is allowed"
+        );
+        assert_eq!(startupinfo.wShowWindow, 0);
     }
 }

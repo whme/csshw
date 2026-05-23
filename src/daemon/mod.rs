@@ -2052,19 +2052,27 @@ fn ensure_client_z_order_in_sync_with_daemon<W: WindowsApi + Send + Sync + 'stat
 /// * `daemon_handle`                 - Handle to the daemon console window.
 fn defer_windows<W: WindowsApi>(windows_api: &W, clients: &[Client], daemon_handle: &HWND) {
     for client in clients.iter() {
-        let placement = match windows_api.get_window_placement(client.window_handle) {
-            Ok(placement) => placement,
-            Err(_) => {
-                continue;
-            }
-        };
-        if placement.showCmd == SW_SHOWMINIMIZED.0.try_into().unwrap() {
-            let _ = windows_api.show_window(client.window_handle, SW_RESTORE);
-        }
+        restore_if_minimized(windows_api, client.window_handle);
         let _ = windows_api.bring_window_to_top(client.window_handle, false);
     }
     // Raise the daemon last so it ends up on top and keeps keyboard focus.
+    restore_if_minimized(windows_api, *daemon_handle);
     let _ = windows_api.bring_window_to_top(*daemon_handle, true);
+}
+
+/// Restore `window_handle` if its current placement reports minimized.
+///
+/// Silently does nothing when the placement query fails or the window is
+/// not minimized. Used by [`defer_windows`] so both client and daemon
+/// windows are brought back from the taskbar before z-order updates.
+fn restore_if_minimized<W: WindowsApi>(windows_api: &W, window_handle: HWND) {
+    let placement = match windows_api.get_window_placement(window_handle) {
+        Ok(placement) => placement,
+        Err(_) => return,
+    };
+    if placement.showCmd == SW_SHOWMINIMIZED.0.try_into().unwrap() {
+        let _ = windows_api.show_window(window_handle, SW_RESTORE);
+    }
 }
 
 /// The entrypoint for the `daemon` subcommand.
