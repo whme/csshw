@@ -1,0 +1,47 @@
+#
+#   Dependabot Auto-Merge
+#
+# Enables GitHub auto-merge on Dependabot PRs so they merge themselves
+# once the repository's required status checks pass. This workflow does
+# NOT merge immediately and does NOT bypass branch protection - it only
+# flips the auto-merge flag, leaving the merge decision to the existing
+# required checks on `main`.
+#
+# Guards:
+#   - PR author must be `dependabot[bot]`
+#   - PR base branch must be `main`
+#   - PR must carry the `dependencies` label (set by Dependabot itself
+#     per `.github/dependabot.yml`)
+#
+# `pull_request_target` is used so the workflow runs with a token that
+# has write permission to the PR; Dependabot's own `pull_request` runs
+# only get a read-only token. Because no PR-controlled code is checked
+# out or executed, this trigger is safe here.
+#
+# Calling `gh pr merge --auto` is idempotent: re-running on a PR that
+# already has auto-merge enabled is a no-op.
+
+name: Dependabot Auto-Merge
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, labeled, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.base.ref == 'main' &&
+      contains(github.event.pull_request.labels.*.name, 'dependencies')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"
