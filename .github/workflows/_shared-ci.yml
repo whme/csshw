@@ -95,7 +95,7 @@ jobs:
           cargo +$nightly llvm-cov report --html --output-dir coverage_html --ignore-filename-regex $ignoreRegex
 
       - name: Upload Coverage XML Data
-        uses: &upload-artifact-action actions/upload-artifact@v4
+        uses: &upload-artifact-action actions/upload-artifact@v7
         with:
           name: coverage-xml-data
           path: coverage.xml

@@ -25,7 +25,7 @@ jobs:
         run: cargo release
 
       - name: Upload release binary
-        uses: &upload-artifact-action actions/upload-artifact@v4
+        uses: &upload-artifact-action actions/upload-artifact@v7
         with:
           name: csshw-binary
           path: target/release/csshw.exe
