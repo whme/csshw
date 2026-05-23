@@ -15,7 +15,9 @@
 #   - PR must be merged (not just closed)
 #   - head and base repo must be the same (skip cross-repo forks; GitHub
 #     cannot delete fork branches anyway)
-#   - head branch must not match `*-maintenance`
+#   - head branch must not match `<major>.<minor>-maintenance` (e.g.
+#     `0.19-maintenance`), the only naming convention we use for
+#     long-lived release branches
 #
 # The delete call is tolerant: if the branch is already gone (manual
 # delete, or another workflow beat us to it) the job still succeeds.
@@ -33,8 +35,7 @@ jobs:
   delete-branch:
     if: >-
       github.event.pull_request.merged == true &&
-      github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name &&
-      !endsWith(github.event.pull_request.head.ref, '-maintenance')
+      github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name
     runs-on: ubuntu-latest
     steps:
       - name: Delete head branch
@@ -43,6 +44,14 @@ jobs:
           REPO: ${{ github.repository }}
           BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
+          # Maintenance branches use `<major>.<minor>-maintenance` with
+          # 1-3 digit version components (e.g. `0.19-maintenance`). GitHub
+          # Actions expressions cannot express this, so the precise check
+          # lives here instead of in the job-level `if:`.
+          if [[ "$BRANCH" =~ ^[0-9]{1,3}\.[0-9]{1,3}-maintenance$ ]]; then
+            echo "::notice::Preserving maintenance branch $BRANCH."
+            exit 0
+          fi
           set +e
           output=$(gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" 2>&1)
           status=$?
@@ -52,9 +61,12 @@ jobs:
             echo "::notice::Deleted head branch $BRANCH."
             exit 0
           fi
-          # 422 "Reference does not exist" means the branch is already
-          # gone - treat as success so re-runs and races stay green.
-          if printf '%s' "$output" | grep -qiE 'reference does not exist|not found'; then
+          # GitHub returns HTTP 422 "Reference does not exist" when the
+          # branch is already gone - treat that exact response as success
+          # so re-runs and races stay green. Other failures (404 from a
+          # wrong repo/permission, 5xx, etc.) must still fail the job.
+          if printf '%s' "$output" | grep -q 'HTTP 422' \
+            && printf '%s' "$output" | grep -qi 'Reference does not exist'; then
             echo "::notice::Head branch $BRANCH was already deleted."
             exit 0
           fi
