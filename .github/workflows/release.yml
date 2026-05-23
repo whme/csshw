@@ -54,8 +54,10 @@ jobs:
           # Create package directory
           mkdir -p package
 
-          # Copy and rename binary
-          cp artifacts/csshw.exe "package/csshw.${VERSION}.exe"
+          # Copy binary. The version is carried by the zip filename below;
+          # the executable inside the archive keeps its plain `csshw.exe`
+          # name so users can drop it straight onto PATH.
+          cp artifacts/csshw.exe package/csshw.exe
 
           # Copy documentation
           cp README.md package/
