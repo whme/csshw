@@ -4,3 +4,7 @@
 - name: "no-news-fragment-needed"
   color: "7bb344"
   description: "Indicates that this PR does not require a news fragment"
+
+- name: "dependencies"
+  color: "0366d6"
+  description: "Pull requests that update a dependency"
