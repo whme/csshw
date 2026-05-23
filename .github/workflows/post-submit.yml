@@ -27,9 +27,13 @@ name: Post-Submit CI
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - "main"
+      - "*-maintenance"
   pull_request_target:
-    branches: ["main"]
+    branches:
+      - "main"
+      - "*-maintenance"
     types: [closed]
 
 # Constrain `pull_request_target` to the minimum scopes required.
