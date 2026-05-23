@@ -63,9 +63,10 @@ updates:
     labels:
       - dependencies
       - no-news-fragment-needed
+    # github-actions only supports `default-days`; semver-* keys are
+    # rejected here because actions don't expose semver to Dependabot.
     cooldown:
-      default-days: 3
-      semver-major-days: 7
+      default-days: 7
     groups:
       actions-minor-and-patch:
         applies-to: version-updates
