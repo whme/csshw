@@ -6,22 +6,28 @@
 # Uses the shared CI workflow.
 #
 # Trigger model:
-#   `pull_request_target` `closed` with `merged == true` covers every
-#   merge into `main`, including Dependabot auto-merges. A `push`-on-
-#   `main` trigger would miss the Dependabot path: the auto-merge
-#   workflow enables `--auto` using the default `GITHUB_TOKEN`, so when
-#   GitHub later performs the merge, the resulting `push` event is
-#   suppressed from triggering further workflow runs (anti-loop
-#   safeguard for `GITHUB_TOKEN`-attributed actions).
-#   `pull_request_target` is observed on state transition and is not
-#   subject to that safeguard, so a single trigger handles human and
-#   Dependabot merges uniformly without risk of duplicate runs.
+#   - `push` to `main` covers normal human-driven merges. The resulting
+#     workflow run carries `main` as its head_branch, so downstream
+#     `workflow_run` consumers (see `deploy_github_pages.yml`) that
+#     filter on `branches: [main]` keep firing.
+#   - `pull_request_target` `closed` covers Dependabot auto-merges. The
+#     auto-merge workflow enables `--auto` with the default
+#     `GITHUB_TOKEN`; per GitHub's anti-loop safeguard for
+#     `GITHUB_TOKEN`-attributed actions, the resulting `push` event is
+#     suppressed from triggering further workflow runs, so this path
+#     would otherwise never run post-submit CI for Dependabot merges.
+#     `pull_request_target` is observed on state transition and is not
+#     subject to that safeguard. It is gated to merged Dependabot PRs
+#     to avoid duplicate runs on human merges (which take the `push`
+#     path).
 #
 # See: https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow
 
 name: Post-Submit CI
 
 on:
+  push:
+    branches: ["main"]
   pull_request_target:
     branches: ["main"]
     types: [closed]
@@ -36,9 +42,21 @@ permissions:
 
 jobs:
   ci:
-    # Skip closed-without-merge; only build the merged commit.
-    if: github.event.pull_request.merged == true
+    # `push` runs unconditionally; `pull_request_target` runs only for
+    # merged Dependabot PRs (human merges are already covered by `push`).
+    if: >-
+      github.event_name == 'push' ||
+      (github.event.pull_request.merged == true &&
+       github.event.pull_request.user.login == 'dependabot[bot]')
     uses: ./.github/workflows/_shared-ci.yml
+    with:
+      # On `pull_request_target`, default checkout would resolve to
+      # `refs/pull/<n>/merge` (a synthetic merge ref) rather than the
+      # commit that actually landed on `main`. Pass `merge_commit_sha`
+      # so the build runs against the merged commit (matters for
+      # squash/rebase merges). Falls through to `github.sha` on `push`,
+      # which is already the merged commit on `main`.
+      ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
 
   coverage-report:
     needs: ci
