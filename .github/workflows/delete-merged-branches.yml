@@ -2,10 +2,11 @@
 #   Delete Merged Branches
 #
 # Deletes the head branch of a merged pull request, except for branches
-# matching `*-maintenance`. This replaces GitHub's repo-wide
+# matching `<major>.<minor>-maintenance` (1-3 digit version components,
+# e.g. `0.19-maintenance`). This replaces GitHub's repo-wide
 # "Automatically delete head branches" setting, which cannot exclude
-# long-lived release branches like `0.19-maintenance` that we cherry-pick
-# fixes onto and keep around.
+# long-lived release branches that we cherry-pick fixes onto and keep
+# around.
 #
 # Repo setting "Automatically delete head branches" must be DISABLED for
 # this workflow to be the single source of truth; otherwise the setting
