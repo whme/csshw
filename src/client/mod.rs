@@ -194,8 +194,8 @@ fn start_flash(
 
 /// Paint `target` if it differs from `last`, then update `last`.
 ///
-/// Skipping unchanged repaints keeps the slow per-row
-/// `fill_console_output_attribute` calls off the hot path.
+/// Skipping unchanged repaints avoids an unnecessary LPC roundtrip to
+/// conhost and the post-fill `InvalidateRect`/WM_PAINT.
 ///
 /// # Arguments
 ///

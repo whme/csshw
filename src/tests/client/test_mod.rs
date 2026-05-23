@@ -860,8 +860,8 @@ fn mock_for_one_set_console_color() -> MockWindowsApi {
         .times(1)
         .return_const(Ok(buffer_info));
     mock.expect_fill_console_output_attribute()
-        .times(25)
-        .returning(|_, _, _| return Ok(80));
+        .times(1)
+        .returning(|_, _, _| return Ok(80 * 25));
     mock.expect_invalidate_console_window()
         .times(1)
         .returning(|| return Ok(()));
@@ -936,7 +936,8 @@ fn mock_for_n_set_console_color_calls(n: usize) -> MockWindowsApi {
         .times(n)
         .returning(move || return Ok(buffer_info));
     mock.expect_fill_console_output_attribute()
-        .returning(|_, _, _| return Ok(80));
+        .times(n)
+        .returning(|_, _, _| return Ok(80 * 25));
     mock.expect_invalidate_console_window()
         .times(n)
         .returning(|| return Ok(()));
