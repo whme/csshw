@@ -84,7 +84,7 @@ impl ChangelogSystem for RealSystem {
 /// Returns an error if the content cannot be parsed as TOML or the
 /// `[package].version` key is absent.
 pub fn extract_version_from_cargo_toml(cargo_toml_content: &str) -> Result<String> {
-    let doc: toml_edit::Document = cargo_toml_content
+    let doc: toml_edit::DocumentMut = cargo_toml_content
         .parse()
         .context("failed to parse Cargo.toml")?;
     let version = doc
@@ -113,7 +113,7 @@ pub fn extract_version_from_cargo_toml(cargo_toml_content: &str) -> Result<Strin
 ///
 /// Returns an error if `changelogging_content` cannot be parsed as TOML.
 pub fn set_changelogging_version(changelogging_content: &str, version: &str) -> Result<String> {
-    let mut doc: toml_edit::Document = changelogging_content
+    let mut doc: toml_edit::DocumentMut = changelogging_content
         .parse()
         .context("failed to parse changelogging.toml")?;
     doc["context"]["version"] = toml_edit::value(version);
