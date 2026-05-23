@@ -291,6 +291,30 @@ fn show_ref_exists(ref_name: &str) -> Result<bool> {
     }
 }
 
+/// Run `git rev-list --count <range>` and return the parsed commit count.
+///
+/// A non-zero exit (e.g. unknown ref) or unparseable stdout must surface as an
+/// `Err` - returning `0` would silently mask "stale ref" or "git failed" as
+/// "branch is up to date".
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn rev_list_count(range: &str) -> Result<u32> {
+    let output = std::process::Command::new("git")
+        .args(["rev-list", "--count", range])
+        .output()
+        .context("failed to run `git rev-list`")?;
+    if !output.status.success() {
+        bail!(
+            "`git rev-list --count {range}` failed with status {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim(),
+        );
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout.trim().parse::<u32>().with_context(|| {
+        format!("failed to parse `git rev-list --count {range}` stdout: {stdout:?}")
+    })
+}
+
 /// Production implementation of [`ReleaseSystem`].
 pub struct RealSystem;
 
@@ -418,27 +442,11 @@ impl ReleaseSystem for RealSystem {
     }
 
     fn git_rev_list_count_behind(&self, branch: &str) -> Result<u32> {
-        let output = std::process::Command::new("git")
-            .args(["rev-list", "--count", &format!("HEAD..origin/{branch}")])
-            .output()
-            .context("failed to run `git rev-list`")?;
-        let count = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .parse::<u32>()
-            .unwrap_or(0);
-        Ok(count)
+        rev_list_count(&format!("HEAD..origin/{branch}"))
     }
 
     fn git_rev_list_count_ahead(&self, branch: &str) -> Result<u32> {
-        let output = std::process::Command::new("git")
-            .args(["rev-list", "--count", &format!("origin/{branch}..HEAD")])
-            .output()
-            .context("failed to run `git rev-list`")?;
-        let count = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .parse::<u32>()
-            .unwrap_or(0);
-        Ok(count)
+        rev_list_count(&format!("origin/{branch}..HEAD"))
     }
 
     fn git_create_annotated_tag(&self, tag: &str, message: &str) -> Result<()> {
@@ -579,8 +587,11 @@ pub fn set_cargo_toml_version(cargo_toml_content: &str, new_version: &str) -> Re
     Ok(doc.to_string())
 }
 
-/// Ensure the maintenance branch exists and is checked out before branching
-/// off a release branch for a minor release.
+/// Ensure the maintenance branch exists and is checked out before any release
+/// prepared from `main` (major/minor create + push the maintenance branch and
+/// then branch off `release-X.Y.Z`; a custom patch version typed on `main`
+/// switches to an existing maintenance branch and pushes the version bump
+/// directly).
 ///
 /// Fetches once, then handles the four
 /// (local exists, origin exists) combinations:
