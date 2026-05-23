@@ -12,14 +12,22 @@
 #   - PR base branch must be `main`
 #   - PR must carry the `dependencies` label (set by Dependabot itself
 #     per `.github/dependabot.yml`)
+#   - PR must not be a draft
 #
 # `pull_request_target` is used so the workflow runs with a token that
 # has write permission to the PR; Dependabot's own `pull_request` runs
 # only get a read-only token. Because no PR-controlled code is checked
 # out or executed, this trigger is safe here.
 #
-# Calling `gh pr merge --auto` is idempotent: re-running on a PR that
-# already has auto-merge enabled is a no-op.
+# There is no race against CI: `--auto` only flips the auto-merge flag,
+# and GitHub then waits for the branch's required status checks before
+# performing the merge. Re-running on a PR that already has auto-merge
+# enabled is a no-op.
+#
+# `gh pr merge --auto` can still exit non-zero in transient states
+# (conflicts, ineligible base, auto-merge temporarily disallowed). We
+# log those cases and exit successfully so they do not surface as red
+# checks - the next PR event (synchronize, labeled, ...) will retry.
 
 name: Dependabot Auto-Merge
 
@@ -37,6 +45,7 @@ jobs:
     if: >-
       github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.draft == false &&
       contains(github.event.pull_request.labels.*.name, 'dependencies')
     runs-on: ubuntu-latest
     steps:
@@ -44,4 +53,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge --auto --squash "$PR_URL"
+        run: |
+          if ! gh pr merge --auto --squash "$PR_URL"; then
+            echo "::notice::Could not enable auto-merge on $PR_URL (PR may have conflicts or be temporarily ineligible). The next PR event will retry."
+          fi
