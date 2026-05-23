@@ -1,0 +1,74 @@
+#
+#   Dependabot Configuration
+#
+# Reference: https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+
+version: 2
+
+updates:
+  # Cargo workspace (root Cargo.toml + xtask/Cargo.toml)
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: friday
+      time: "18:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: deps
+    labels:
+      - dependencies
+      - no-news-fragment-needed
+    # Skip releases newer than these windows; major bumps wait longer so
+    # yanked / regressing crates surface before a PR lands.
+    cooldown:
+      default-days: 3
+      semver-major-days: 14
+      semver-minor-days: 5
+      semver-patch-days: 3
+    groups:
+      cargo-minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+
+  # Rust toolchain (rust-toolchain.toml). Requires Dependabot's
+  # rust-toolchain ecosystem (generally available since 2025-08).
+  - package-ecosystem: rust-toolchain
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: deps
+    labels:
+      - dependencies
+      - no-news-fragment-needed
+    cooldown:
+      default-days: 14
+
+  # GitHub Actions used by workflows under .github/workflows/
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: friday
+      time: "18:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+    labels:
+      - dependencies
+      - no-news-fragment-needed
+    cooldown:
+      default-days: 3
+      semver-major-days: 7
+    groups:
+      actions-minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
