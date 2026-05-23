@@ -25,9 +25,12 @@
 # enabled is a no-op.
 #
 # `gh pr merge --auto` can still exit non-zero in transient states
-# (conflicts, ineligible base, auto-merge temporarily disallowed). We
-# log those cases and exit successfully so they do not surface as red
-# checks - the next PR event (synchronize, labeled, ...) will retry.
+# (conflicts, ineligible base, checks pending). We log those cases
+# and exit successfully so they do not surface as red checks - the
+# next PR event (synchronize, labeled, ...) will retry. Persistent
+# failures (missing token permissions, repo-level auto-merge
+# disabled, missing `gh`) are surfaced as job failures so they get
+# fixed instead of silently leaving auto-merge off forever.
 
 name: Dependabot Auto-Merge
 
@@ -53,6 +56,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          if ! gh pr merge --auto --squash "$PR_URL"; then
-            echo "::notice::Could not enable auto-merge on $PR_URL (PR may have conflicts or be temporarily ineligible). The next PR event will retry."
+          set +e
+          output=$(gh pr merge --auto --squash "$PR_URL" 2>&1)
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -eq 0 ]; then
+            exit 0
           fi
+          # Treat permission/config/tooling errors as persistent: if we
+          # silently ignored these, auto-merge would never get enabled
+          # and CI would stay green forever. Everything else (conflicts,
+          # not-yet-mergeable, checks pending) is transient and retried
+          # on the next PR event.
+          if printf '%s' "$output" | grep -qiE 'resource not accessible|auto[- ]merge is not allowed|auto[- ]merge is not enabled|bad credentials|requires authentication|gh: command not found'; then
+            echo "::error::Persistent failure enabling auto-merge on $PR_URL - see log above."
+            exit 1
+          fi
+          echo "::notice::Could not enable auto-merge on $PR_URL (likely transient: conflicts, ineligible base, or checks pending). The next PR event will retry."
