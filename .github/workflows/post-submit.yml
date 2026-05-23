@@ -62,7 +62,14 @@ jobs:
     needs: ci
     runs-on: ubuntu-latest
     steps:
+      # Mirror the `ci` job's checkout ref so the local
+      # `./.github/workflows/_coverage_report` action is loaded from the
+      # merged commit on `main`, not the `pull_request_target` default
+      # `refs/pull/<n>/merge` (which would source the action from
+      # PR-controlled content).
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
 
       - name: Download Coverage XML Data
         uses: actions/download-artifact@v4
