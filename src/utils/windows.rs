@@ -881,7 +881,7 @@ pub const KEY_EVENT: u16 = KEY_EVENT_U32 as u16;
 ///
 /// A `STARTUPINFOW` with `cb` set and, when applicable, the no-activate
 /// show-window flags applied.
-pub fn build_startupinfo(with_keyboard_focus: bool) -> STARTUPINFOW {
+pub(crate) fn build_startupinfo(with_keyboard_focus: bool) -> STARTUPINFOW {
     let mut startupinfo = STARTUPINFOW {
         cb: mem::size_of::<STARTUPINFOW>() as u32,
         ..Default::default()
