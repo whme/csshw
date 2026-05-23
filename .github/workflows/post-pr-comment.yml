@@ -49,7 +49,7 @@ jobs:
 
       - name: Post comment
         if: steps.comment.outputs.pr_number != ''
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           number: ${{ steps.comment.outputs.pr_number }}
           header: ${{ steps.comment.outputs.header }}
