@@ -616,7 +616,7 @@ mod create_process_with_args_test {
         let windows_api = DefaultWindowsApi;
         let application = r"C:\Windows\System32\timeout.exe";
         let args = vec!["30".to_string()];
-        let process_info = match windows_api.create_process_with_args(application, args) {
+        let process_info = match windows_api.create_process_with_args(application, args, true) {
             None => panic!("Failed to create process: {:?}", unsafe { GetLastError() }),
             Some(process_info) => process_info,
         };

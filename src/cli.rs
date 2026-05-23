@@ -313,7 +313,7 @@ impl Entrypoint for MainEntrypoint {
         // reset the configuration before the window was launched
         let _ = get_console_window_handle(
             windows_api,
-            spawn_console_process(windows_api, &format!("{PKG_NAME}.exe"), daemon_args)
+            spawn_console_process(windows_api, &format!("{PKG_NAME}.exe"), daemon_args, true)
                 .expect("Failed to create process")
                 .dwProcessId,
         );

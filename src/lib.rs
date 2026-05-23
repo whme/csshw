@@ -296,11 +296,14 @@ impl<R: Registry> Drop for WindowsSettingsDefaultTerminalApplicationGuard<R> {
 ///
 /// # Arguments
 ///
-/// * `api`         - Windows API implementation
-/// * `application` - Application name including file extension (`.exe`).
-///                   If the application is not in the `PATH` environment variable, the full path
-///                   must be specified.
-/// * `args`        - List of arguments to the application.
+/// * `api`                 - Windows API implementation
+/// * `application`         - Application name including file extension (`.exe`).
+///                           If the application is not in the `PATH` environment variable,
+///                           the full path must be specified.
+/// * `args`                - List of arguments to the application.
+/// * `with_keyboard_focus` - Whether the new console window should take foreground focus
+///                           when it appears. Pass `false` when spawning child consoles
+///                           that must not steal focus from the calling process.
 ///
 /// # Returns
 ///
@@ -309,8 +312,9 @@ pub fn spawn_console_process<W: WindowsApi>(
     api: &W,
     application: &str,
     args: Vec<String>,
+    with_keyboard_focus: bool,
 ) -> Option<PROCESS_INFORMATION> {
-    return api.create_process_with_args(application, args);
+    return api.create_process_with_args(application, args, with_keyboard_focus);
 }
 
 /// Initialize the logger.

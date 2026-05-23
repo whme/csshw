@@ -601,11 +601,6 @@ impl<'a> Daemon<'a> {
 
         toggle_processed_input_mode(windows_api); // Disable processed input mode
 
-        // Initialize the COM library so we can use UI automation
-        windows_api
-            .initialize_com_library(windows::Win32::System::Com::COINIT_MULTITHREADED)
-            .unwrap();
-
         let workspace_area = workspace::get_workspace_area(windows_api, self.config.height);
 
         self.arrange_daemon_console(windows_api, &workspace_area);
@@ -632,8 +627,7 @@ impl<'a> Daemon<'a> {
 
         // Now that all clients started, focus the daemon console again.
         let daemon_console = windows_api.get_console_window();
-        let _ = windows_api.set_foreground_window(daemon_console);
-        let _ = windows_api.focus_window_with_automation(daemon_console);
+        let _ = windows_api.bring_window_to_top(daemon_console, true);
 
         self.print_instructions(windows_api);
         self.run(windows_api, &mut clients, &workspace_area).await;
@@ -934,8 +928,7 @@ impl<'a> Daemon<'a> {
                     self.arrange_daemon_console(windows_api, workspace_area);
                     // Focus the daemon console again.
                     let daemon_window = windows_api.get_console_window();
-                    let _ = windows_api.set_foreground_window(daemon_window);
-                    let _ = windows_api.focus_window_with_automation(daemon_window);
+                    let _ = windows_api.bring_window_to_top(daemon_window, true);
                     self.quit_control_mode(windows_api);
                 }
                 ControlModeAction::CopyHostnames => {
@@ -1540,8 +1533,9 @@ fn launch_client_console<W: WindowsApi>(
     client_args.push("client".to_string());
     client_args.extend(vec!["--".to_string(), actual_host.to_string()]);
 
-    let process_info = spawn_console_process(windows_api, &format!("{PKG_NAME}.exe"), client_args)
-        .expect("Failed to create process");
+    let process_info =
+        spawn_console_process(windows_api, &format!("{PKG_NAME}.exe"), client_args, false)
+            .expect("Failed to create process");
     let client_window_handle = get_console_window_handle(windows_api, process_info.dwProcessId);
     let process_handle = windows_api
         .open_process(PROCESS_QUERY_INFORMATION.0, false, process_info.dwProcessId)
@@ -2057,28 +2051,20 @@ fn ensure_client_z_order_in_sync_with_daemon<W: WindowsApi + Send + Sync + 'stat
 ///                                     and the clients console window handle.
 /// * `daemon_handle`                 - Handle to the daemon console window.
 fn defer_windows<W: WindowsApi>(windows_api: &W, clients: &[Client], daemon_handle: &HWND) {
-    for client in clients.iter().chain([&Client {
-        hostname: "root".to_owned(),
-        window_handle: *daemon_handle,
-        process_handle: HANDLE::default(),
-        process_id: 0,
-        state_sender: watch::channel(ClientState::Active).0,
-        highlight_sender: watch::channel(false).0,
-        tile_index: 0,
-    }]) {
+    for client in clients.iter() {
         let placement = match windows_api.get_window_placement(client.window_handle) {
             Ok(placement) => placement,
             Err(_) => {
                 continue;
             }
         };
-        // First restore if window is minimized
         if placement.showCmd == SW_SHOWMINIMIZED.0.try_into().unwrap() {
             let _ = windows_api.show_window(client.window_handle, SW_RESTORE);
         }
-        // Then bring it to front using UI automation
-        let _ = windows_api.focus_window_with_automation(client.window_handle);
+        let _ = windows_api.bring_window_to_top(client.window_handle, false);
     }
+    // Raise the daemon last so it ends up on top and keeps keyboard focus.
+    let _ = windows_api.bring_window_to_top(*daemon_handle, true);
 }
 
 /// The entrypoint for the `daemon` subcommand.
