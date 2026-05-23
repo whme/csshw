@@ -25,14 +25,12 @@ csshW is a portable application and is not installed.<br>
 To download the csshW application refer to the [Releases 📦](https://github.com/whme/csshw/releases) page.
 
 > [!NOTE]
-> The released `csshw.exe` is not code-signed - the code-signing
-> certificate that would suppress SmartScreen costs money and we do
-> not have one. On first launch Windows SmartScreen shows a "Windows
-> protected your PC" warning because the binary was downloaded from
-> the internet and has no recognized publisher. To run it: click
-> `More info` -> `Run anyway`, or right-click `csshw.exe` ->
-> `Properties` -> tick `Unblock` -> `Apply`. Equivalent from
-> PowerShell: `Unblock-File .\csshw.exe`.
+> The released `csshw.exe` is not code-signed. On first launch Windows
+> SmartScreen shows a "Windows protected your PC" warning because the
+> binary was downloaded from the internet and has no recognized
+> publisher. To run it: click `More info` -> `Run anyway`, or
+> right-click `csshw.exe` -> `Properties` -> tick `Unblock` ->
+> `Apply`. Equivalent from PowerShell: `Unblock-File .\csshw.exe`.
 >
 > The release `.zip` itself (0.19.0 and later) is signed with a
 > [GitHub build attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds);
