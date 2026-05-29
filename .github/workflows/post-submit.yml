@@ -73,7 +73,7 @@ jobs:
       # merged commit on the target branch, not the
       # `pull_request_target` default `refs/pull/<n>/merge` (which would
       # source the action from PR-controlled content).
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
 
