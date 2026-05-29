@@ -42,7 +42,7 @@ jobs:
       - uses: *checkout-action
 
       - name: Download release binary
-        uses: &download-artifact-action actions/download-artifact@v4
+        uses: &download-artifact-action actions/download-artifact@v8
         with:
           name: csshw-binary
           path: ./artifacts
