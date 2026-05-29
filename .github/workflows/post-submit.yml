@@ -78,7 +78,7 @@ jobs:
           ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
 
       - name: Download Coverage XML Data
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: coverage-xml-data
           path: coverage-data/
