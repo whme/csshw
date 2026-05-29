@@ -19,7 +19,7 @@ jobs:
       src: ${{ steps.changes.outputs.src }}
       workflows: ${{ steps.changes.outputs.workflows }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v3
         id: changes
         with:
@@ -50,7 +50,7 @@ jobs:
     if: always() && needs.ci.result == 'success'
     runs-on: *runner
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Download Coverage XML Data
         uses: actions/download-artifact@v8
@@ -100,7 +100,7 @@ jobs:
     if: always() && needs.ci.result == 'success'
     runs-on: *runner
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
