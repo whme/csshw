@@ -25,8 +25,8 @@
 # `workflow_dispatch` and `repository_dispatch`), so a merge attributed
 # to it would never fire Post-Submit CI on `main`. The PAT carries a
 # distinct identity, so the merge's `push` event triggers post-submit
-# normally. The PAT needs `contents: write` and `pull-requests: write`
-# on this repository (fine-grained, repo-scoped).
+# normally. The PAT needs `contents: write`, `pull-requests: write`,
+# and `workflows: write` on this repository (fine-grained, repo-scoped).
 #
 # See: https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow
 #
