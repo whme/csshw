@@ -19,7 +19,7 @@ jobs:
   build-release:
     runs-on: windows-latest
     steps:
-      - uses: &checkout-action actions/checkout@v6
+      - uses: &checkout-action actions/checkout@v6.0.2
 
       - name: Build release binary
         run: cargo release

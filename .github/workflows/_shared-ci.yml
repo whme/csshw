@@ -25,7 +25,7 @@ jobs:
   build:
     runs-on: &runner-version windows-latest
     steps:
-      - uses: &checkout-action actions/checkout@v6
+      - uses: &checkout-action actions/checkout@v6.0.2
         with: &checkout-with
           ref: ${{ inputs.ref }}
 
