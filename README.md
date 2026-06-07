@@ -14,6 +14,7 @@
 
 ## Pre-requisite
 - Any SSH client (Windows 10 and Windows 11 already include a built-in SSH server and client - [docs](https://learn.microsoft.com/en-us/windows/terminal/tutorials/ssh))
+- Microsoft Visual C++ Redistributable (required if launching `csshw.exe` fails with a `VCRUNTIME140.dll was not found` error) - [download](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
 
 ## Overview
 csshW will launch 1 daemon and N client windows (with N being the number of hosts to SSH onto).<br>
