@@ -104,7 +104,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v6.2.0
         with:
           python-version: "3.x"
 
@@ -114,7 +114,7 @@ jobs:
           echo "version=$(cat .config/coverage/diff-cover.version)" >> $GITHUB_OUTPUT
 
       - name: Cache pip packages
-        uses: actions/cache@v5
+        uses: actions/cache@v5.0.5
         id: pip-cache
         with:
           path: ~/.cache/pip
