@@ -33,7 +33,7 @@ jobs:
         with: &rust-cache-shared-key
           shared-key: ${{ hashFiles('Cargo.toml', 'rust-toolchain.toml') }}
 
-      - uses: &build-cache actions/cache@v5.0.5
+      - uses: &build-cache actions/cache@v6.1.0
         with: &build-cache-paths
           path: |
             ~\.cargo\git
